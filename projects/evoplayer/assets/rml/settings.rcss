@@ -21,58 +21,19 @@ div, span, p {
     box-sizing: border-box;
 }
 
-/* Left Navigation Rail */
-#nav-rail {
-    width: 96px;
-    height: 1080px;
-    position: absolute;
-    left: 0;
-    top: 0;
-    background-color: #080c13f0;
-    border-right-width: 1px;
-    border-right-color: #172236;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 28px;
-}
+/* Left Navigation Rail styles removed — rail is now the standalone navbar.rml overlay */
 
-.rail-item {
-    width: 52px;
-    height: 52px;
-    border-radius: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
 
-.rail-active {
-    background-color: #152238;
-    border-width: 1px;
-    border-color: #253b60;
-}
-
-.rail-focused {
-    background-color: #0070d1;
-    border-width: 1.5px;
-    border-color: #60a5fa;
-}
-
-.rail-icon {
-    width: 24px;
-    height: 24px;
-    display: inline-block;
-}
-
-/* Content Pane */
+/* Content pane at EVO_CONTENT_X, leaving the 44 px channel the native
+ * layout puts between EVO_RAIL_W and the first card. */
 #content-pane {
     position: absolute;
-    left: 140px;
+    left: 152px;
     top: 0;
-    width: 1720px;
+    width: 1768px;
     height: 1080px;
 }
+
 
 /* Header */
 #settings-header {
@@ -80,9 +41,9 @@ div, span, p {
     flex-direction: row;
     justify-content: space-between;
     align-items: flex-end;
-    margin-top: 60px;
-    margin-bottom: 34px;
-    width: 1680px;
+    margin-top: 96px;
+    margin-bottom: 42px;
+    width: 1704px;
 }
 
 #header-left {
@@ -92,8 +53,8 @@ div, span, p {
 }
 
 #header-indicator {
-    width: 4px;
-    height: 48px;
+    width: 5px;
+    height: 62px;
     background-color: #0070d1;
     border-radius: 2px;
     margin-right: 18px;
@@ -105,14 +66,14 @@ div, span, p {
 }
 
 #settings-title {
-    font-size: 32px;
+    font-size: 43px;
     font-weight: bold;
     color: #ffffff;
     letter-spacing: 0.5px;
 }
 
 #settings-subtitle {
-    font-size: 13px;
+    font-size: 15px;
     font-weight: bold;
     color: #8fa0b5;
     letter-spacing: 1px;
@@ -120,7 +81,7 @@ div, span, p {
 }
 
 #settings-counter {
-    font-size: 13px;
+    font-size: 15px;
     font-weight: bold;
     color: #8fa0b5;
     letter-spacing: 1px;
@@ -131,18 +92,19 @@ div, span, p {
 #settings-list {
     display: flex;
     flex-direction: column;
-    width: 1680px;
+    width: 1704px;
 }
 
 .setting-row {
-    width: 1680px;
-    height: 82px;
+    width: 1704px;
+    height: 92px;
     background-color: #0c1322;
+
     border-width: 1px;
     border-color: #172338;
     border-radius: 14px;
     margin-bottom: 12px;
-    padding: 0 28px;
+    padding: 0 32px;
     display: flex;
     flex-direction: row;
     justify-content: space-between;
@@ -162,8 +124,8 @@ div, span, p {
 }
 
 .row-icon-box {
-    width: 46px;
-    height: 46px;
+    width: 60px;
+    height: 60px;
     background-color: #131c2e;
     border-radius: 10px;
     display: flex;
@@ -177,8 +139,8 @@ div, span, p {
 }
 
 .row-icon {
-    width: 22px;
-    height: 22px;
+    width: 30px;
+    height: 30px;
     display: inline-block;
 }
 
@@ -188,14 +150,14 @@ div, span, p {
 }
 
 .row-title {
-    font-size: 19px;
+    font-size: 33px;
     font-weight: bold;
     color: #ffffff;
     letter-spacing: 0.5px;
 }
 
 .row-detail {
-    font-size: 13px;
+    font-size: 18px;
     font-weight: normal;
     color: #94a3b8;
     letter-spacing: 0.5px;
@@ -212,9 +174,9 @@ div, span, p {
     background-color: #131d2e;
     border-width: 1px;
     border-color: #243550;
-    border-radius: 6px;
-    padding: 6px 14px;
-    font-size: 13px;
+    border-radius: 7px;
+    padding: 8px 16px;
+    font-size: 15px;
     font-weight: bold;
     color: #94a3b8;
     letter-spacing: 0.5px;
@@ -228,8 +190,8 @@ div, span, p {
 }
 
 .row-chevron {
-    width: 14px;
-    height: 14px;
+    width: 20px;
+    height: 20px;
     display: inline-block;
 }
 
@@ -246,12 +208,13 @@ div, span, p {
     position: absolute;
     bottom: 40px;
     left: 0;
-    width: 1680px;
+    width: 1704px;
     display: flex;
     flex-direction: row;
     align-items: center;
     gap: 32px;
 }
+
 
 .footer-hint {
     display: flex;
@@ -261,13 +224,13 @@ div, span, p {
 }
 
 .footer-glyph {
-    width: 22px;
-    height: 22px;
+    width: 30px;
+    height: 30px;
     display: inline-block;
 }
 
 .footer-text {
-    font-size: 13px;
+    font-size: 15px;
     font-weight: bold;
     color: #8b99ad;
     letter-spacing: 1px;
@@ -275,7 +238,7 @@ div, span, p {
 
 #footer-version {
     margin-left: auto;
-    font-size: 13px;
+    font-size: 15px;
     font-weight: bold;
     color: #4b586c;
     letter-spacing: 1px;
