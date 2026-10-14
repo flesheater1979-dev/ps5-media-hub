@@ -30,6 +30,7 @@ extern const evo_provider_t evo_provider_iptv;
 extern const evo_provider_t evo_provider_xtream;
 extern const evo_provider_t evo_provider_emby;
 extern const evo_provider_t evo_provider_jellyfin;
+extern const evo_provider_t evo_provider_plex;
 extern const evo_provider_t evo_provider_nuvio;
 extern const evo_provider_t evo_provider_stremio;
 
@@ -46,7 +47,8 @@ static const evo_provider_t *const PROVIDERS[] = {
     &evo_provider_iptv,
     &evo_provider_xtream,
     &evo_provider_emby,
-    &evo_provider_jellyfin,     /* native screens; the web UI as an extra */
+    &evo_provider_jellyfin,
+    &evo_provider_plex,     /* native screens; the web UI as an extra */
     &evo_provider_stremio,      /* Stremio addons, native (provider_stremio.c) */
     &evo_provider_nuvio,        /* web UI only - Stremio addons, debrid */
 };

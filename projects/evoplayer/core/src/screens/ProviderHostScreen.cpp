@@ -49,7 +49,9 @@ std::string g_pendingProvider;
  * slot went straight to IPTV and Emby could never be reached). */
 bool is_pickable(const evo_provider_t* p)
 {
-    return p && (evo_provider_is_enabled(p->id) || (p->caps & EVO_PROVIDER_CAP_CONFIG));
+    return p && (evo_provider_is_enabled(p->id) ||
+                 (p->caps & EVO_PROVIDER_CAP_CONFIG) ||
+                 (p->caps & EVO_PROVIDER_CAP_AUTH));
 }
 
 int pickable_count(std::string* only)
@@ -99,6 +101,15 @@ struct PendingPlay {
     int  picked;        /* the user chose this stream: no automatic fallback */
 };
 PendingPlay g_pending;
+
+struct RecentProviderRequest {
+    bool active = false;
+    std::string provider;
+    std::string item;
+    std::string title;
+    double resume = 0.0;
+};
+RecentProviderRequest g_recentProviderRequest;
 
 /*
  * Where the picker is in its life. All of it runs on the main thread - the
@@ -360,6 +371,60 @@ ProviderHostScreen::ProviderHostScreen()
     : StatefulScreen("ProviderHostScreen") {
 }
 
+
+bool ProviderHostScreen::launchRecent(const char* path,
+                                      const char* title,
+                                      double resumeSeconds)
+{
+    if (!path || std::strncmp(path, "evo://", 6) != 0)
+        return false;
+
+    const char* begin = path + 6;
+    const char* slash = std::strchr(begin, '/');
+
+    if (!slash || slash == begin || !slash[1]) {
+        toast("RECENT", "Invalid saved provider item");
+        return true;
+    }
+
+    std::string provider(begin, (size_t)(slash - begin));
+    std::string item(slash + 1);
+
+    const evo_provider_t* p = evo_provider_find(provider.c_str());
+    if (!p || !(p->caps & EVO_PROVIDER_CAP_RESOLVE)) {
+        toast("RECENT", "Saved provider is unavailable");
+        return true;
+    }
+
+    if (provider.size() >= EVO_PROVIDER_MAX_ID ||
+        item.size() >= EVO_PROVIDER_MAX_ITEM_ID) {
+        toast("RECENT", "Saved provider identifier is too long");
+        return true;
+    }
+
+    if (g_start_running || g_recentProviderRequest.active) {
+        toast("RECENT", "Playback is already starting");
+        return true;
+    }
+
+    g_recentProviderRequest.active = true;
+    g_recentProviderRequest.provider = provider;
+    g_recentProviderRequest.item = item;
+    g_recentProviderRequest.title =
+        (title && title[0]) ? title : item;
+    g_recentProviderRequest.resume =
+        resumeSeconds > 0.0 ? resumeSeconds : 0.0;
+
+    setPendingProvider(provider);
+
+    if (auto sm = Application::getInstance().getScreenManager())
+        sm->navigateTo(ScreenId::EmbyBrowse);
+    else
+        g_recentProviderRequest.active = false;
+
+    return true;
+}
+
 void ProviderHostScreen::setPendingProvider(const std::string& id)
 {
     g_pendingProvider = id;
@@ -407,6 +472,40 @@ void ProviderHostScreen::onEnter()
         want = only;
     }
     openProvider(want);
+
+    if (g_recentProviderRequest.active &&
+        m_opened &&
+        m_providerId == g_recentProviderRequest.provider) {
+
+        std::memset(&g_pending, 0, sizeof g_pending);
+
+        std::snprintf(g_pending.provider, sizeof g_pending.provider,
+                      "%s", g_recentProviderRequest.provider.c_str());
+        std::snprintf(g_pending.item_id, sizeof g_pending.item_id,
+                      "%s", g_recentProviderRequest.item.c_str());
+        std::snprintf(g_pending.title, sizeof g_pending.title,
+                      "%s", g_recentProviderRequest.title.c_str());
+
+        g_pending.resume_sec = (long long)g_recentProviderRequest.resume;
+        g_pending.is_live = 0;
+        g_pending.ask = 0;
+        g_pending.picked = 0;
+
+        g_resolve_finished = false;
+        g_pick_stage = PickStage::Idle;
+        ++g_pick_gen;
+        g_variants = VariantsState::None;
+        g_variants_merged = false;
+
+        m_resolving = false;
+        m_tunePending = true;
+        m_tuneFrames = 0;
+
+        evo_rmlui_provider_set_tuning(1);
+        evo_rmlui_provider_set_loading(1, "Opening recent media...");
+
+        g_recentProviderRequest.active = false;
+    }
 }
 
 void ProviderHostScreen::openProvider(const std::string& want)
@@ -589,6 +688,15 @@ void ProviderHostScreen::choosePicked(bool editSource)
     if (!p) return;
 
     m_providerId = id;
+
+    /* PIN-only providers such as Plex sign in without a setup form. */
+    if (p->qc_start && !p->sign_in &&
+        p->needs_sign_in && p->needs_sign_in()) {
+        evo_feedback(EVO_FB_OPEN);
+        openProvider(id);
+        return;
+    }
+
     bool configured = p->is_configured() != 0;
     if (editSource || !configured) {
         if (!(p->caps & EVO_PROVIDER_CAP_CONFIG)) {
@@ -1217,7 +1325,7 @@ bool ProviderHostScreen::handleInput(uint32_t pressed, uint32_t held, uint32_t r
         return true;
     }
 
-    if (pressed & PadButtons::Square) {
+    if ((pressed & PadButtons::Square) && m_providerId != "plex") {
         openSearch();
         return true;
     }
@@ -2082,7 +2190,7 @@ bool ProviderHostScreen::isNativeWeb(const ::evo_provider* p)
 void ProviderHostScreen::beginSignIn()
 {
     const evo_provider_t* p = evo_provider_find(m_providerId.c_str());
-    if (!p || !p->sign_in) return;
+    if (!p || (!p->sign_in && !p->qc_start)) return;
     std::string id = m_providerId;
     enterPicker();                  /* the chooser sits behind the keyboards */
     m_providerId = id;
@@ -2124,6 +2232,18 @@ void ProviderHostScreen::OnQcCode(int ok, const char* code, void* ud)
     if (!ok || !code || !code[0]) {
         evo_bt("prov_screen: quick connect unavailable for '%s' - password sign-in",
                self->m_providerId.c_str());
+        const evo_provider_t* provider =
+            evo_provider_find(self->m_providerId.c_str());
+
+        if (provider && !provider->sign_in) {
+            self->m_signIn = SignIn::QcWait;
+            self->m_qcCode = "ERROR";
+            self->m_qcNextPollMs = qc_now_ms() + 60 * 60 * 1000;
+            self->m_qcDeadlineMs = qc_now_ms() + 60 * 60 * 1000;
+            toast(provider->name, "Could not request pairing code");
+            return;
+        }
+
         self->beginPasswordSignIn();
         return;
     }
@@ -2150,8 +2270,9 @@ void ProviderHostScreen::OnQcPoll(int state, const char* msg, void* ud)
     evo_bt("prov_screen: quick connect for '%s' -> %s (%s)", self->m_providerId.c_str(),
            state > 0 ? "signed in" : "failed", msg ? msg : "");
     toast(p ? p->name : "PROVIDER", msg && msg[0] ? msg : (state > 0 ? "Signed in" : "Quick Connect failed"));
-    if (state > 0)
+    if (state > 0) {
         self->openProvider(self->m_providerId);
+    }
 }
 
 /* While the code is on screen: Square switches to the password, Circle gives
@@ -2190,16 +2311,27 @@ void ProviderHostScreen::renderQuickConnect(uint32_t* framebuffer, int width, in
     else
         std::snprintf(code, sizeof code, "%s", m_qcCode.empty() ? "..." : m_qcCode.c_str());
     params.empty_title = code;
+    if (m_providerId == "plex") {
+    std::snprintf(hint, sizeof hint,
+                  "On your phone or computer, visit plex.tv/link and enter this code.");
+    } else {
     std::snprintf(hint, sizeof hint,
                   "In %s on your phone or computer, open Settings > Quick Connect and enter this code.",
                   p ? p->name : "the app");
+    }
     params.empty_hint = hint;
     params.empty_icon = "../icons/icon_emby.png";
-    params.hint_count = 2;
-    params.hints[0].glyph_path = "../icons/btn_square.png";
-    params.hints[0].label = "USE PASSWORD";
-    params.hints[1].glyph_path = "../icons/btn_circle.png";
-    params.hints[1].label = "CANCEL";
+    if (m_providerId == "plex") {
+    params.hint_count = 1;
+    params.hints[0].glyph_path = "../icons/btn_circle.png";
+    params.hints[0].label = "CANCEL";
+	} else {
+		params.hint_count = 2;
+		params.hints[0].glyph_path = "../icons/btn_square.png";
+		params.hints[0].label = "USE PASSWORD";
+		params.hints[1].glyph_path = "../icons/btn_circle.png";
+		params.hints[1].label = "CANCEL";
+	}
     evo_rmlui_update_list(&params);
     evo_rmlui_render_list(framebuffer, width, height);
 }

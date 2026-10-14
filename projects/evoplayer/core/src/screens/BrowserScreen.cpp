@@ -1,3 +1,4 @@
+#include "evo/screens/ProviderHostScreen.hpp"
 #include "evo/screens/BrowserScreen.hpp"
 #include "evo_jailbreak.h"
 #include "evo/screens/TextReaderScreen.hpp"
@@ -954,6 +955,11 @@ void BrowserScreen::activateSelection() {
             browser->navigateInto(item.name);
             resetSelection();
         }
+    } else if (m_activeSource == 4 &&
+               item.fullPath.compare(0, 6, "evo://") == 0) {
+        evo_feedback(EVO_FB_CONFIRM);
+        ProviderHostScreen::launchRecent(
+            item.fullPath.c_str(), item.name.c_str(), item.lastPos);
     } else if (item.category == FileCategory::Video || item.category == FileCategory::Audio) {
         auto settings = Application::getInstance().getSettingsService();
         bool resumeEnabled = settings ? settings->isResumePlaybackEnabled() : true;

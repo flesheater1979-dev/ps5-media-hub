@@ -149,6 +149,7 @@ ADDON_SRCS := \
     addons/src/provider_xtream.c \
     addons/src/provider_emby.c \
     addons/src/provider_jellyfin.c \
+    addons/src/provider_plex.c \
     addons/src/provider_nuvio.c \
     addons/src/provider_stremio.c
 

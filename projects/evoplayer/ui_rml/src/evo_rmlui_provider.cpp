@@ -799,6 +799,8 @@ static Rml::String display_text(const char* in)
     return Rml::String(out.c_str());
 }
 
+extern "C" void evo_plex_home_art_capture(const char*, const char*, const char*);
+
 void EvoRmlProviderHost::ApplyItems(const evo_provider_item_t* items, int count,
                                     int has_more)
 {
@@ -841,6 +843,10 @@ void EvoRmlProviderHost::ApplyItems(const evo_provider_item_t* items, int count,
          * arrive. A bundle that wants something behind the gap paints a
          * background colour on the element, which is why this is "" and not a
          * placeholder image the provider did not choose. */
+        if (m_provider_id == "plex" && !s.is_folder && !s.is_live &&
+            std::strncmp(s.id, "video:", 6) == 0) {
+            evo_plex_home_art_capture(s.id, s.art_url, s.backdrop_url);
+        }
         m_all_rows.push_back(std::move(r));
         m_art_urls.emplace_back(s.art_url);
         m_art_keys.emplace_back();

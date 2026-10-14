@@ -1,3 +1,4 @@
+#include "evo/screens/ProviderHostScreen.hpp"
 #include "evo/screens/LaunchScreen.hpp"
 #include "evo_features.h"
 #include "evo/screens/BrowserScreen.hpp"
@@ -17,6 +18,9 @@
 #include <ctime>
 
 #include <algorithm>
+
+extern "C" const uint32_t* evo_plex_home_art_get(const char*, int, int*, int*);
+extern "C" void evo_provider_art_poll(void);
 
 namespace evo {
 
@@ -182,16 +186,20 @@ void LaunchScreen::activateSelection() {
     if (m_selectedRow == 0) {
         // Hero row
         if (recent_file_count > 0) {
-            playback->startPlayback(recent_files[0].path, recent_files[0].last_pos);
-            screenMgr->navigateTo(ScreenId::Player);
+            if (!ProviderHostScreen::launchRecent(recent_files[0].path, recent_files[0].title, recent_files[0].last_pos)) {
+                playback->startPlayback(recent_files[0].path, recent_files[0].last_pos);
+                screenMgr->navigateTo(ScreenId::Player);
+            }
         } else {
             screenMgr->navigateTo(ScreenId::UsbBrowser);
         }
     } else if (m_selectedRow == 1) {
         // Recent shelf
         if (m_selectedCol >= 0 && m_selectedCol < recent_file_count) {
-            playback->startPlayback(recent_files[m_selectedCol].path, recent_files[m_selectedCol].last_pos);
-            screenMgr->navigateTo(ScreenId::Player);
+            if (!ProviderHostScreen::launchRecent(recent_files[m_selectedCol].path, recent_files[m_selectedCol].title, recent_files[m_selectedCol].last_pos)) {
+                playback->startPlayback(recent_files[m_selectedCol].path, recent_files[m_selectedCol].last_pos);
+                screenMgr->navigateTo(ScreenId::Player);
+            }
         }
     } else if (m_selectedRow == 2) {
         // Library shelf navigation. Dispatch on the tile's action rather than
@@ -287,6 +295,8 @@ void LaunchScreen::render(uint32_t* framebuffer, int width, int height) {
     }
 
     auto coverService = Application::getInstance().getCoverArtService();
+    /* Complete up to two provider artwork decodes per Home frame. */
+    evo_provider_art_poll();
 
     bool railFocused = false;
     if (auto sm = Application::getInstance().getScreenManager()) {
@@ -299,12 +309,17 @@ void LaunchScreen::render(uint32_t* framebuffer, int width, int height) {
         const auto& r = recent_files[0];
         params.hero_eyebrow = (r.last_pos > 1.0) ? "CONTINUE WATCHING" : "START WATCHING";
         params.hero_title = r.title[0] ? r.title : r.path;
-        params.hero_detail = r.path;
+        params.hero_detail = (std::strncmp(r.path, "evo://", 6) == 0) ? "Provider media" : r.path;
         params.hero_action = (r.last_pos > 1.0) ? "RESUME" : "PLAY";
         if (r.duration > 1.0) {
             params.hero_progress = static_cast<int>((r.last_pos / r.duration) * 1000.0);
         }
-        if (coverService) {
+        if (std::strncmp(r.path, "evo://plex/", 11) == 0) {
+            int aw = 0, ah = 0;
+            params.hero_art = evo_plex_home_art_get(r.path, 1, &aw, &ah);
+            params.hero_art_w = aw;
+            params.hero_art_h = ah;
+        } else if (coverService) {
             /*
              * Only pay for the 960x540 extraction once the cursor has settled
              * (see HeroSettleMs). While it is moving, the shelf's own cached
@@ -343,7 +358,7 @@ void LaunchScreen::render(uint32_t* framebuffer, int width, int height) {
     for (int i = 0; i < params.recent_visible; ++i) {
         const auto& r = recent_files[i];
         params.recent[i].title = r.title[0] ? r.title : r.path;
-        params.recent[i].detail = "Recent File";
+        params.recent[i].detail = (std::strncmp(r.path, "evo://", 6) == 0) ? "Provider media" : "Recent File";
         params.recent[i].icon_path = "../icons/icon_recent_files.png";
         if (r.duration > 1.0) {
             params.recent[i].progress = static_cast<int>((r.last_pos / r.duration) * 1000.0);
@@ -352,7 +367,12 @@ void LaunchScreen::render(uint32_t* framebuffer, int width, int height) {
         }
 
         const uint32_t* art = nullptr;
-        if (coverService) {
+        if (std::strncmp(r.path, "evo://plex/", 11) == 0) {
+            int aw = 0, ah = 0;
+            art = evo_plex_home_art_get(r.path, 0, &aw, &ah);
+            params.recent[i].art_w = aw;
+            params.recent[i].art_h = ah;
+        } else if (coverService) {
             art = coverService->peekCoverArt(r.path);
             bool tried = coverService->hasTriedCoverArt(r.path);
             if (!art && !tried && coverBudget > 0) {
@@ -363,8 +383,10 @@ void LaunchScreen::render(uint32_t* framebuffer, int width, int height) {
         if (art) {
             params.recent[i].art = art;
         }
-        params.recent[i].art_w = ICoverArtService::PosterWidth;
-        params.recent[i].art_h = ICoverArtService::PosterHeight;
+        if (std::strncmp(r.path, "evo://plex/", 11) != 0) {
+            params.recent[i].art_w = ICoverArtService::PosterWidth;
+            params.recent[i].art_h = ICoverArtService::PosterHeight;
+        }
         params.recent[i].is_focused = (!railFocused && m_selectedRow == 1 && m_selectedCol == i);
     }
 

@@ -48,6 +48,11 @@ public:
      *  enabled one, which is the behaviour when the rail slot is used. */
     static void setPendingProvider(const std::string& id);
 
+    /* EVO_RECENT_PROVIDER_LAUNCH_V2 */
+    static bool launchRecent(const char* path,
+                             const char* title,
+                             double resumeSeconds);
+
     void setNavigatingToPlayer(bool b) { m_navigatingToPlayer = b; }
 
 private:

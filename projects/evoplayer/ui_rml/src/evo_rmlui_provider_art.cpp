@@ -45,6 +45,7 @@
 
 #include <RmlUi/Core.h>
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -59,6 +60,7 @@ extern "C" {
 #include "evo_net.h"
 #include "evo_data_path.h"
 #include "evo_provider_log.h"
+int evo_plex_art_auth_header(const char *url, char *out, size_t cap);
 
 /*
  * EVO_PROVIDER_ART_NO_DECODE: host renderer only.
@@ -474,7 +476,24 @@ extern "C" int evo_provider_art_request(const char* provider_id, const char* url
     }
 
     FetchCtx* ctx = new FetchCtx{key, base};
-    if (evo_net_request_async("GET", url, nullptr, nullptr, 0, on_art, ctx) != 0) {
+    char plex_auth[1200] = {0};
+    const char *headers[1];
+    int header_count = 0;
+
+    if (provider_id && strcmp(provider_id, "plex") == 0 &&
+        evo_plex_art_auth_header(url, plex_auth, sizeof plex_auth)) {
+        headers[0] = plex_auth;
+        header_count = 1;
+    }
+
+    ART_LOG("art REQUEST provider=%s plex_auth=%d key=%s",
+            provider_id ? provider_id : "",
+            header_count, key.c_str());
+
+    if (evo_net_request_async(
+            "GET", url, nullptr,
+            header_count ? headers : nullptr,
+            header_count, on_art, ctx) != 0) {
         delete ctx;
         s.by_key.erase(key);
         return -1;
@@ -543,6 +562,133 @@ extern "C" void evo_provider_art_poll(void)
 
     evict_to_budget();
     EvoRmlApp::Instance().MarkFrameDirty();
+}
+
+/* Plex Home artwork: separate metadata index; never modify evo_recent.txt.
+ * Decoded buffers are retained for the process lifetime so both Home renderers
+ * can safely use their pointers after the launch-params call returns. */
+namespace {
+struct PlexHomeItem {
+    std::string id, poster, backdrop;
+    std::vector<uint32_t> poster_px, backdrop_px;
+    int pw = 0, ph = 0, bw = 0, bh = 0;
+};
+std::vector<PlexHomeItem>& plex_home_items() {
+    static std::vector<PlexHomeItem> v;
+    return v;
+}
+bool& plex_home_loaded() { static bool b = false; return b; }
+const char* plex_home_index() { return evo_data_path("evo_plex_home_art.tsv"); }
+bool plex_safe_url(const char* url) {
+    if (!url || (strncmp(url,"http://",7) != 0 && strncmp(url,"https://",8) != 0)) return false;
+    const size_t n = strlen(url);
+    if (n > 1500 || n < 10 || strchr(url, '\n') || strchr(url, '\r') || strchr(url, '\t')) return false;
+    /* Never write URLs containing authentication query parameters to disk. */
+    std::string u(url);
+    for (char& c : u) c = (char)tolower((unsigned char)c);
+    return u.find("token=") == std::string::npos &&
+           u.find("x-plex-token") == std::string::npos;
+}
+void plex_home_load() {
+    if (plex_home_loaded()) return;
+    plex_home_loaded() = true;
+    FILE* f = fopen(plex_home_index(), "rb");
+    if (!f) return;
+    char line[4096];
+    while (plex_home_items().size() < 128 && fgets(line, sizeof line, f)) {
+        char* a = strchr(line, '\t'); if (!a) continue; *a++ = 0;
+        char* b = strchr(a, '\t'); if (!b) continue; *b++ = 0;
+        b[strcspn(b, "\r\n")] = 0;
+        if (strncmp(line, "video:", 6) || strlen(line) > 255) continue;
+        PlexHomeItem item; item.id = line;
+        if (plex_safe_url(a)) item.poster = a;
+        if (plex_safe_url(b)) item.backdrop = b;
+        if (!item.poster.empty() || !item.backdrop.empty())
+            plex_home_items().push_back(std::move(item));
+    }
+    fclose(f);
+}
+void plex_home_save() {
+    std::string tmp = std::string(plex_home_index()) + ".tmp";
+    FILE* f = fopen(tmp.c_str(), "wb");
+    if (!f) return;
+    bool ok = true;
+    for (const auto& item : plex_home_items()) {
+        if (fprintf(f, "%s\t%s\t%s\n", item.id.c_str(),
+                    item.poster.c_str(), item.backdrop.c_str()) < 0) ok = false;
+    }
+    if (fclose(f) != 0) ok = false;
+    if (ok) rename(tmp.c_str(), plex_home_index());
+    else remove(tmp.c_str());
+}
+const uint32_t* plex_home_decode(const std::string& url,
+                                  std::vector<uint32_t>& px, int& w, int& h) {
+    if (url.empty()) return nullptr;
+    if (!px.empty()) return px.data();
+    char key[128];
+    int rc = evo_provider_art_request("plex", url.c_str(), key, sizeof key);
+    if (rc < 0) return nullptr;
+    if (rc != 1) return nullptr;
+    /* Use the same on-disk cache as the provider browser. */
+    std::string rel = "art/" + url_hash(url.c_str());
+    char base[512];
+    if (evo_bundle_path("plex", rel.c_str(), base, sizeof base) != 0) return nullptr;
+    for (const char* ext : kArtExts) {
+        std::string path = std::string(base) + ext;
+        FILE* f = fopen(path.c_str(), "rb");
+        if (!f) continue;
+        fclose(f);
+        if (decode_image(path.c_str(), px, w, h) && !px.empty()) return px.data();
+    }
+    return nullptr;
+}
+} // namespace
+
+extern "C" void evo_plex_home_art_capture(const char* id, const char* poster,
+                                            const char* backdrop) {
+    if (!id || strncmp(id, "video:", 6) || strlen(id) > 255) return;
+    plex_home_load();
+    const std::string p = plex_safe_url(poster) ? poster : "";
+    const std::string b = plex_safe_url(backdrop) ? backdrop : "";
+    if (p.empty() && b.empty()) return;
+    auto& v = plex_home_items();
+    for (auto& item : v) {
+        if (item.id != id) continue;
+        if (item.poster == p && item.backdrop == b) return;
+        item.poster = p; item.backdrop = b;
+        item.poster_px.clear(); item.backdrop_px.clear();
+        item.pw = item.ph = item.bw = item.bh = 0;
+        plex_home_save(); return;
+    }
+    if (v.size() >= 128) v.erase(v.begin());
+    PlexHomeItem item; item.id = id; item.poster = p; item.backdrop = b;
+    v.push_back(std::move(item));
+    plex_home_save();
+}
+
+extern "C" const uint32_t* evo_plex_home_art_get(const char* history_key,
+                                                   int hero, int* w, int* h) {
+    if (w) *w = 0;
+    if (h) *h = 0;
+    if (!history_key || strncmp(history_key, "evo://plex/", 11)) return nullptr;
+    plex_home_load();
+    const char* id = history_key + 11;
+    for (auto& item : plex_home_items()) {
+        if (item.id != id) continue;
+        const uint32_t* pixels = nullptr;
+        int aw = 0, ah = 0;
+        if (hero && !item.backdrop.empty()) {
+            pixels = plex_home_decode(item.backdrop, item.backdrop_px, item.bw, item.bh);
+            aw = item.bw; ah = item.bh;
+        }
+        if (!pixels) {
+            pixels = plex_home_decode(item.poster, item.poster_px, item.pw, item.ph);
+            aw = item.pw; ah = item.ph;
+        }
+        if (pixels) { if (w) *w = aw; if (h) *h = ah; }
+        return pixels;
+    }
+    return nullptr;
 }
 
 extern "C" void evo_provider_art_set_budget(size_t bytes)

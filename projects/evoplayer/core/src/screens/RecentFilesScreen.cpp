@@ -1,3 +1,4 @@
+#include "evo/screens/ProviderHostScreen.hpp"
 #include "evo/screens/RecentFilesScreen.hpp"
 #include "evo/screens/BrowserScreen.hpp"
 #include "evo/Application.hpp"
@@ -71,11 +72,11 @@ bool RecentFilesScreen::handleInput(uint32_t pressed, uint32_t held, uint32_t re
         if (m_selectedIndex >= 0 && m_selectedIndex < recent_file_count) {
             const auto& r = recent_files[m_selectedIndex];
             evo_feedback(EVO_FB_CONFIRM);
-            if (auto pb = Application::getInstance().getPlaybackController()) {
-                pb->startPlayback(r.path, r.last_pos);
-            }
-            if (auto sm = Application::getInstance().getScreenManager()) {
-                sm->navigateTo(ScreenId::Player);
+            if (!ProviderHostScreen::launchRecent(r.path, r.title, r.last_pos)) {
+                if (auto pb = Application::getInstance().getPlaybackController())
+                    pb->startPlayback(r.path, r.last_pos);
+                if (auto sm = Application::getInstance().getScreenManager())
+                    sm->navigateTo(ScreenId::Player);
             }
         }
         return true;
