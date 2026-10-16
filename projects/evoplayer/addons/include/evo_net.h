@@ -151,6 +151,20 @@ int  evo_net_request_async(const char *method,
                            void *user_data);
 
 /*
+ * Same as evo_net_request_async, but the request runs on FFmpeg's HTTP client
+ * (the network path the player streams through), which is what the Jelly5
+ * Jellyfin client uses. Falls back to evo_net's own HTTP code where FFmpeg is
+ * not linked (host test builds). 4xx/5xx arrive as status with success = 0.
+ */
+int  evo_net_request_async_avio(const char *method,
+                                const char *url,
+                                const char *post_data,
+                                const char **headers,
+                                int header_count,
+                                evo_net_cb callback,
+                                void *user_data);
+
+/*
  * Why a request failed. An evo_net_cb only receives success and the HTTP
  * status, so a DNS failure, a refused connection, a TLS error and a reply over
  * the size cap all arrived as the same bare "success = 0".

@@ -33,6 +33,11 @@ public:
     void saveLastFolder() override;
     void loadLastFolder() override;
 
+    std::string usbHome() const override;
+    bool isUsbPath(const std::string& path) const override;
+    std::string usbMountOf(const std::string& path) const override;
+    std::string usbMountLabel(const std::string& mount) const override;
+
     std::string getFullPath(size_t index) const override;
     FileCategory classifyFile(const std::string& fileName, int entryType) const override;
     const char* getFileCategoryLabel(FileCategory category) const override;
@@ -54,6 +59,7 @@ private:
     void scanRecursive(const std::string& basePath, const std::string& relPath,
                        const std::string& query, int depth, const std::string& sourcePrefix = "");
     bool isSafePath(const std::string& path) const;
+    std::vector<std::string> usbMounts() const;   /* the mounts that have files, in order */
 
     std::vector<MediaSourceInfo> m_sources;
     std::string m_currentPath;

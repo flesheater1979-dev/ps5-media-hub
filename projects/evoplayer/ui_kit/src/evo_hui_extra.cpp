@@ -238,6 +238,7 @@ void KeyboardOverlay::set(const evo_keyboard_params_t &p)
     focus_row_ = p.focus_row;
     focus_col_ = p.focus_col;
     show_caret_ = p.show_caret != 0;
+    cursor_ = p.cursor;
 }
 
 void KeyboardOverlay::enter()
@@ -305,13 +306,18 @@ void KeyboardOverlay::draw(DrawList &list, const Context &ctx) const
     list.bordered_rect(well, 16, kClear, 1.0f, kWhite.with_alpha(0.06f));
     ui::text(list, fonts.regular, fit(fonts.regular, text_, 28, well.w - 40), well.x + 20, well.cy() + 10, 28, kWhite);
     if (show_caret_ && fmod(ctx.time, 1.0f) < 0.5f) {
-        float tw = fonts.regular.measure(text_, 28);
+        /* At the caret, not the end of the text: L1 / R1 move it. */
+        const size_t at = (cursor_ < 0 || (size_t)cursor_ > text_.size()) ? text_.size() : (size_t)cursor_;
+        float tw = fonts.regular.measure(text_.substr(0, at), 28);
+        tw = std::min(tw, well.w - 44.0f);
         list.rounded_rect({well.x + 20 + tw + 2, well.cy() - 16, 2, 32}, 1, p.accent);
     }
     
     char counter[32];
     std::snprintf(counter, sizeof(counter), "%d / %d", len_, max_len_);
     ui::text(list, fonts.regular, counter, well.x + well.w - 20, well.cy() + 10, 16, p.text_faint, Align::right);
+
+    ui::text(list, fonts.regular, "L1 / R1  MOVE CURSOR     L2  .     R2  :     SQUARE  BACKSPACE", card.cx(), card.y + card.h - 22.0f, 14, p.text_faint, Align::center, 1.0f);
 
     // keys
     float kx = card.x + 140.0f;

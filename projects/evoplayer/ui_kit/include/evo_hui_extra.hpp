@@ -80,6 +80,7 @@ class KeyboardOverlay
     int focus_row_ = 0;
     int focus_col_ = 0;
     bool show_caret_ = false;
+    int cursor_ = 0;
 
     hui::tween::Spring enter_scale_;
     hui::tween::Spring enter_fade_;

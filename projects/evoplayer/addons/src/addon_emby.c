@@ -232,6 +232,15 @@ static int ms_request(ms_client_t *c, const char *method, const char *path,
     ms_base(c, base, sizeof base);
     if (snprintf(url, sizeof url, "%s%s", base, path) >= (int)sizeof url) return -1;
     ms_auth_header(c, with_token, auth, sizeof auth);
+    if (c->kind == MS_JELLYFIN) {
+        /* As Jelly5's Jellyfin client does (github.com/02dnot/Jelly5): FFmpeg's
+         * HTTP client, an explicit JSON Accept, and a body on every POST - an
+         * empty one is "{}", so the request always carries a Content-Length. */
+        const char *headers[2] = { auth, "Accept: application/json" };
+        const bool post = method && !strcmp(method, "POST");
+        const char *b = (body && body[0]) ? body : (post ? "{}" : NULL);
+        return evo_net_request_async_avio(method, url, b, headers, 2, cb, ud);
+    }
     const char *headers[1] = { auth };
     return evo_net_request_async(method, url, body, headers, 1, cb, ud);
 }
@@ -356,7 +365,7 @@ static void on_qc_initiate(int ok, int status, const char *body, size_t len, voi
         if (x->code_cb) x->code_cb(1, code->valuestring, x->ud);
     } else {
         /* 401 = Quick Connect switched off on the server: password instead. */
-        PROV_LOG("quick connect: initiate -> ok=%d http=%d", ok, status);
+        PROV_LOG("quick connect: initiate -> ok=%d http=%d err=%d", ok, status, evo_net_callback_error());
         x->c->qc_secret[0] = '\0';
         if (x->code_cb) x->code_cb(0, "", x->ud);
     }

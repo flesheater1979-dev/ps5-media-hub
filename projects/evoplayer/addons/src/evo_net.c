@@ -300,6 +300,7 @@ typedef struct evo_net_req {
     int         header_count;
     evo_net_cb  callback;
     void       *user_data;
+    int         via_avio;       /* run on FFmpeg's HTTP client (evo_http_avio.c) */
 
     /* Result */
     int         completed;
@@ -1235,6 +1236,13 @@ int evo_net_http_post_sync(const char *url,
                         out_body, out_len, out_status);
 }
 
+/* FFmpeg's HTTP client, in evo_http_avio.c. Weak: the host test builds have no
+ * FFmpeg, and a request that asked for it then runs on execute_http. */
+extern int evo_avio_execute(const char *method, const char *url, const char *post_data,
+                            const char **headers, int header_count,
+                            char **out_body, size_t *out_len, int *out_status)
+    __attribute__((weak));
+
 /* Background worker thread */
 static void *evo_net_worker(void *arg)
 {
@@ -1263,10 +1271,15 @@ static void *evo_net_worker(void *arg)
 
         if (req) {
             /* Execute HTTP */
-            int res = execute_http(req->method, req->url, req->post_data,
+            int res = (req->via_avio && evo_avio_execute)
+                ? evo_avio_execute(req->method, req->url, req->post_data,
                                    (const char **)req->headers, req->header_count,
                                    &req->response_body, &req->response_len,
-                                   &req->status_code);
+                                   &req->status_code)
+                : execute_http(req->method, req->url, req->post_data,
+                               (const char **)req->headers, req->header_count,
+                               &req->response_body, &req->response_len,
+                               &req->status_code);
 
             req->success   = (res == 0);
             req->error     = res;       /* kept: the callback only gets success/status */
@@ -1336,13 +1349,14 @@ void evo_net_shutdown(void)
 #endif
 }
 
-int evo_net_request_async(const char *method,
-                          const char *url,
-                          const char *post_data,
-                          const char **headers,
-                          int header_count,
-                          evo_net_cb callback,
-                          void *user_data)
+static int request_async(const char *method,
+                         const char *url,
+                         const char *post_data,
+                         const char **headers,
+                         int header_count,
+                         evo_net_cb callback,
+                         void *user_data,
+                         int via_avio)
 {
     if (!method || !url || strlen(url) >= EVO_NET_MAX_URL || strlen(method) >= 16) {
         return EVO_NET_ASYNC_ERR_ARG;
@@ -1367,6 +1381,7 @@ int evo_net_request_async(const char *method,
     }
     req->callback  = callback;
     req->user_data = user_data;
+    req->via_avio  = via_avio;
 
     if (header_count > 0 && headers) {
         req->headers = (char **)calloc((size_t)header_count, sizeof(char *));
@@ -1398,6 +1413,20 @@ int evo_net_request_async(const char *method,
     pthread_mutex_unlock(&g_queue_mutex);
 
     return EVO_NET_ASYNC_OK;
+}
+
+int evo_net_request_async(const char *method, const char *url, const char *post_data,
+                          const char **headers, int header_count,
+                          evo_net_cb callback, void *user_data)
+{
+    return request_async(method, url, post_data, headers, header_count, callback, user_data, 0);
+}
+
+int evo_net_request_async_avio(const char *method, const char *url, const char *post_data,
+                               const char **headers, int header_count,
+                               evo_net_cb callback, void *user_data)
+{
+    return request_async(method, url, post_data, headers, header_count, callback, user_data, 1);
 }
 
 /* ---- Why a request failed, in words (the callback only gets success/status) ---- */

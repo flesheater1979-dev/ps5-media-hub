@@ -49,6 +49,16 @@ public:
     virtual void saveLastFolder() = 0;
     virtual void loadLastFolder() = 0;
 
+    /* Every USB drive and M.2 extension the console mounts (usb0-usb7, ext0,
+     * ext1) that has something on it. usbHome() is where the USB source opens:
+     * the one drive's own root, or kUsbRoot - a list of the drives - when
+     * there are several. */
+    virtual std::string usbHome() const = 0;
+    virtual bool isUsbPath(const std::string& path) const = 0;
+    /* "/mnt/usb1/Movies" -> "/mnt/usb1"; "" when path is on no drive. */
+    virtual std::string usbMountOf(const std::string& path) const = 0;
+    virtual std::string usbMountLabel(const std::string& mount) const = 0;
+
     virtual std::string getFullPath(size_t index) const = 0;
     virtual FileCategory classifyFile(const std::string& fileName, int entryType) const = 0;
     virtual const char* getFileCategoryLabel(FileCategory category) const = 0;

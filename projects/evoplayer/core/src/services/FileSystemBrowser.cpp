@@ -38,6 +38,62 @@ static bool CaseInsensitiveContains(const std::string& haystack, const std::stri
     return (it != haystack.end());
 }
 
+/* The console mounts each USB port as usbN and M.2 extended storage as extN.
+ * They all exist as directories whether or not anything is plugged in, so a
+ * mount counts only when it has an entry. */
+static const char* const kUsbMounts[] = {
+    "/mnt/usb0", "/mnt/usb1", "/mnt/usb2", "/mnt/usb3",
+    "/mnt/usb4", "/mnt/usb5", "/mnt/usb6", "/mnt/usb7",
+    "/mnt/ext0", "/mnt/ext1",
+};
+/* Not a real directory: the list of drives, shown when there is more than one. */
+static const char* const kUsbRoot = "/mnt/usb";
+
+static bool hasEntries(const char* path) {
+    evo_dir_t* dir = evo_opendir(path);
+    if (!dir) return false;
+    bool any = false;
+    struct dirent* e;
+    while ((e = evo_readdir(dir)) != nullptr) {
+        if (e->d_name[0] != '.') { any = true; break; }
+    }
+    evo_closedir(dir);
+    return any;
+}
+
+std::vector<std::string> FileSystemBrowser::usbMounts() const {
+    evo_jailbreak_ensure();
+    std::vector<std::string> out;
+    for (const char* m : kUsbMounts) {
+        if (hasEntries(m)) out.push_back(m);
+    }
+    return out;
+}
+
+std::string FileSystemBrowser::usbHome() const {
+    const std::vector<std::string> mounts = usbMounts();
+    if (mounts.size() > 1) return kUsbRoot;
+    if (mounts.size() == 1) return mounts[0];
+    return "/mnt/usb0";
+}
+
+std::string FileSystemBrowser::usbMountOf(const std::string& path) const {
+    for (const char* m : kUsbMounts) {
+        const size_t n = std::strlen(m);
+        if (path.rfind(m, 0) == 0 && (path.size() == n || path[n] == '/')) return m;
+    }
+    return "";
+}
+
+bool FileSystemBrowser::isUsbPath(const std::string& path) const {
+    return path == kUsbRoot || !usbMountOf(path).empty();
+}
+
+std::string FileSystemBrowser::usbMountLabel(const std::string& mount) const {
+    const std::string name = mount.substr(mount.find_last_of('/') + 1);   /* usb1, ext0 */
+    return (name.rfind("ext", 0) == 0 ? "M.2 STORAGE (" : "USB DRIVE (") + name + ")";
+}
+
 FileSystemBrowser::FileSystemBrowser() {
     m_sources = {
         { "USB DRIVE",        "USB",      "/mnt/usb0" },
@@ -53,6 +109,7 @@ void FileSystemBrowser::setCurrentPath(const std::string& path) {
 
 bool FileSystemBrowser::isSafePath(const std::string& path) const {
     if (path.empty()) return false;
+    if (isUsbPath(path)) return true;
     for (const auto& src : m_sources) {
         if (path.rfind(src.rootPath, 0) == 0 &&
             (path.size() == src.rootPath.size() || path[src.rootPath.size()] == '/')) {
@@ -96,6 +153,17 @@ bool FileSystemBrowser::navigateInto(const std::string& folderName) {
         return false;
     }
 
+    if (m_currentPath == kUsbRoot) {   /* the list of drives: entries carry the mount */
+        for (const auto& entry : m_entries) {
+            if (entry.name == folderName || entry.relativePath == folderName) {
+                m_currentPath = entry.fullPath;
+                clearSearch();
+                return refresh();
+            }
+        }
+        return false;
+    }
+
     std::string newPath = m_currentPath + "/" + folderName;
     m_currentPath = newPath;
     clearSearch();
@@ -105,6 +173,18 @@ bool FileSystemBrowser::navigateInto(const std::string& folderName) {
 bool FileSystemBrowser::navigateUp() {
     if (m_currentPath.empty()) {
         return false;
+    }
+
+    if (m_currentPath == kUsbRoot) {   /* the top of the USB source */
+        m_currentPath = "";
+        clearSearch();
+        return refresh();
+    }
+    /* A drive's own root goes back to the list of drives when there is one. */
+    if (!usbMountOf(m_currentPath).empty() && usbMountOf(m_currentPath) == m_currentPath) {
+        m_currentPath = (usbHome() == kUsbRoot) ? kUsbRoot : "";
+        clearSearch();
+        return refresh();
     }
 
     // Check if at source root
@@ -138,6 +218,9 @@ bool FileSystemBrowser::refresh() {
             for (const auto& src : m_sources) {
                 scanRecursive(src.rootPath, "", m_searchQuery, 0, src.label);
             }
+            for (const auto& mount : usbMounts()) {   /* the other drives; usb0 is a source */
+                if (mount != "/mnt/usb0") scanRecursive(mount, "", m_searchQuery, 0, usbMountLabel(mount));
+            }
         } else {
             for (const auto& src : m_sources) {
                 BrowserEntry entry;
@@ -150,6 +233,22 @@ bool FileSystemBrowser::refresh() {
             }
             return true;
         }
+    } else if (m_currentPath == kUsbRoot) {
+        for (const auto& mount : usbMounts()) {
+            const std::string label = usbMountLabel(mount);
+            if (!m_searchQuery.empty()) {
+                scanRecursive(mount, "", m_searchQuery, 0, label);
+            } else {
+                BrowserEntry entry;
+                entry.name = label;
+                entry.relativePath = label;
+                entry.fullPath = mount;
+                entry.category = FileCategory::Folder;
+                entry.directoryType = 4; // DT_DIR
+                m_entries.push_back(std::move(entry));
+            }
+        }
+        if (m_searchQuery.empty()) return true;
     } else {
         if (!m_searchQuery.empty()) {
             scanRecursive(m_currentPath, "", m_searchQuery, 0);

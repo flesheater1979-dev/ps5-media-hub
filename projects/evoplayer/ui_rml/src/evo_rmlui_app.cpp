@@ -55,6 +55,9 @@ static std::string evo_fmt(const char* fmt, ...)
 #include "evo_rmlui_render_agc.h"
 #include "evo_agc_runtime.h"
 #include "evo_boot_log.h"
+#include "evo_boot_trace.h"
+#include "evo_data_path.h"
+#include <unistd.h>
 #else
 static inline int evo_agc_runtime_is_120hz(void) { return 0; }
 #endif
@@ -347,6 +350,20 @@ bool EvoRmlApp::Initialize(int width, int height) {
             Rml::LoadFontFace(p + "NotoSans-Bold.ttf", true);
             Rml::LoadFontFace(p + "DejaVuSans.ttf", true);
             Rml::LoadFontFace(p + "DejaVuSans-Bold.ttf", true);
+            /* Thai: neither Noto Sans nor DejaVu has it. */
+            Rml::LoadFontFace(p + "NotoSansThai-Regular.ttf", true);
+            Rml::LoadFontFace(p + "NotoSansThai-Bold.ttf", true);
+            /* CJK is 4-8 MB a script, too big to embed in the binary: load
+             * whichever Noto Sans CJK subset files are in the data folder
+             * (/data/evoplayer/fonts/NotoSansSC-Regular.otf, ...JP, ...KR). */
+#if defined(EVO_AGC_DEVICE)
+            for (const char* cjk : { "NotoSansSC-Regular.otf", "NotoSansJP-Regular.otf",
+                                     "NotoSansKR-Regular.otf" }) {
+                const std::string path = std::string(evo_data_path("fonts/")) + cjk;
+                if (access(path.c_str(), R_OK) == 0 && Rml::LoadFontFace(path, true))
+                    evo_bt("RmlUi: loaded CJK face %s", path.c_str());
+            }
+#endif
             fprintf(stderr, "[EVO RmlUi] Loaded font face from %s\n", p.c_str());
             break;
         }

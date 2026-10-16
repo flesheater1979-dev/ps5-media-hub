@@ -736,6 +736,7 @@ typedef struct {
     int focus_row;            /* 0..4 (4 = action bar) */
     int focus_col;
     int show_caret;
+    int cursor;               /* caret as a byte offset into text */
 } evo_keyboard_params_t;
 void evo_rmlui_update_keyboard(const evo_keyboard_params_t* params);
 void evo_rmlui_render_keyboard(uint32_t* framebuffer, int width, int height);

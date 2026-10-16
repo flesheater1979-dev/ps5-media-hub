@@ -212,6 +212,10 @@ typedef struct {
 } upstream_t;
 
 static upstream_t      s_up;
+/* A page that ships inside the app ("local:nuvio" -> /app0/assets/nuvio): the
+ * server answers from these files instead of proxying an upstream. Empty = off.
+ * Set on the main thread at open, before the server starts. */
+static char            s_local_root[96];
 static pthread_mutex_t s_mx = PTHREAD_MUTEX_INITIALIZER;
 static int  s_listen_fd  = -1;
 static volatile int s_srv_stop = 0;
@@ -926,6 +930,111 @@ static void serve_storage(int fd, const char *method, char *req, size_t got, siz
     free(b);
 }
 
+static const char *mime_for(const char *path)
+{
+    const char *dot = strrchr(path, '.');
+    if (!dot) return "application/octet-stream";
+    static const struct { const char *ext, *type; } k[] = {
+        { ".html", "text/html; charset=utf-8" }, { ".js", "application/javascript; charset=utf-8" },
+        { ".mjs", "application/javascript; charset=utf-8" }, { ".css", "text/css; charset=utf-8" },
+        { ".json", "application/json; charset=utf-8" }, { ".svg", "image/svg+xml" },
+        { ".png", "image/png" }, { ".jpg", "image/jpeg" }, { ".jpeg", "image/jpeg" },
+        { ".webp", "image/webp" }, { ".gif", "image/gif" }, { ".ico", "image/x-icon" },
+        { ".woff", "font/woff" }, { ".woff2", "font/woff2" }, { ".ttf", "font/ttf" },
+        { ".otf", "font/otf" }, { ".txt", "text/plain; charset=utf-8" },
+        { ".map", "application/json" }, { ".mp4", "video/mp4" }, { ".wasm", "application/wasm" },
+    };
+    for (size_t i = 0; i < sizeof k / sizeof k[0]; i++)
+        if (!strcmp(dot, k[i].ext)) return k[i].type;     /* build output is lower case */
+    return "application/octet-stream";
+}
+
+/*
+ * The page that ships inside the app. GET/HEAD only, one file per request, no
+ * directory reads (the /app0 sandbox breaks those; every path is opened by
+ * name). A path with no file extension that is not there is a route of the
+ * single-page app, so it gets index.html. index.html carries the hook, exactly
+ * as a proxied page does.
+ */
+static void serve_local(int fd, const char *method, const char *path)
+{
+    if (strcmp(method, "GET") && strcmp(method, "HEAD")) {
+        respond(fd, "405 Method Not Allowed", "text/plain", "method not allowed", 18);
+        return;
+    }
+    char rel[400];
+    size_t n = strcspn(path, "?#");
+    if (n == 0 || n >= sizeof rel || path[0] != '/') {
+        respond(fd, "400 Bad Request", "text/plain", "bad request", 11);
+        return;
+    }
+    memcpy(rel, path, n);
+    rel[n] = '\0';
+    if (strstr(rel, "..") || strchr(rel, '\\')) {
+        respond(fd, "403 Forbidden", "text/plain", "forbidden", 9);
+        return;
+    }
+    if (!strcmp(rel, "/")) snprintf(rel, sizeof rel, "/index.html");
+
+    char file[512];
+    snprintf(file, sizeof file, "%s%s", s_local_root, rel);
+    FILE *f = fopen(file, "rb");
+    if (!f) {
+        const char *dot = strrchr(rel, '.'), *sl = strrchr(rel, '/');
+        if (!dot || (sl && dot < sl)) {              /* an app route, not a file */
+            snprintf(rel, sizeof rel, "/index.html");
+            snprintf(file, sizeof file, "%s/index.html", s_local_root);
+            f = fopen(file, "rb");
+        }
+    }
+    if (!f) {
+        tlog("local: 404 %.100s", rel);
+        pthread_mutex_lock(&s_mx);
+        if (!strcmp(rel, "/index.html")) s_entry_failed = 1;
+        pthread_mutex_unlock(&s_mx);
+        respond(fd, "404 Not Found", "text/plain", "not found", 9);
+        return;
+    }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (size < 0) { fclose(f); respond(fd, "500 Internal Server Error", "text/plain", "read", 4); return; }
+
+    char head[320];
+    if (!strcmp(rel, "/index.html")) {
+        if (size > (8l << 20)) { fclose(f); respond(fd, "500 Internal Server Error", "text/plain", "large", 5); return; }
+        char *b = malloc((size_t)size + 1);
+        size_t blen = b ? fread(b, 1, (size_t)size, f) : 0;
+        fclose(f);
+        if (!b) { respond(fd, "500 Internal Server Error", "text/plain", "oom", 3); return; }
+        b[blen] = '\0';
+        char *ins = ci_strstr(b, "<head");
+        ins = ins ? memchr(ins, '>', blen - (size_t)(ins - b)) : NULL;
+        size_t at = ins ? (size_t)(ins - b) + 1 : 0;
+        char tag[96];
+        size_t tl = hook_tag(tag, sizeof tag);
+        snprintf(head, sizeof head,
+                 "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %zu\r\n"
+                 "Cache-Control: no-cache\r\nConnection: close\r\n\r\n", blen + tl);
+        if (send_all(fd, head, strlen(head)) == 0 && strcmp(method, "HEAD") &&
+            send_all(fd, b, at) == 0 && send_all(fd, tag, tl) == 0)
+            send_all(fd, b + at, blen - at);
+        tlog("local: injected hook into %.60s (%zu bytes)", rel, blen);
+        free(b);
+        return;
+    }
+    snprintf(head, sizeof head,
+             "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\n"
+             "Cache-Control: max-age=600\r\nConnection: close\r\n\r\n", mime_for(rel), size);
+    if (send_all(fd, head, strlen(head)) == 0 && strcmp(method, "HEAD")) {
+        char buf[32768];
+        size_t r;
+        while ((r = fread(buf, 1, sizeof buf, f)) > 0)
+            if (send_all(fd, buf, r) != 0) break;
+    }
+    fclose(f);
+}
+
 static int is_html_entry(const char *path)
 {
     size_t n = strcspn(path, "?#");
@@ -1124,8 +1233,10 @@ static void *conn_thread(void *arg)
         sscanf(req, "%15s %4095s", method, path);
         if (!strncmp(path, "/evo/storage", 12))
             serve_storage(fd, method, req, got, hl);
-        else if (!strncmp(path, "/evo/", 5) || !s_up.enabled)
+        else if (!strncmp(path, "/evo/", 5) || (!s_up.enabled && !s_local_root[0]))
             serve_evo(fd, path);
+        else if (s_local_root[0])
+            serve_local(fd, method, path);
         else
             proxy_request(fd, req, got, hl, method, path);
     }
@@ -1388,7 +1499,21 @@ int evo_webui_open_ex(const char *upstream, const char *path, const char *hook_p
         return -2;
     }
     memset(&s_up, 0, sizeof s_up);
-    if (!upstream || parse_upstream(upstream) != 0) {
+    s_local_root[0] = '\0';
+    if (upstream && !strncmp(upstream, "local:", 6)) {
+        /* A page shipped inside the app: no upstream, no network check. */
+        char idx[160];
+        snprintf(s_local_root, sizeof s_local_root, "/app0/assets/%s", upstream + 6);
+        snprintf(idx, sizeof idx, "%s/index.html", s_local_root);
+        FILE *t = fopen(idx, "rb");
+        if (!t) {
+            LOG("open refused: nothing is built in at %s", idx);
+            s_local_root[0] = '\0';
+            return -1;
+        }
+        fclose(t);
+        snprintf(s_up.base, sizeof s_up.base, "%s", upstream + 6);
+    } else if (!upstream || parse_upstream(upstream) != 0) {
         LOG("open refused: '%s' is not http[s]://<host>:<port>", upstream ? upstream : "(null)");
         return -1;
     }
@@ -1402,13 +1527,17 @@ int evo_webui_open_ex(const char *upstream, const char *path, const char *hook_p
         s_hook_profile[0] ? s_hook_profile : "media-server");
     s_error_pending = 0;
     s_check_rc = 0;
-    pthread_t t;
-    pthread_attr_t at;
-    pthread_attr_init(&at);
-    pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
-    int trc = pthread_create(&t, &at, check_thread, NULL);
-    pthread_attr_destroy(&at);
-    if (trc != 0) s_check_rc = 1;        /* no thread: skip the check, open anyway */
+    if (s_local_root[0]) {
+        s_check_rc = 1;                  /* nothing to reach: the page is in the app */
+    } else {
+        pthread_t t;
+        pthread_attr_t at;
+        pthread_attr_init(&at);
+        pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+        int trc = pthread_create(&t, &at, check_thread, NULL);
+        pthread_attr_destroy(&at);
+        if (trc != 0) s_check_rc = 1;    /* no thread: skip the check, open anyway */
+    }
     s_state = P_CHECK;
     s_frames = 0;
     return 0;

@@ -360,7 +360,7 @@ void BrowserScreen::rebuildItems() {
             }
 
             if (entry->category == FileCategory::Folder) {
-                item.iconPath = (!m_isSearching && browser->getCurrentPath() == "/mnt/usb0")
+                item.iconPath = (!m_isSearching && browser->getCurrentPath() == browser->usbHome())
                     ? "../icons/icon_browse_usb.png"
                     : "../icons/icon_folder.png";
                 item.detail = "Folder";
@@ -711,7 +711,7 @@ void BrowserScreen::onEnter() {
         if (browser->getCurrentPath().empty()) {
             browser->loadLastFolder();
             if (browser->getCurrentPath().empty()) {
-                browser->setCurrentPath("/mnt/usb0");
+                browser->setCurrentPath(browser->usbHome());
             }
         }
         /* Never open on an empty pane: a restored folder that has since been
@@ -853,13 +853,13 @@ void BrowserScreen::activateSidebar(bool focusGrid) {
 
     switch (m_sidebarIndex) {
         case 0: // USB Drive
-            if (m_activeSource != 0 || (browser && browser->getCurrentPath().rfind("/mnt/usb0", 0) != 0)) {
+            if (m_activeSource != 0 || (browser && !browser->isUsbPath(browser->getCurrentPath()))) {
                 m_activeSource = 0;
                 m_isSearching = false;
                 m_searchQuery.clear();
                 if (browser) {
                     browser->clearSearch();
-                    browser->setCurrentPath("/mnt/usb0");
+                    browser->setCurrentPath(browser->usbHome());
                 }
                 resetSelection();
                 if (focusGrid) toast("STORAGE", "USB Drive");
@@ -1236,7 +1236,7 @@ bool BrowserScreen::handleInput(uint32_t pressed, uint32_t held, uint32_t releas
         if (m_activeSource == 0 || m_activeSource == 1) {
             auto browser = Application::getInstance().getFileSystemBrowser();
             if (browser && !browser->getCurrentPath().empty() &&
-                browser->getCurrentPath() != "/mnt/usb0" &&
+                browser->getCurrentPath() != browser->usbHome() &&
                 browser->getCurrentPath() != "/data") {
                 evo_feedback(EVO_FB_CANCEL);
                 browser->navigateUp();
@@ -1382,10 +1382,14 @@ void BrowserScreen::render(uint32_t* framebuffer, int width, int height) {
 
     if (m_activeSource == 0) {
         if (browser && !browser->getCurrentPath().empty()) {
-            if (browser->getCurrentPath() == "/mnt/usb0") {
+            const std::string usbMount = browser->usbMountOf(browser->getCurrentPath());
+            if (browser->getCurrentPath() == browser->usbHome()) {
                 std::snprintf(m_formattedPath, sizeof(m_formattedPath), "USB Drive");
-            } else if (browser->getCurrentPath().rfind("/mnt/usb0", 0) == 0) {
-                std::string bc = formatPathBreadcrumbs("USB Drive", browser->getCurrentPath(), 9);
+            } else if (!usbMount.empty()) {
+                /* A drive among several is named by its mount; the path after it is the same length (9) for all. */
+                const std::string root = (browser->usbHome() == usbMount) ? std::string("USB Drive")
+                                                                         : browser->usbMountLabel(usbMount);
+                std::string bc = formatPathBreadcrumbs(root.c_str(), browser->getCurrentPath(), usbMount.size());
                 std::snprintf(m_formattedPath, sizeof(m_formattedPath), "%s", bc.c_str());
             } else {
                 std::snprintf(m_formattedPath, sizeof(m_formattedPath), "%s", browser->getCurrentPath().c_str());
@@ -1429,7 +1433,7 @@ void BrowserScreen::render(uint32_t* framebuffer, int width, int height) {
 
     // At root check
     if (m_activeSource == 0) {
-        params.at_root = (!browser || browser->getCurrentPath().empty() || browser->getCurrentPath() == "/mnt/usb0") ? 1 : 0;
+        params.at_root = (!browser || browser->getCurrentPath().empty() || browser->getCurrentPath() == browser->usbHome()) ? 1 : 0;
     } else if (m_activeSource == 1) {
         params.at_root = (!browser || browser->getCurrentPath().empty() || browser->getCurrentPath() == "/data") ? 1 : 0;
     } else if (m_activeSource == 2) {

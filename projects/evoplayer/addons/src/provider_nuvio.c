@@ -53,7 +53,22 @@ static int nv_init(void)
 
 static void nv_shutdown(void) { /* holds no resources */ }
 
-static int nv_is_configured(void) { return g_host[0] ? 1 : 0; }
+/* The Nuvio TV web app can ship inside EVO (assets/nuvio, built by
+ * scripts/build-nuvio-web.sh). When it is there Nuvio needs no address: EVO
+ * serves it from its own local server, so it works with no internet host to
+ * depend on. An address typed in the options overrides it. */
+#define NUVIO_BUNDLE_INDEX "/app0/assets/nuvio/index.html"
+#define NUVIO_BUNDLE_URL   "local:nuvio"
+
+static int nv_bundled(void)
+{
+    FILE *f = fopen(NUVIO_BUNDLE_INDEX, "rb");
+    if (!f) return 0;
+    fclose(f);
+    return 1;
+}
+
+static int nv_is_configured(void) { return (g_host[0] || nv_bundled()) ? 1 : 0; }
 
 static const char *nv_get_source(void)
 {
@@ -65,6 +80,14 @@ static const char *nv_get_source(void)
 
 static int nv_set_source(const char *value)
 {
+    if (!value || !value[0]) {                   /* empty: back to the built-in Nuvio */
+        FILE *c = fopen(evo_data_path(NUVIO_CONF), "w");
+        if (c) fclose(c);
+        g_host[0] = '\0';
+        g_port = NUVIO_DEFAULT_PORT;
+        g_https = 0;
+        return c ? 0 : -1;
+    }
     char host[128];
     int port = NUVIO_DEFAULT_PORT, tls = 0;
     if (evo_provider_parse_web_source(value, host, sizeof host, &port, &tls,
@@ -82,7 +105,11 @@ static int nv_set_source(const char *value)
     return 0;
 }
 
-static const char *nv_web_ui_url(void) { return nv_get_source(); }
+static const char *nv_web_ui_url(void)
+{
+    if (g_host[0]) return nv_get_source();
+    return nv_bundled() ? NUVIO_BUNDLE_URL : "";
+}
 
 const evo_provider_t evo_provider_nuvio = {
     .id            = "nuvio",

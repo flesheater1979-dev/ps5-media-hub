@@ -140,6 +140,7 @@ MEDIA_SRCS := \
 ADDON_SRCS := \
     addons/src/cJSON.c \
     addons/src/evo_net.c \
+    addons/src/evo_http_avio.c \
     addons/src/addon_emby.c \
     addons/src/evo_provider_mgr.c \
     addons/src/evo_provider_bundle.c \

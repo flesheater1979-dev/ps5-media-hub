@@ -294,6 +294,7 @@ typedef struct {
     int             mode;        /* 0 = lower, 1 = upper, 2 = symbols */
     int             row;         /* 0..4 */
     int             col;         /* 0..9 for rows 0..3; 0..5 for row 4 */
+    int             cursor;      /* byte offset of the caret in buffer; -1 = the end */
     uint32_t        blink_timer;
     evo_keyboard_cb callback;
     void           *userdata;
@@ -408,6 +409,7 @@ static void kb_open(const char *title, const char *initial_value, int max_len,
     }
 
     if (initial_value) {
+        g_kb.cursor = -1;
         strncpy(g_kb.buffer, initial_value, sizeof(g_kb.buffer) - 1);
     }
 
@@ -543,6 +545,7 @@ void evo_keyboard_update(void)
         g_pending_text = 0;
         if (g_kb.is_open && !g_kb.is_native_active) {
             snprintf(g_kb.buffer, sizeof g_kb.buffer, "%s", g_pending_buf);
+            g_kb.cursor = -1;
             if ((int)strlen(g_kb.buffer) > g_kb.max_len)
                 g_kb.buffer[g_kb.max_len] = '\0';
         }
@@ -582,12 +585,40 @@ void evo_keyboard_update(void)
 }
 
 
+/* The caret as a byte offset into the buffer, clamped. -1 means the end, which is
+ * where every external write (open, phone text) leaves it. */
+static size_t kb_cursor(void)
+{
+    size_t len = strlen(g_kb.buffer);
+    if (g_kb.cursor < 0 || (size_t)g_kb.cursor > len) g_kb.cursor = (int)len;
+    return (size_t)g_kb.cursor;
+}
+
+/* Move the caret one character (UTF-8 aware): dir -1 = left, +1 = right. */
+static void move_cursor(int dir)
+{
+    size_t len = strlen(g_kb.buffer);
+    size_t cur = kb_cursor();
+    if (dir < 0 && cur > 0) {
+        do { cur--; } while (cur > 0 && ((unsigned char)g_kb.buffer[cur] & 0xC0) == 0x80);
+    } else if (dir > 0 && cur < len) {
+        do { cur++; } while (cur < len && ((unsigned char)g_kb.buffer[cur] & 0xC0) == 0x80);
+    } else {
+        evo_feedback(EVO_FB_BOUNDARY);
+        return;
+    }
+    g_kb.cursor = (int)cur;
+    evo_feedback(EVO_FB_MOVE);
+}
+
 static void insert_char(char c)
 {
     size_t len = strlen(g_kb.buffer);
     if ((int)len < g_kb.max_len && len + 1 < sizeof(g_kb.buffer)) {
-        g_kb.buffer[len] = c;
-        g_kb.buffer[len + 1] = '\0';
+        size_t cur = kb_cursor();
+        memmove(g_kb.buffer + cur + 1, g_kb.buffer + cur, len - cur + 1);
+        g_kb.buffer[cur] = c;
+        g_kb.cursor = (int)cur + 1;
         evo_feedback(EVO_FB_MOVE);
     } else {
         evo_feedback(EVO_FB_BOUNDARY);
@@ -597,8 +628,12 @@ static void insert_char(char c)
 static void backspace_char(void)
 {
     size_t len = strlen(g_kb.buffer);
-    if (len > 0) {
-        g_kb.buffer[len - 1] = '\0';
+    size_t cur = kb_cursor();
+    if (cur > 0) {   /* delete the character before the caret */
+        size_t start = cur - 1;
+        while (start > 0 && ((unsigned char)g_kb.buffer[start] & 0xC0) == 0x80) start--;
+        memmove(g_kb.buffer + start, g_kb.buffer + cur, len - cur + 1);
+        g_kb.cursor = (int)start;
         evo_feedback(EVO_FB_TOGGLE);
     } else {
         evo_feedback(EVO_FB_BOUNDARY);
@@ -705,11 +740,10 @@ int evo_keyboard_handle_input(uint32_t pressed)
         return 1;
     }
 
-    if (pressed & (EVO_PAD_L1 | EVO_PAD_R1)) { /* L1 or R1 — Cycle Mode */
-        g_kb.mode = (g_kb.mode + 1) % 3;
-        evo_feedback(EVO_FB_TOGGLE);
-        return 1;
-    }
+    /* L1 / R1 — move the caret, to fix a typo in the middle of the text. The
+     * layer is switched with the 123 / ABC key. */
+    if (pressed & EVO_PAD_L1) { move_cursor(-1); return 1; }
+    if (pressed & EVO_PAD_R1) { move_cursor(+1); return 1; }
 
     /* CROSS — Activate focused key */
     if (pressed & EVO_PAD_CROSS) {
@@ -735,6 +769,7 @@ int evo_keyboard_handle_input(uint32_t pressed)
                     break;
                 case KB_ACT_CLEAR:
                     g_kb.buffer[0] = '\0';
+                    g_kb.cursor = -1;
                     evo_feedback(EVO_FB_TOGGLE);
                     break;
                 case KB_ACT_CANCEL:
@@ -783,6 +818,7 @@ void evo_screen_keyboard(uint32_t *fb)
     }
     for (int i = 0; i < KB_ACT_COUNT; i++) p.action_labels[i] = ACTION_LABELS[i];
     p.len       = (int)strlen(g_kb.buffer);
+    p.cursor    = (int)kb_cursor();
     p.max_len   = g_kb.max_len;
     p.focus_row = g_kb.row;
     p.focus_col = g_kb.col;
