@@ -158,7 +158,7 @@ a BT.2020 matrix.
 
 A minimal fullscreen-quad vertex program. Reads a structured vertex buffer
 (indexed by `S_VERTEX_ID`), transforms by the MVP in constant buffer b0
-(`geometry_constants[16]` — a 4×4 that maps the Netflix quad's native bounds to
+(`geometry_constants[16]` — a 4×4 that maps the source quad's native bounds to
 the AGC viewport), passes UV to the PS. `sceAgcDcbDrawIndexAuto(&cmd, 4, 2)`
 draws it — **4 vertices, primitive type 2** (a quad / tri-strip).
 
@@ -172,15 +172,15 @@ colour + an optional texture + scissor. So Step 3 needs **new pixel shaders**
 assembled, each with a hand-adapted header. Bounded but real work; defer until
 Step 2 proves the toolchain end to end.
 
-### `netflix-video-resources.bin` (2816 B) — "NGR1" descriptor table
+### `video-resources` table (2816 B) — "NGR1" descriptor table
 
 Magic `NGR1`. Header words: `[1]` = offset of a relocation table (2 entries),
 `[3]` = offset of a second table (8 entries), `[2]` = vertex-buffer offset.
 `prepare_resources()` walks both tables and rebases every entry to absolute
 addresses (`entry[0] += (uintptr_t)resources`), and for SDR overwrites the
 limited-range constants at `+0x500/+0x600/+0x700` with the SDR set. This blob is
-the pre-baked GPU resource layout the recovered Netflix shaders expect; EVO
-reuses it as-is for the video path.
+the pre-baked GPU resource layout the reference shaders expect. (The reference
+blobs were removed from this repository on 2026-09-10 with the sceAgc stack.)
 
 ---
 
@@ -301,7 +301,7 @@ pp/src/pp_agc.c       the port: extern sceAgc*, agc_register_t /
                       pp_agc_present_nv12 (staging + fault guard)
 pp/src/agc_blobs.S    .incbin the 6 pp/blobs/*.bin (vendored ProsperoLight)
 pp/blobs/*.bin        geometry.header/.text, pixel.header/.text.linear-buffer,
-                      pixel.text.p010-passthrough, netflix-video-resources
+                      pixel.text.p010-passthrough, video-resources (all removed)
 ```
 
 ### AGC symbol resolution — SOLVED (#31)
@@ -476,9 +476,8 @@ self-contained in the header.)
 RGA emit AMD's standard code-object metadata, not Sony's `sl00`/`barefoot`
 block. A textured hand-authored PS needs one of: (a) RE + synthesise the `sl00`
 trailer format (KytyPS5 / shadPS5 / mattias800/prosper parsers *read* it —
-invert one); (b) extract a plain "sample texture × vertex colour"
-`(header, .text-with-trailer)` pair from a real PS5 app (how ProsperoLight got
-its NV12 blobs — they're from Netflix); (c) `orbis-wave-psslc` (Sony SDK, not
+invert one); (b) reuse a compiled `(header, .text-with-trailer)` pair from an existing PS5
+app (not pursued: third-party code); (c) `orbis-wave-psslc` (Sony SDK, not
 available). Until then, textured UI (text/icons/art) stays on the CPU-raster →
 NV12 → overlay-quad path (§0, ProsperoLight's HUD model); the GPU geometry path
 is solid-colour only.

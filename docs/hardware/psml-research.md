@@ -111,8 +111,8 @@ now.
    expect. Don't attempt it without a strong reason.
 3. **Run the BcSisr model with EVO's own runtime (big).** The `.psp` holds
    compiled PSSL shaders and weights.
-   - **What it takes:** reverse-engineer the container, rip the shaders (as
-     ShaderRip-PS5 does for game dumps), and dispatch them through EVO's AGC
+   - **What it takes:** reverse-engineer the container, load the shaders from
+     the user's own console at runtime, and dispatch them through EVO's AGC
      runtime. That needs compute dispatch, which EVO doesn't have yet.
    - **Licensing:** the model must be **read from the user's own console at
      runtime** (`/system/common/psml_package/`), never shipped. It is Sony's

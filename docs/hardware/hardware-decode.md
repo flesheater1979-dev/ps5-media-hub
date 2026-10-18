@@ -64,8 +64,8 @@
 >
 > ### What must never be retried
 >
-> - **Sweeping kernel `.text` with `kernel_copyout`.** Panics the console. The
->   `kdump` project was deleted for it. §2's "cannot fault the caller" is true
+> - **Sweeping kernel `.text` with `kernel_copyout`.** Panics the console. A
+>   kernel-dump experiment was deleted for it. §2's "cannot fault the caller" is true
 >   of one small read at a known-good address and does not generalise.
 > - **`sceVideoOutOpen` from a payload.** Panics the console when a compute
 >   queue is allocated afterwards. Returns a bogus handle that passes a `< 0`

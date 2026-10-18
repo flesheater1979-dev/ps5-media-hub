@@ -21,6 +21,5 @@
   {"q": "six connection parallel reader for big http files", "expect": ["evo_parallel_io.c", "issue#122"]},
   {"q": "second Rml context for toasts alongside the main one", "expect": ["rmlui-toast-overlay-75"]},
   {"q": "4K NV12 frames draw black unless converted to planar YUV420P", "expect": ["native-decode-app-slot-plan", "issue#31", "evo-pro/status.md", "native-decode-plan.md"]},
-  {"q": "extract shaders with sl00 barefoot trailer from a game dump", "expect": ["rip-shaders-from-game-dumps", "shader-compilation.md"]},
   {"q": "which issue covers controller vibration haptics", "expect": ["issue#48", "haptics-worth-retesting-ffpfsc"]}
 ]

@@ -360,7 +360,7 @@ pp_agc: sceAgcInit=0x8a6c0004 (already-init, ok)   # 2nd call after the gate; be
 pp_agc: create=0x00000000 link=0x00000000 vs=0x223fac000 ps=0x223fad000  1920x1080 hdr=0
 ```
 `sceAgcCreateShader` ×2 → 0, `sceAgcLinkShaders` → 0, with the **vendored
-ProsperoLight blobs** (`pp/blobs/*.bin`, 6 files, `.incbin` via
+ProsperoLight blobs** (since removed; `pp/blobs/*.bin`, 6 files, `.incbin` via
 `pp/src/agc_blobs.S`). So: sceAgcInit, the 0xD0000 shader-scratch alloc/map,
 `copy_asset` of the blobs to their fixed offsets, `prepare_resources` (NGR1
 rebase + SDR full-range coeffs), CreateShader, LinkShaders — **all work**.

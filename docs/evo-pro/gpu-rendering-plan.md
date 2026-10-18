@@ -154,7 +154,7 @@ and the **flip** onto the GPU for the 4K/1080p video path. The CPU converter
   sandbox class that never reached `sceVideodec2`.)
 - **`pp_agc_init` hardware-verified.** `sceAgcInit` → alloc/map the 0xD0000
   shader scratch (direct-memory type 12, prot 0x33) → `copy_asset` the 6
-  vendored ProsperoLight blobs (`pp/blobs/*.bin`, `.incbin` via
+  vendored ProsperoLight blobs (removed 2026-09-10) (`pp/blobs/*.bin`, `.incbin` via
   `pp/src/agc_blobs.S`) → `prepare_resources` (NGR1 rebase + SDR full-range
   coeffs) → `sceAgcCreateShader` ×2 → `sceAgcLinkShaders` — all return 0.
 - **`render_frame` ported + wired (not run on hardware).** `agc_render_frame`
