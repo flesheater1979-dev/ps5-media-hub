@@ -10,14 +10,23 @@ Plays video from USB drives, internal storage, network shares (FTP), Live TV (IP
 
 ---
 
-## What's New in v0.12.0
+## What's New in v0.12.5
+
+- **Native Plex Integration:** PIN-based linking via `plex.tv/link`, automatic local LAN server discovery, native library/episode browsing, direct stream playback, and timeline watched status reporting.
+- **Multiple USB & M.2 Drives:** Detects `/mnt/usb0`–`/mnt/usb7` and `/mnt/ext0`–`/mnt/ext1`. Displays a drive picker when multiple drives are connected and provides cross-drive search.
+- **Keyboard Caret Navigation:** L1 and R1 move a UTF-8 aware cursor to edit text in place without clearing the entire line.
+- **Home Screen Provider Media:** Provider media resumes directly from the Home screen with asynchronous backdrop and poster cover art decodes.
+- **Local Nuvio App:** Nuvio web app bundled directly in the package (`local:nuvio`) for offline use without requiring external hosts.
+- **Thai Subtitles & CJK Fallback:** Embedded Noto Sans Thai fonts for subtitle rendering, plus runtime CJK font loading from `/data/evoplayer/fonts/`.
+
+Full notes: [CHANGELOG.md](CHANGELOG.md).
+
+### Highlights from v0.12.0
 
 - **Audio Passthrough:** Settings → Audio → `AUDIO PASSTHROUGH` sends Dolby Digital, Dolby Digital Plus (including Atmos), DTS and AAC over HDMI untouched, so your soundbar or receiver does the decoding. Dolby TrueHD is included as an experimental option.
 - **Type from your phone:** server addresses, playlist URLs and addon links can be sent from a phone browser on the same network. The keyboard shows the link to open; nothing to install.
 - **Stremio Addons:** renamed from "Addons", with a `Remove` row for every saved addon, and addresses may be typed without `http://`.
 - **Match video frame rate (experimental):** asks the display for the video's own rate, with a fall-back to 119.88 Hz for film on firmware 12.70.
-
-Full notes: [CHANGELOG.md](CHANGELOG.md). What follows is what 0.11.0 added.
 
 ### Highlights from v0.11.0
 

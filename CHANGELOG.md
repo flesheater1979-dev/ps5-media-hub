@@ -5,6 +5,35 @@ into the GitHub release notes, so keep the headings in the form `## 0.1.0`.
 
 ---
 
+## 0.12.5
+
+![](https://img.shields.io/badge/Release-v0.12.5-blueviolet?style=flat-square) ![](https://img.shields.io/badge/PS5%20Hardware-Verified-0070d1?style=flat-square&logo=playstation&logoColor=white) ![](https://img.shields.io/badge/Firmware-below%2013.60-blue?style=flat-square)
+
+**Plex integration, multiple USB drives, and precision keyboard navigation.** 0.12.5 brings a full native Plex client with PIN pairing and direct playback, lets you browse multiple connected USB drives with friendly labels, adds cursor navigation to the on-screen keyboard, embeds Thai subtitle fonts, and bundles Nuvio locally so it works without an external server.
+
+Download **`PPSA99039.ffpfsc`** and deploy it with ShadowMountPlus, or the folder-title **`.zip`**, then launch EVO from the Games row. Or install it straight from the console with **[ProsperoStore](https://github.com/blackbearreloaded/ProsperoStore)**, the native PS5 app store for [homebrew.page](https://homebrew.page). Runs on any jailbroken PS5 below firmware 13.60.
+
+Questions, bugs or ideas? Join the **[EVO Player Discord](https://discord.gg/MyNnCWNU5)**.
+
+### ![](https://img.shields.io/badge/PROVIDERS-e91e63?style=flat-square) Media Servers & Addons
+
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Native Plex Media Server integration.** Connect your Plex account by visiting `plex.tv/link` on a phone or PC and entering the 4-digit code shown on screen. Browse your libraries, TV shows, seasons, and episodes with native poster grids. Streams direct with automatic LAN server discovery and connection scoring.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Playback progress and timeline sync for Plex.** Playback state (`playing`, `paused`, `stopped`) along with resume position is reported back to your Plex server, keeping your watched state synchronized across all your devices.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Bundled local Nuvio web app.** EVO now bundles Nuvio directly inside the app package (`local:nuvio`), serving it through EVO's local web server with automatic hook injection. Runs out of the box without requiring an external internet host or remote server.
+- ![](https://img.shields.io/badge/IMPROVED-ff8c00?style=flat-square) **FFmpeg AVIO HTTP engine.** Provider API calls (Emby, Nuvio) now utilize FFmpeg's robust asynchronous HTTP client (`evo_net_request_async_avio`) for enhanced connection handling and streaming reliability.
+
+### ![](https://img.shields.io/badge/STORAGE-4caf50?style=flat-square) Storage & USB
+
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Multi-USB & extended storage support.** EVO checks `/mnt/usb0` through `/mnt/usb7` as well as M.2 extended storage (`/mnt/ext0`, `/mnt/ext1`). If more than one drive is connected, EVO presents a drive selector menu with clear drive labels (e.g. `USB DRIVE (usb0)`, `M.2 STORAGE (ext0)`). Searching from the USB source scans across all attached drives.
+
+### ![](https://img.shields.io/badge/INTERFACE-2196f3?style=flat-square) Interface & Subtitles
+
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Keyboard caret navigation.** L1 and R1 now move a UTF-8 aware cursor left and right within the text input field, allowing typos in long URLs or search terms to be fixed without clearing the entire line. Layer switching between letters and numbers/symbols is now handled by the on-screen `123` / `ABC` key.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Home artwork & resume for provider media.** Provider titles can now be resumed directly from the Home Screen Hero row, the Recent shelf, and the Recent Files screen. Asynchronous artwork fetching and decoding displays backdrops and posters with zero UI hitching.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Thai subtitle support.** Embedded `NotoSansThai-Regular.ttf` and `NotoSansThai-Bold.ttf` in RmlUi so Thai subtitle tracks render clearly. Optional CJK font files (`NotoSansSC`, `NotoSansJP`, `NotoSansKR`) placed in `/data/evoplayer/fonts/` are also automatically loaded at startup.
+
+---
+
 ## 0.12.0
 
 ![](https://img.shields.io/badge/Release-v0.12.0-blueviolet?style=flat-square) ![](https://img.shields.io/badge/PS5%20Hardware-Verified-0070d1?style=flat-square&logo=playstation&logoColor=white) ![](https://img.shields.io/badge/Firmware-below%2013.60-blue?style=flat-square)

@@ -26,6 +26,21 @@ typedef struct evo_changelog_release {
 } evo_changelog_release;
 
 /*
+ * Release 0.12.5
+ *
+ * The full notes are in CHANGELOG.md.
+ */
+static const evo_changelog_item EVO_CL_0125[] = {
+    { EVO_CL_NEW,      "NATIVE PLEX INTEGRATION - BROWSE LIBRARIES, POSTERS & DIRECT PLAY" },
+    { EVO_CL_NEW,      "PLAYBACK PROGRESS & RESUME SYNC FOR PLEX" },
+    { EVO_CL_NEW,      "HOME ARTWORK & DIRECT RESUME FOR PROVIDER MEDIA" },
+    { EVO_CL_NEW,      "MULTI-USB SUPPORT - BROWSE AND SEARCH ACROSS MULTIPLE DRIVES" },
+    { EVO_CL_NEW,      "KEYBOARD CARET - L1 AND R1 MOVE CURSOR TO EDIT TEXT ANYWHERE" },
+    { EVO_CL_NEW,      "BUNDLED LOCAL NUVIO - RUNS FULLY OFFLINE WITHOUT AN EXTERNAL SERVER" },
+    { EVO_CL_NEW,      "THAI SUBTITLES - EMBEDDED NOTO SANS THAI FONT & CJK FALLBACK" }
+};
+
+/*
  * Release 0.12.0
  *
  * The full notes are in CHANGELOG.md.
@@ -175,6 +190,7 @@ static const evo_changelog_item EVO_CL_001[] = {
 };
 
 static const evo_changelog_release EVO_CHANGELOG_RELEASES[] = {
+    { "0.12.5", "PLEX INTEGRATION & MULTI-USB", "OCTOBER 2026", EVO_CL_0125, sizeof(EVO_CL_0125)/sizeof(EVO_CL_0125[0]) },
     { "0.12.0", "PASSTHROUGH AUDIO & PHONE INPUT", "OCTOBER 2026", EVO_CL_0120, sizeof(EVO_CL_0120)/sizeof(EVO_CL_0120[0]) },
     { "0.11.0", "A NEW LOOK, PROVIDERS & AI UPSCALING", "OCTOBER 2026", EVO_CL_0110, sizeof(EVO_CL_0110)/sizeof(EVO_CL_0110[0]) },
     { "0.10.0", "THE PS5 APP, GPU & HARDWARE DECODE", "SEPTEMBER 2026", EVO_CL_0100, sizeof(EVO_CL_0100)/sizeof(EVO_CL_0100[0]) },
