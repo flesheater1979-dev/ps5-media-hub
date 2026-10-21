@@ -148,6 +148,32 @@ enum {
  * (themes, EVO_THEME_MAX = 12) plus the section's own rows. */
 #define EVO_RMLUI_SETTINGS_ROWS 20
 
+/* #158: what the preview card beside the rows shows for the focused setting.
+ * Zero = no card (a row set by hand). Every real setting has at least INFO. */
+enum {
+    EVO_RMLUI_PREVIEW_NONE = 0,
+    EVO_RMLUI_PREVIEW_INFO,         /* icon + plain-words benefit */
+    EVO_RMLUI_PREVIEW_DEEP_BLACKS,  /* OFF vs choice, shadows pulled to black */
+    EVO_RMLUI_PREVIEW_UPSCALING,    /* soft crop vs upscaled crop */
+    EVO_RMLUI_PREVIEW_AI_NETWORK,   /* network size: detail vs GPU cost */
+    EVO_RMLUI_PREVIEW_HDR,          /* SDR vs HDR highlights */
+    EVO_RMLUI_PREVIEW_MOTION,       /* 24 fps steps vs smoothed trail */
+    EVO_RMLUI_PREVIEW_REFRESH,      /* 120 Hz output: frame-rate timeline */
+    EVO_RMLUI_PREVIEW_MATCH_RATE,   /* output rate follows the video: judder */
+    EVO_RMLUI_PREVIEW_ASPECT,       /* a frame fit / filled / stretched in a 16:9 box */
+    EVO_RMLUI_PREVIEW_SUB_AUTO,     /* subtitle sample shown or not */
+    EVO_RMLUI_PREVIEW_SUB_FONT,     /* sample line in the chosen face */
+    EVO_RMLUI_PREVIEW_SUB_POS,      /* two lines: stacked above vs top of screen */
+    EVO_RMLUI_PREVIEW_SUB_COLOUR,   /* secondary line colour */
+    EVO_RMLUI_PREVIEW_THEME,        /* swatch of the theme's colours */
+    EVO_RMLUI_PREVIEW_LIGHTBAR,     /* controller light follows the accent */
+    EVO_RMLUI_PREVIEW_CHANNELS,     /* speaker layout: stereo vs 5.1 */
+    EVO_RMLUI_PREVIEW_PASSTHROUGH,  /* decoded in EVO vs bitstream to receiver */
+    EVO_RMLUI_PREVIEW_SURROUND      /* speaker layout with the test action */
+};
+
+#define EVO_RMLUI_PREVIEW_CHOICES 12  /* EVO_THEME_MAX, the longest list */
+
 typedef struct {
     const char* title;
     const char* detail;
@@ -158,6 +184,16 @@ typedef struct {
     int kind;       /* EVO_RMLUI_ROW_* */
     int toggle_on;  /* TOGGLE: switch state. OPTION: is this the current choice. */
     int is_disabled; /* dimmed, no chevron; it depends on another setting */
+    /* #158 preview card. An OPTION row carries its setting's values, so the card
+     * follows the highlighted choice. */
+    int preview;                /* EVO_RMLUI_PREVIEW_* */
+    int preview_index;          /* VALUE: current choice. OPTION: its own index. TOGGLE: toggle_on. */
+    const char* benefit;        /* plain words: what it improves */
+    int choice_count;           /* 0 for a toggle (OFF / ON) */
+    const char* choice[EVO_RMLUI_PREVIEW_CHOICES];
+    /* THEME only: each choice's page background and accent, 0xRRGGBB. */
+    unsigned int choice_bg[EVO_RMLUI_PREVIEW_CHOICES];
+    unsigned int choice_accent[EVO_RMLUI_PREVIEW_CHOICES];
 } evo_rmlui_settings_row_t;
 
 typedef struct {

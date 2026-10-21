@@ -343,6 +343,14 @@ const char *evo_theme_name(int index)
     return g_themes[index].name;
 }
 
+const evo_theme *evo_theme_at(int index)
+{
+    if (!g_inited) evo_theme_init();
+    if (index < 0 || index >= g_count)
+        return NULL;
+    return &g_themes[index];
+}
+
 int evo_theme_index(void)
 {
     return g_active;

@@ -8,6 +8,7 @@
 #define EVO_HUI_SETTINGS_HPP
 
 #include "evo_hui_screens.hpp"
+#include "evo_hui_settings_preview.hpp"
 
 #include <string>
 #include <vector>
@@ -36,6 +37,11 @@ class SettingsScreen
         int kind = 0;
         int toggle_on = 0;
         int is_disabled = 0;
+        int preview = 0;
+        int preview_index = 0;
+        std::string benefit;
+        std::vector<std::string> choices;
+        std::vector<unsigned int> choice_bg, choice_accent;
     };
 
     /* Top of a row inside the card, before scrolling. */
@@ -43,11 +49,9 @@ class SettingsScreen
     float row_y(int index) const { return row_top(index) - scroll_.value; }
     void draw_row(hui::gfx::DrawList &list, const Context &ctx, const RowData &row, const hui::gfx::Rect &r, int index) const;
 
-    /* #158: 0 none, 1 Deep Blacks, 2 Upscaling; level is the highlighted choice. */
+    /* #158: the card for the focused setting; kind 0 = none. */
     void detect_preview();
-    void draw_preview(hui::gfx::DrawList &list, const Context &ctx, const hui::gfx::Rect &box) const;
-    int preview_kind_ = 0;
-    int preview_level_ = 0;
+    SettingsPreview preview_;
 
     evo_rmlui_settings_params_t params_{};
     std::string title_;

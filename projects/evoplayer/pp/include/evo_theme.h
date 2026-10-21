@@ -83,6 +83,9 @@ int evo_theme_count(void);
 /* Name of theme `index`, for the settings row. NULL if out of range. */
 const char *evo_theme_name(int index);
 
+/* The theme at index, or NULL out of range (Settings previews every theme). */
+const evo_theme *evo_theme_at(int index);
+
 /* Index of the active theme. */
 int evo_theme_index(void);
 

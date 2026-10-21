@@ -85,6 +85,57 @@ struct SettingDef {
     int         opt_current;
     const char* opt_label[kMaxOptions];
     bool        disabled;   /* depends on another setting: dimmed, Cross does nothing */
+    int         preview;    /* EVO_RMLUI_PREVIEW_* (#158) */
+    const char* benefit;    /* plain words, shown in the preview card */
+};
+
+struct PreviewSpec { SettingKey key; int kind; const char* benefit; };
+const PreviewSpec kPreviews[] = {
+    {SettingKey::DefaultAspect, EVO_RMLUI_PREVIEW_ASPECT,
+     "Sets how video fills the screen: fit keeps its shape, fill crops the edges, stretch fills the screen and distorts."},
+    {SettingKey::ResumePlayback, EVO_RMLUI_PREVIEW_INFO, "Picks a film up where you stopped instead of from the start."},
+    {SettingKey::VideoDecoder, EVO_RMLUI_PREVIEW_INFO,
+     "Hardware decoding is smoother and cooler. Software is the fallback for formats the console cannot decode."},
+    {SettingKey::Upscaling, EVO_RMLUI_PREVIEW_UPSCALING,
+     "Soft video below your screen's resolution looks crisper. Higher modes cost more GPU."},
+    {SettingKey::DeepBlacks, EVO_RMLUI_PREVIEW_DEEP_BLACKS,
+     "Dark scenes look deeper instead of washed out. Best on OLED and HDR screens."},
+    {SettingKey::AiNetwork, EVO_RMLUI_PREVIEW_AI_NETWORK,
+     "A bigger network gives a sharper picture but is heavier. Maximum is for PS5 Pro."},
+    {SettingKey::MotionSmoothing, EVO_RMLUI_PREVIEW_MOTION,
+     "Pans and sports look fluid. Films can look too smooth, and fast motion can show haloes."},
+    {SettingKey::RefreshRate, EVO_RMLUI_PREVIEW_REFRESH,
+     "24 fps film plays more evenly on a 120 Hz output. The TV goes black briefly on each switch."},
+    {SettingKey::MatchVideoRate, EVO_RMLUI_PREVIEW_MATCH_RATE,
+     "Outputs the video's own rate (24p or 50 Hz) so motion has no judder."},
+    {SettingKey::HdrOutput, EVO_RMLUI_PREVIEW_HDR,
+     "Highlights like the sun and lamps get brighter without clipping. Needs an HDR10 TV."},
+    {SettingKey::OutputChannels, EVO_RMLUI_PREVIEW_CHANNELS,
+     "Stereo mixes 5.1 and 7.1 down to two speakers or headphones."},
+    {SettingKey::AudioPassthrough, EVO_RMLUI_PREVIEW_PASSTHROUGH,
+     "Sends Dolby and DTS untouched to your receiver over HDMI."},
+    {SettingKey::SurroundTest, EVO_RMLUI_PREVIEW_SURROUND,
+     "Plays a tone through each speaker so you can check your layout."},
+    {SettingKey::NavigationSounds, EVO_RMLUI_PREVIEW_INFO, "A soft click when you move and press buttons."},
+    {SettingKey::AutoSubtitles, EVO_RMLUI_PREVIEW_SUB_AUTO, "Loads subtitles on its own when a file has them."},
+    {SettingKey::SubtitleFont, EVO_RMLUI_PREVIEW_SUB_FONT, "Picks the typeface for on-screen subtitles."},
+    {SettingKey::SecondaryPosition, EVO_RMLUI_PREVIEW_SUB_POS,
+     "Where the second line of dialogue goes when two tracks are shown."},
+    {SettingKey::SecondaryColour, EVO_RMLUI_PREVIEW_SUB_COLOUR, "A different colour keeps the two lines apart."},
+    {SettingKey::Theme, EVO_RMLUI_PREVIEW_THEME, "Changes the colours of the whole app."},
+    {SettingKey::Lightbar, EVO_RMLUI_PREVIEW_LIGHTBAR, "The DualSense light follows the theme accent."},
+    {SettingKey::FoldersFirst, EVO_RMLUI_PREVIEW_INFO, "Lists folders above files in the USB browser."},
+    {SettingKey::KeyboardInput, EVO_RMLUI_PREVIEW_INFO,
+     "The virtual keyboard is drawn by EVO. The native one is the PS5 system keyboard."},
+    {SettingKey::AskStream, EVO_RMLUI_PREVIEW_INFO,
+     "Lets you choose the format and quality each time you open a live channel."},
+    {SettingKey::CompatReport, EVO_RMLUI_PREVIEW_INFO,
+     "Writes a codec report to USB0 that you can attach to a bug report."},
+    {SettingKey::DebugOverlay, EVO_RMLUI_PREVIEW_INFO, "Shows live performance numbers on screen."},
+    {SettingKey::DeveloperTools, EVO_RMLUI_PREVIEW_INFO, "System diagnostics and performance stats."},
+    {SettingKey::ConsoleModel, EVO_RMLUI_PREVIEW_INFO,
+     "The console EVO detected. Some features, like Maximum AI upscaling, need a PS5 Pro."},
+    {SettingKey::QuitEvo, EVO_RMLUI_PREVIEW_INFO, "Releases everything, then close EVO from the switcher."},
 };
 
 const SettingKey kVideoKeys[] = {
@@ -395,6 +446,9 @@ SettingDef makeDef(SettingKey key, ISettingsService* settings) {
         break;
     }
 
+    for (const PreviewSpec& ps : kPreviews)
+        if (ps.key == key) { d.preview = ps.kind; d.benefit = ps.benefit; break; }
+
     /* A collapsed VALUE row shows its current choice as the badge. */
     if (d.kind == EVO_RMLUI_ROW_VALUE) {
         const int c = d.opt_current;
@@ -443,6 +497,23 @@ int fillSection(int section, int expanded, int cursor, evo_rmlui_settings_params
     for (int i = 0; i < m; ++i) {
         const SettingDef& def = d[slots[i].def];
         const int opt = slots[i].opt;
+        evo_rmlui_settings_row_t& row = p.rows[i];
+        row.preview = def.preview;
+        row.benefit = def.benefit ? def.benefit : "";
+        row.choice_count = (def.kind == EVO_RMLUI_ROW_VALUE) ? def.opt_count : 0;
+        if (row.choice_count > EVO_RMLUI_PREVIEW_CHOICES) row.choice_count = EVO_RMLUI_PREVIEW_CHOICES;
+        for (int c = 0; c < row.choice_count; ++c) row.choice[c] = def.opt_label[c];
+        if (def.key == SettingKey::Theme) {
+            for (int c = 0; c < row.choice_count; ++c) {
+                const evo_theme* t = evo_theme_at(c);
+                if (!t) continue;
+                auto rgb = [](uint32_t v) { return (v & 0xffu) << 16 | (v & 0xff00u) | ((v >> 16) & 0xffu); };
+                row.choice_bg[c] = rgb(t->bg_top);
+                row.choice_accent[c] = rgb(t->accent);
+            }
+        }
+        row.preview_index = (def.kind == EVO_RMLUI_ROW_TOGGLE) ? (def.toggle_on ? 1 : 0)
+                          : (opt >= 0) ? opt : def.opt_current;
         if (opt < 0) {
             p.rows[i].title = def.title;
             p.rows[i].detail = def.detail;

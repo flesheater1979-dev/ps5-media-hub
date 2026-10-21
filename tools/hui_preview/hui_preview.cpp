@@ -19,6 +19,7 @@
 #include "evo_hui_modals.hpp"
 #include "evo_hui_misc.hpp"
 #include "settings_fixtures.inc"
+#include "settings_preview_fixtures.inc"
 #include "misc_fixtures.inc"
 #include "evo_hui_extra.hpp"
 #include "evo_hui_surround.hpp"
@@ -540,6 +541,25 @@ int main(int argc, char **argv)
         {"settings_rows", 3, [&] { clear_focus(); fill_settings_fixture(sp, 1); }},
         {"settings_deepblacks", 3, [&] { clear_focus(); fill_settings_fixture(sp, 2); }},
         {"settings_upscaling", 3, [&] { clear_focus(); fill_settings_fixture(sp, 3); }},
+        {"settings_pv_ai_network", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "ai_network"); }},
+        {"settings_pv_hdr", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "hdr"); }},
+        {"settings_pv_motion", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "motion"); }},
+        {"settings_pv_refresh", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "refresh"); }},
+        {"settings_pv_match_rate", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "match_rate"); }},
+        {"settings_pv_aspect", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "aspect"); }},
+        {"settings_pv_sub_auto", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "sub_auto"); }},
+        {"settings_pv_sub_font", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "sub_font"); }},
+        {"settings_pv_sub_pos", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "sub_pos"); }},
+        {"settings_pv_sub_colour", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "sub_colour"); }},
+        {"settings_pv_theme", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "theme"); }},
+        {"settings_pv_lightbar", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "lightbar"); }},
+        {"settings_pv_channels", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "channels"); }},
+        {"settings_pv_passthrough", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "passthrough"); }},
+        {"settings_pv_surround", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "surround"); }},
+        {"settings_pv_deep_blacks", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "deep_blacks"); }},
+        {"settings_pv_upscaling", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "upscaling"); }},
+        {"settings_pv_info_resume", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "info_resume"); }},
+        {"settings_pv_info_quit", 3, [&] { clear_focus(); fill_settings_pv_fixture(sp, "info_quit"); }},
         {"browser", 2, [&] { clear_focus(); bp.rows[3].is_focused = 1; bp.cursor_index = 3; }},
         {"browser_sources", 2, [&] { clear_focus(); bp.sidebar_focused = 1; bp.sidebar_index = 3; }},
         {"browser_menu", 2, [&] { clear_focus(); bp.rows[3].is_focused = 1; bp.cursor_index = 3;

@@ -260,6 +260,7 @@ ifeq ($(AGC_DEVICE),1)
     UI_KIT_SRCS += ui_kit/src/hui_agc_batch.cpp ui_kit/src/evo_hui_app.cpp \
                    ui_kit/src/evo_hui_screens.cpp ui_kit/src/evo_hui_browser.cpp \
                    ui_kit/src/evo_hui_settings.cpp \
+                   ui_kit/src/evo_hui_settings_preview.cpp \
                    ui_kit/src/evo_hui_osd.cpp \
                    ui_kit/src/evo_hui_modals.cpp \
                    ui_kit/src/evo_hui_misc.cpp \

@@ -61,6 +61,16 @@ static void fill_settings_fixture(evo_rmlui_settings_params_t &p, int which)
             p.rows[3].kind = EVO_RMLUI_ROW_OPTION; p.rows[3].title = "FSR1"; p.rows[3].is_focused = 1;
             p.rows[4].kind = EVO_RMLUI_ROW_OPTION; p.rows[4].title = "Anime4K"; p.rows[4].toggle_on = 1;
         }
+        for (int i = 1; i <= 4; ++i) {   /* #158: the setting's preview data rides on its value and option rows */
+            const bool db = (which == 2);
+            p.rows[i].preview = db ? EVO_RMLUI_PREVIEW_DEEP_BLACKS : EVO_RMLUI_PREVIEW_UPSCALING;
+            p.rows[i].benefit = db ? "Dark scenes look deeper instead of washed out. Best on OLED and HDR screens."
+                                   : "Soft video below your screen's resolution looks crisper. Higher modes cost more GPU.";
+            p.rows[i].choice_count = (i == 1) ? 3 : 0;
+            p.rows[i].choice[0] = "Off"; p.rows[i].choice[1] = db ? "Low" : "FSR1"; p.rows[i].choice[2] = db ? "High" : "Anime4K";
+            p.rows[i].preview_index = (i == 1) ? 1 : i - 2;
+        }
+        for (int i = 2; i <= 4; ++i) { p.rows[i].choice_count = 3; p.rows[i].choice[0] = "Off"; p.rows[i].choice[1] = which == 2 ? "Low" : "FSR1"; p.rows[i].choice[2] = which == 2 ? "High" : "Anime4K"; }
         p.rows[5].kind = EVO_RMLUI_ROW_VALUE; p.rows[5].title = "Motion Smoothing"; p.rows[5].detail = "Frame interpolation"; p.rows[5].badge = "OFF"; p.rows[5].has_chevron = 1;
         p.rows[6].kind = EVO_RMLUI_ROW_ACTION; p.rows[6].title = "Resume Playback"; p.rows[6].has_chevron = 1;
         p.rows[7].kind = EVO_RMLUI_ROW_ACTION; p.rows[7].title = "Refresh Rate"; p.rows[7].has_chevron = 1;
