@@ -426,8 +426,8 @@ int main(int argc, char **argv)
     subp.eyebrow = "SUBTITLES";
     subp.title = "Select subtitle track";
     subp.size_str = "MEDIUM";
-    subp.sync_str = "+120 ms";
-    subp.preview_text = "Cells interlinked within cells interlinked.";
+    subp.sync_str = "SYNC: +120 ms"; /* as SubtitlePickerScreen sends it */
+    subp.preview_text = "The quick brown fox jumps over the lazy dog";
     subp.preview_face = 1;
     subp.track_count = 6;
     const char *tracks[][3] = {{"Subtitles off", "", ""},

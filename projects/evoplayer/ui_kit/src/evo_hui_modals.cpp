@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
+#include <vector>
 
 namespace evo::kit
 {
@@ -55,8 +57,14 @@ void SubtitlePicker::set(const evo_rmlui_subtitles_params_t &p)
     eyebrow_ = str(p.eyebrow);
     title_ = str(p.title);
     size_ = str(p.size_str);
-    sync_ = str(p.sync_str);
-    sync2_ = str(p.sync2_str);
+    /* The values carry their own "SYNC: " / "2ND: " prefix for the RmlUi
+     * screen; the pills here already print a label, so drop it. */
+    auto unprefix = [](std::string s, const char *prefix) {
+        const std::size_t n = std::char_traits<char>::length(prefix);
+        return s.compare(0, n, prefix) == 0 ? s.substr(n) : s;
+    };
+    sync_ = unprefix(str(p.sync_str), "SYNC: ");
+    sync2_ = unprefix(str(p.sync2_str), "2ND: ");
     preview_ = str(p.preview_text);
     preview_face_ = p.preview_face;
     tracks_.clear();
@@ -187,10 +195,29 @@ void SubtitlePicker::draw(DrawList &list, const Context &ctx) const
         const float cx = kSheetX * 0.5f;
         list.push_opacity(o);
         ui::text(list, fonts.semibold, "PREVIEW", cx, 700, 14, p.text_faint, Align::center, 3.0f);
-        const float w = std::min(fonts.semibold.measure(preview_, size), kSheetX - 120);
-        list.rounded_rect({cx - w * 0.5f - 18, 800 - size * 0.95f, w + 36, size * 1.25f}, 10, kBlack.with_alpha(0.55f));
-        ui::text(list, fonts.semibold, fit(fonts.semibold, preview_, size, kSheetX - 120), cx, 800, size, kWhite,
-                 Align::center);
+        /* Wrapped like a real caption (two lines at most, balanced so one word
+         * is not left alone), first line on 800 and growing down. */
+        const float max_w = kSheetX - 120;
+        std::vector<std::string> lines = fonts.semibold.font->wrap(preview_, size, max_w);
+        if (lines.size() > 1)
+        {
+            const float even = fonts.semibold.measure(preview_, size) / static_cast<float>(lines.size()) * 1.15f;
+            std::vector<std::string> balanced = fonts.semibold.font->wrap(preview_, size, std::min(even, max_w));
+            if (balanced.size() == lines.size())
+                lines = std::move(balanced);
+        }
+        if (lines.size() > 2)
+            lines.resize(2);
+        const float line_h = size * 1.25f;
+        float y = 800;
+        for (const std::string &line : lines)
+        {
+            const float w = std::min(fonts.semibold.measure(line, size), kSheetX - 120);
+            list.rounded_rect({cx - w * 0.5f - 18, y - size * 0.95f, w + 36, line_h}, 10, kBlack.with_alpha(0.55f));
+            ui::text(list, fonts.semibold, fit(fonts.semibold, line, size, kSheetX - 120), cx, y, size, kWhite,
+                     Align::center);
+            y += line_h;
+        }
         list.pop_opacity();
     }
 }
