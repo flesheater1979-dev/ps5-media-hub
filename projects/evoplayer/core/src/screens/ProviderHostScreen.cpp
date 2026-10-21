@@ -908,6 +908,15 @@ void ProviderHostScreen::openPickerMenu()
                 add("discover", "Find server on network",
                     std::string("Look for ") + p->name + " on your home network",
                     "../icons/icon_activity.png", false);
+            if (id == "nuvio") {
+                add("addaddon", "Add addon", "Type an addon's manifest URL (https://.../manifest.json)",
+                    "../icons/icon_keyboard.png", false);
+                const int n = evo_nuvio_addon_count();
+                if (n > 0)
+                    add("rmaddons", "Remove addon",
+                        std::to_string(n) + (n == 1 ? " addon installed" : " addons installed"),
+                        "../icons/icon_power.png", true);
+            }
         } else if (p->ui_embedded) {
             add("address", "Add addon", "Type an addon's manifest URL (https://.../manifest.json)",
                 "../icons/icon_keyboard.png", false);
@@ -1007,6 +1016,32 @@ void ProviderHostScreen::runPickerMenu(const std::string& action)
         m_picking = false;
         openWebProvider();
         if (!m_web) enterPicker();
+    } else if (action == "addaddon") {
+        m_providerId = id;
+        openSourceKeyboard("", true);
+    } else if (action == "rmaddons") {
+        /* A second menu: one row per saved addon. */
+        m_menu.clear();
+        for (int i = 0; i < evo_nuvio_addon_count(); ++i) {
+            MenuItem m;
+            m.id = "rmnuvio:" + std::to_string(i);
+            m.label = std::string("Remove ") + evo_nuvio_addon_name(i);
+            m.desc = "Takes it off this Nuvio profile, in the web version too";
+            m.icon = "../icons/icon_power.png";
+            m.danger = true;
+            m_menu.push_back(m);
+        }
+        if ((int)m_menu.size() > EVO_RMLUI_LIST_MENU_ROWS)
+            m_menu.resize(EVO_RMLUI_LIST_MENU_ROWS);
+        m_menuIndex = 0;
+        evo_feedback(EVO_FB_OPEN);
+    } else if (action.compare(0, 8, "rmnuvio:") == 0) {
+        const int r = evo_nuvio_addon_remove(std::atoi(action.c_str() + 8));
+        evo_feedback(r == 0 ? EVO_FB_CONFIRM : EVO_FB_BOUNDARY);
+        toast(p->name, r == 0 ? "Addon removed" : "Could not remove the addon");
+        int keep = m_pickIndex;
+        enterPicker();
+        m_pickIndex = keep;
     } else if (action.compare(0, 8, "rmaddon:") == 0) {
         evo_stremio_addon_remove(std::atoi(action.c_str() + 8));
         evo_feedback(EVO_FB_CONFIRM);
@@ -1493,6 +1528,9 @@ bool ProviderHostScreen::handleInput(uint32_t pressed, uint32_t held, uint32_t r
             if (id == "addons")
                 for (int i = 0; i < (int)m_menu.size(); ++i)
                     if (m_menu[i].id == "address") m_menuIndex = i;
+            if (id == "nuvio")
+                for (int i = 0; i < (int)m_menu.size(); ++i)
+                    if (m_menu[i].id == "addaddon") m_menuIndex = i;
         } else if (op && std::strcmp(op->id, "iptv") == 0 &&
                    !evo_rmlui_provider_get_query()[0]) {
             openProviderMenu();     /* playlist or guide, for the one on screen */
@@ -1564,6 +1602,24 @@ void ProviderHostScreen::OnSourceSubmitted(const char* text, void* userdata)
     } else {
         size_t e = value.find_last_not_of(" \t\r\n");
         value = value.substr(b, e - b + 1);
+    }
+
+    if (self->m_addNuvioAddon) {
+        /* An addon for Nuvio, written to the storage the web version reads.
+         * Back on the shelves, the next root open picks the list up. */
+        self->m_addNuvioAddon = false;
+        if (value.empty()) return;
+        int rc = evo_nuvio_addon_add(value.c_str());
+        if (rc != 0) {
+            toast(p->name, rc == -1 ? "That does not look like an addon address"
+                                    : "Could not save the addon");
+            return;
+        }
+        evo_feedback(EVO_FB_CONFIRM);
+        toast(p->name, "Addon added");
+        self->m_picking = false;
+        self->openProvider(p->id);
+        return;
     }
 
     bool web = (p->caps & EVO_PROVIDER_CAP_WEBUI) != 0;
@@ -2148,13 +2204,16 @@ void ProviderHostScreen::openSourceEditor()
     openSourceKeyboard(initial);
 }
 
-void ProviderHostScreen::openSourceKeyboard(const std::string& initial)
+void ProviderHostScreen::openSourceKeyboard(const std::string& initial, bool addNuvioAddon)
 {
     const evo_provider_t* p = evo_provider_find(m_providerId.c_str());
     if (!p) return;
+    m_addNuvioAddon = addNuvioAddon;
 
     char title[96];
-    if (p->caps & EVO_PROVIDER_CAP_WEBUI)
+    if (addNuvioAddon)
+        std::snprintf(title, sizeof title, "Add a Nuvio addon");
+    else if (p->caps & EVO_PROVIDER_CAP_WEBUI)
         std::snprintf(title, sizeof title, "%s server (http(s)://host:port)", p->name);
     else if (p->ui_embedded)
         std::snprintf(title, sizeof title, "Add a Stremio addon");

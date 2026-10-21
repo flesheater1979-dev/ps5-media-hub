@@ -128,6 +128,10 @@ cJSON_bool cJSON_AddBoolToObject(cJSON * const object, const char * const name, 
 cJSON_bool cJSON_AddNumberToObject(cJSON * const object, const char * const name, const double number);
 cJSON_bool cJSON_AddStringToObject(cJSON * const object, const char * const name, const char * const string);
 
+/* Remove and free one child (no-op when it is not there) */
+void cJSON_DeleteItemFromArray(cJSON *array, int index);
+void cJSON_DeleteItemFromObject(cJSON *object, const char *string);
+
 #define cJSON_ArrayForEach(element, array) for(element = (array != NULL) ? (array)->child : NULL; element != NULL; element = element->next)
 
 #ifdef __cplusplus

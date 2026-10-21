@@ -1822,9 +1822,9 @@ bool EvoRmlProviderHost::RenderKit(int width, int height)
          ? std::string("../icons/") + m_provider->icon : std::string();
     p.provider_icon = icon.c_str();
     /* In-provider OPTIONS hint */
-    if (m_provider_id == "addons")
+    if (m_provider_id == "addons" || m_provider_id == "nuvio")
         p.options_hint = "Add & manage addons";
-    else if (m_provider_id == "emby" || m_provider_id == "jellyfin" || m_provider_id == "nuvio")
+    else if (m_provider_id == "emby" || m_provider_id == "jellyfin")
         p.options_hint = "Edit server";
     else if (m_provider_id == "iptv")
         p.options_hint = "Playlist & guide";
@@ -2505,20 +2505,37 @@ void EvoRmlProviderHost::BuildShelves(const evo_provider_item_t* items, int coun
     m_dirty = true;
 }
 
+/* Shelves asked for at once. One at a time, a home of eight shelves on a server
+ * that takes a second per answer stood empty for eight seconds. */
+static constexpr int kShelfFetches = 4;
+
 void EvoRmlProviderHost::LoadNextShelf()
 {
     struct Ctx { EvoRmlProviderHost* host; unsigned gen; int index; };
-    for (int i = 0; i < (int)m_shelves.size(); ++i) {
-        EvoShelf& s = m_shelves[i];
-        if (s.fresh || s.parent.empty()) continue;
-        Ctx* c = new Ctx{this, m_shelf_gen, i};
+    /* Counted afresh each time: a provider that answers inside list_catalog has
+     * already finished (and started the next) by the time the call returns. */
+    auto out = [this] {
+        int n = 0;
+        for (const EvoShelf& s : m_shelves) if (s.loading) ++n;
+        return n;
+    };
+    const unsigned gen = m_shelf_gen;
+    for (int i = 0; i < (int)m_shelves.size() && out() < kShelfFetches; ++i) {
+        if (m_shelves[i].fresh || m_shelves[i].loading || m_shelves[i].parent.empty()) continue;
+        Ctx* c = new Ctx{this, gen, i};
         m_model.loading = true;
-        if (m_provider->list_catalog(s.parent.c_str(), 0, &EvoRmlProviderHost::ShelfCallback, c) == 0)
-            return;                                     /* its callback loads the next */
+        m_shelves[i].loading = true;                    /* before the call: a provider may answer inside it */
+        const std::string parent = m_shelves[i].parent;
+        if (m_provider->list_catalog(parent.c_str(), 0, &EvoRmlProviderHost::ShelfCallback, c) == 0) {
+            if (gen != m_shelf_gen) return;             /* answered inside and the home changed */
+            continue;                                   /* its callback loads the next */
+        }
         delete c;
-        s.fresh = true;                                 /* refused: leave it as it was */
-        if (s.cards.empty()) s.cards.clear();
+        if (gen != m_shelf_gen || i >= (int)m_shelves.size()) return;
+        m_shelves[i].loading = false;
+        m_shelves[i].fresh = true;                      /* refused: leave it as it was */
     }
+    if (out() > 0) return;
     m_model.loading = false;
     if (m_model_handle) m_model_handle.DirtyVariable("loading");
     if (!m_shelves.empty() && ShelvesWithCards() == 0) {
@@ -2541,6 +2558,7 @@ void EvoRmlProviderHost::ShelfCallback(int ok, const evo_provider_item_t* items,
 
     EvoShelf& s = self->m_shelves[index];
     s.fresh = true;
+    s.loading = false;
     if (ok) self->AddShelfCards(s, items, count, has_more);
     if (!self->m_shelf_moved) {
         const int first = self->NextShelf(-1, +1);

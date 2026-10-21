@@ -140,8 +140,12 @@ Cinemeta, as in Nuvio. The list is re-read each time the root opens, so addons
 added in the web version show up on return. Every Nuvio request goes through
 FFmpeg's HTTP client (`evo_net_request_async_avio`), like Jellyfin's.
 
-Adding and removing addons stays in the web version; EVO's Addons provider
-keeps its own list.
+Addons can be added and removed in EVO too (#148): OPTIONS → "Add addon" (EVO
+keyboard or phone page; a manifest URL, base URL or `stremio://` link) and
+"Remove addon" (one row per saved addon). Both edit the same two storage keys for
+the active profile, so the web version shows the same list. With nothing saved
+yet, the first add saves Cinemeta plus the new addon; Cinemeta as a default is
+never offered for removal. EVO's Addons provider keeps its own list.
 
 ## Built-in Cinemeta (2026-10-21, hardware-verified)
 

@@ -529,6 +529,27 @@ cJSON_bool cJSON_AddItemToObject(cJSON *object, const char *string, cJSON *item)
     return cJSON_AddItemToArray(object, item);
 }
 
+static void cJSON_unlink_delete(cJSON *parent, cJSON *item)
+{
+    if (item->prev) item->prev->next = item->next;
+    else parent->child = item->next;
+    if (item->next) item->next->prev = item->prev;
+    item->next = item->prev = NULL;
+    cJSON_Delete(item);
+}
+
+void cJSON_DeleteItemFromArray(cJSON *array, int index)
+{
+    cJSON *item = cJSON_GetArrayItem(array, index);
+    if (item) cJSON_unlink_delete(array, item);
+}
+
+void cJSON_DeleteItemFromObject(cJSON *object, const char *string)
+{
+    cJSON *item = cJSON_GetObjectItem(object, string);
+    if (item) cJSON_unlink_delete(object, item);
+}
+
 cJSON_bool cJSON_AddStringToObject(cJSON * const object, const char * const name, const char * const string)
 {
     cJSON *title = cJSON_CreateString(string);

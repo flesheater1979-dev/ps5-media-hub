@@ -190,18 +190,48 @@ static int  ad_is_configured(void) { S = &g_addons; return user_count() > 0; }
 static const char *ad_get_source(void) { return ""; }
 
 /*
- * Add an addon. Accepts the manifest URL, the addon's base URL, or the
- * stremio:// form addon sites link to. Empty clears the list. An address
- * already in the list is not added twice.
+ * What the user typed -> a manifest URL. Accepts the manifest URL, the addon's
+ * base URL, or the stremio:// form addon sites link to. 0 ok, -1 not an address.
+ */
+static int ad_parse_address(const char *s, char *url, size_t cap)
+{
+    if (!strncmp(s, "stremio://", 10))      snprintf(url, cap, "https://%s", s + 10);
+    else if (!strncmp(s, "http://", 7) || !strncmp(s, "https://", 8)) snprintf(url, cap, "%s", s);
+    else if (strchr(s, '.') && !strchr(s, ' ')) {
+        /* Typed without a scheme: a home-network address is plain http (a
+         * server on the LAN has no certificate), anything else is https. */
+        int a = 0, b = 0;
+        int lan = !strncmp(s, "10.", 3) || !strncmp(s, "127.", 4) ||
+                  !strncmp(s, "192.168.", 8) ||
+                  (sscanf(s, "172.%d.%d", &a, &b) == 2 && a >= 16 && a <= 31);
+        snprintf(url, cap, "%s://%s", lan ? "http" : "https", s);
+    }
+    else return -1;
+    size_t n = strlen(url);
+    if (n < 14 || strcmp(url + n - 14, "/manifest.json")) {
+        while (n > 0 && url[n - 1] == '/') url[--n] = '\0';
+        strncat(url, "/manifest.json", cap - strlen(url) - 1);
+    }
+    return 0;
+}
+
+static char *ad_trim(char *s)
+{
+    while (*s == ' ' || *s == '\t') s++;
+    size_t n = strlen(s);
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t' || s[n - 1] == '\r' || s[n - 1] == '\n')) s[--n] = '\0';
+    return s;
+}
+
+/*
+ * Add an addon. Empty clears the list. An address already in the list is not
+ * added twice.
  */
 static int ad_set_source(const char *value)
 {
     char v[AD_URL];
     snprintf(v, sizeof v, "%s", value ? value : "");
-    char *s = v;
-    while (*s == ' ' || *s == '\t') s++;
-    size_t n = strlen(s);
-    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t' || s[n - 1] == '\r' || s[n - 1] == '\n')) s[--n] = '\0';
+    char *s = ad_trim(v);
 
     S = &g_addons;
     if (!*s) {
@@ -210,23 +240,7 @@ static int ad_set_source(const char *value)
         return ad_save();
     }
     char url[AD_URL];
-    if (!strncmp(s, "stremio://", 10))      snprintf(url, sizeof url, "https://%s", s + 10);
-    else if (!strncmp(s, "http://", 7) || !strncmp(s, "https://", 8)) snprintf(url, sizeof url, "%s", s);
-    else if (strchr(s, '.') && !strchr(s, ' ')) {
-        /* Typed without a scheme: a home-network address is plain http (a
-         * server on the LAN has no certificate), anything else is https. */
-        int a = 0, b = 0;
-        int lan = !strncmp(s, "10.", 3) || !strncmp(s, "127.", 4) ||
-                  !strncmp(s, "192.168.", 8) ||
-                  (sscanf(s, "172.%d.%d", &a, &b) == 2 && a >= 16 && a <= 31);
-        snprintf(url, sizeof url, "%s://%s", lan ? "http" : "https", s);
-    }
-    else return -1;
-    n = strlen(url);
-    if (n < 14 || strcmp(url + n - 14, "/manifest.json")) {
-        while (n > 0 && url[n - 1] == '/') url[--n] = '\0';
-        strncat(url, "/manifest.json", sizeof url - strlen(url) - 1);
-    }
+    if (ad_parse_address(s, url, sizeof url) != 0) return -1;
     for (int i = 0; i < user_count(); ++i)
         if (!strcmp(S->ad[i].url, url)) return 0;
     builtin_drop();                      /* added ones go before it */
@@ -247,9 +261,8 @@ const char *evo_stremio_addon_url(int i)
     return (i >= 0 && i < user_count()) ? S->ad[i].url : "";
 }
 
-const char *evo_stremio_addon_name(int i)
+static const char *addon_label(int i)
 {
-    S = &g_addons;
     if (i < 0 || i >= user_count()) return "";
     if (S->ad[i].name[0]) return S->ad[i].name;
     static char label[AD_URL];
@@ -259,6 +272,12 @@ const char *evo_stremio_addon_name(int i)
     size_t n = strlen(label), t = strlen("/manifest.json");
     if (n >= t && !strcmp(label + n - t, "/manifest.json")) label[n - t] = '\0';
     return label;
+}
+
+const char *evo_stremio_addon_name(int i)
+{
+    S = &g_addons;
+    return addon_label(i);
 }
 
 int evo_stremio_addon_remove(int i)
@@ -1195,6 +1214,22 @@ static cJSON *nv_profile_value(cJSON *env, const char *pid)
     return v;
 }
 
+/* The active profile id: saved as a JSON string ("\"2\"") or bare, else "1". */
+static void nv_active_pid(cJSON *store, char *pid, size_t cap)
+{
+    snprintf(pid, cap, "%s", jstr(store, "activeProfileId"));
+    char *p = pid;
+    while (*p == '"') p++;
+    memmove(pid, p, strlen(p) + 1);
+    size_t l = strlen(pid);
+    while (l > 0 && pid[l - 1] == '"') pid[--l] = '\0';
+    if (!pid[0]) snprintf(pid, cap, "1");
+}
+
+/* Whether the last load found an addon list that was saved (not the Cinemeta
+ * default Nuvio starts on). Only a saved list has entries to remove. */
+static int nv_saved = 0;
+
 static void nv_load_addons(void)
 {
     static char urls[AD_MAX][AD_URL];
@@ -1204,21 +1239,14 @@ static void nv_load_addons(void)
     cJSON *store = txt ? cJSON_Parse(txt) : NULL;
     free(txt);
     char pid[32];
-    snprintf(pid, sizeof pid, "%s", jstr(store, "activeProfileId"));
-    {   /* saved as a JSON string ("\"2\"") or bare */
-        char *p = pid;
-        while (*p == '"') p++;
-        memmove(pid, p, strlen(p) + 1);
-        size_t l = strlen(pid);
-        while (l > 0 && pid[l - 1] == '"') pid[--l] = '\0';
-        if (!pid[0]) snprintf(pid, sizeof pid, "1");
-    }
+    nv_active_pid(store, pid, sizeof pid);
     const char *raw = jstr(store, "installedAddonUrls");
     cJSON *env = raw[0] ? cJSON_Parse(raw) : NULL;
     raw = jstr(store, "installedAddonEnabledStates");
     cJSON *en_env = raw[0] ? cJSON_Parse(raw) : NULL;
     cJSON *list = env ? nv_profile_value(env, pid) : NULL;
     cJSON *enabled = en_env ? nv_profile_value(en_env, pid) : NULL;
+    nv_saved = list && cJSON_IsArray(list);
 
     for (int i = 0; list && cJSON_IsArray(list) && i < cJSON_GetArraySize(list) && n < AD_MAX; ++i) {
         cJSON *u = cJSON_GetArrayItem(list, i);
@@ -1262,6 +1290,185 @@ static void nv_load_addons(void)
     S->meta_key[0] = '\0';
     if (S->meta) { cJSON_Delete(S->meta); S->meta = NULL; }
     PROV_LOG("nuvio: %d addon%s from %s", S->nad, S->nad == 1 ? "" : "s", evo_nuvio_store_file());
+}
+
+/*
+ * Write back. Adding and removing edit the same two page-storage keys the web
+ * app reads, for the active profile, so the web version shows the same list.
+ * Nuvio keeps addon bases (no /manifest.json) in the list; a base is matched
+ * ignoring a trailing slash and /manifest.json.
+ */
+static void nv_base_of(const char *in, char *out, size_t cap)
+{
+    snprintf(out, cap, "%s", in);
+    size_t l = strlen(out);
+    while (l > 0 && out[l - 1] == '/') out[--l] = '\0';
+    if (l >= 14 && !strcmp(out + l - 14, "/manifest.json")) { l -= 14; out[l] = '\0'; }
+    while (l > 0 && out[l - 1] == '/') out[--l] = '\0';
+}
+
+static int nv_same_addon(const char *a, const char *b)
+{
+    char x[AD_URL], y[AD_URL];
+    nv_base_of(a, x, sizeof x);
+    nv_base_of(b, y, sizeof y);
+    return !strcmp(x, y);
+}
+
+/* The active profile's slot in a per-profile envelope, made if it is missing.
+ * Where the envelope has no such profile, the slot is the one nv_load_addons
+ * showed (the primary, else the first), so what is edited is what was listed. */
+static cJSON *nv_slot(cJSON **env, const char *pid, int want_array)
+{
+    if (!*env || (!cJSON_IsObject(*env) && !cJSON_IsArray(*env))) {
+        if (*env) cJSON_Delete(*env);
+        *env = cJSON_CreateObject();
+        if (!*env) return NULL;
+    }
+    cJSON *v;
+    if (cJSON_IsArray(*env)) {
+        v = *env;                           /* older save: the bare value */
+    } else {
+        cJSON *profiles = cJSON_GetObjectItem(*env, "profiles");
+        if (!profiles) {
+            profiles = cJSON_CreateObject();
+            if (!profiles || !cJSON_AddItemToObject(*env, "profiles", profiles)) return NULL;
+        }
+        v = nv_profile_value(*env, pid);
+        if (!v) {
+            v = want_array ? cJSON_CreateArray() : cJSON_CreateObject();
+            if (!v) return NULL;
+            cJSON_AddItemToObject(profiles, pid, v);
+        }
+    }
+    return (want_array ? cJSON_IsArray(v) : cJSON_IsObject(v)) ? v : NULL;
+}
+
+static int nv_put_key(cJSON *store, const char *key, cJSON *env)
+{
+    char *txt = cJSON_PrintUnformatted(env);
+    if (!txt) return -1;
+    cJSON_DeleteItemFromObject(store, key);
+    int ok = cJSON_AddStringToObject(store, key, txt);
+    free(txt);
+    return ok ? 0 : -1;
+}
+
+/* Add (add != 0) or drop one addon base in the saved storage. 0 ok. */
+static int nv_edit(const char *base, int add)
+{
+    char path[512];     /* evo_data_path() reuses one buffer: keep our own copy */
+    snprintf(path, sizeof path, "%s", evo_data_path(evo_nuvio_store_file()));
+    char *txt = nv_read_file(path);
+    cJSON *store = txt ? cJSON_Parse(txt) : NULL;
+    free(txt);
+    if (store && !cJSON_IsObject(store)) { cJSON_Delete(store); store = NULL; }
+    if (!store) store = cJSON_CreateObject();
+    if (!store) return -1;
+
+    char pid[32];
+    nv_active_pid(store, pid, sizeof pid);
+    const char *raw = jstr(store, "installedAddonUrls");
+    cJSON *env = raw[0] ? cJSON_Parse(raw) : NULL;
+    const int had_list = env && nv_profile_value(env, pid) && cJSON_IsArray(nv_profile_value(env, pid));
+    raw = jstr(store, "installedAddonEnabledStates");
+    cJSON *en_env = raw[0] ? cJSON_Parse(raw) : NULL;
+
+    int rc = -1, present = 0;
+    cJSON *states = NULL;
+    char *outtxt = NULL;
+    FILE *f = NULL;
+    cJSON *list = nv_slot(&env, pid, 1);
+    if (!list) goto out;
+
+    for (int i = cJSON_GetArraySize(list) - 1; i >= 0; --i) {
+        cJSON *u = cJSON_GetArrayItem(list, i);
+        if (!u || !cJSON_IsString(u) || !nv_same_addon(u->valuestring, base)) continue;
+        present = 1;
+        if (!add) cJSON_DeleteItemFromArray(list, i);
+    }
+    if (add && !present) {
+        /* Nothing saved yet: Nuvio was running on Cinemeta, so keep it. */
+        if (!had_list && !nv_same_addon(NV_DEFAULT_ADDON, base))
+            cJSON_AddItemToArray(list, cJSON_CreateString(NV_DEFAULT_ADDON));
+        cJSON_AddItemToArray(list, cJSON_CreateString(base));
+    }
+    if (nv_put_key(store, "installedAddonUrls", env) != 0) goto out;
+
+    /* Keep the enabled states in step: a removed addon's flag goes, an added
+     * one is switched on if it had been switched off earlier. */
+    states = en_env ? nv_profile_value(en_env, pid) : NULL;
+    if (states && cJSON_IsObject(states)) {
+        for (cJSON *c = states->child, *next; c; c = next) {
+            next = c->next;
+            if (c->string && nv_same_addon(c->string, base))
+                cJSON_DeleteItemFromObject(states, c->string);
+        }
+        if (nv_put_key(store, "installedAddonEnabledStates", en_env) != 0) goto out;
+    }
+
+    outtxt = cJSON_PrintUnformatted(store);
+    if (!outtxt) goto out;
+    evo_mkdir(evo_data_path("webui"));
+    f = fopen(path, "wb");
+    if (f) {
+        rc = fwrite(outtxt, 1, strlen(outtxt), f) == strlen(outtxt) ? 0 : -1;
+        fclose(f);
+    }
+out:
+    free(outtxt);
+    if (env) cJSON_Delete(env);
+    if (en_env) cJSON_Delete(en_env);
+    cJSON_Delete(store);
+    return rc;
+}
+
+/* The addons Nuvio has saved, which EVO can remove. With nothing saved, the
+ * Cinemeta it runs on is a default, not an entry, and is not offered. */
+int evo_nuvio_addon_count(void)
+{
+    S = &g_nuvio;
+    nv_load_addons();
+    return nv_saved ? user_count() : 0;
+}
+
+const char *evo_nuvio_addon_name(int i)
+{
+    S = &g_nuvio;
+    return addon_label(i);
+}
+
+int evo_nuvio_addon_remove(int i)
+{
+    S = &g_nuvio;
+    if (i < 0 || i >= user_count() || !nv_saved) return -1;
+    char base[AD_URL];
+    snprintf(base, sizeof base, "%s", S->ad[i].base);
+    if (nv_edit(base, 0) != 0) return -1;
+    nv_load_addons();
+    return 0;
+}
+
+/* Add an addon: a manifest URL, a base URL or a stremio:// link. 0 ok (also
+ * when it was already there), -1 not an address, -2 could not be saved. */
+int evo_nuvio_addon_add(const char *value)
+{
+    char v[AD_URL], url[AD_URL], base[AD_URL];
+    snprintf(v, sizeof v, "%s", value ? value : "");
+    char *s = ad_trim(v);
+    if (!*s || ad_parse_address(s, url, sizeof url) != 0) {
+        PROV_LOG("nuvio: add addon: not an address (%d chars)", (int)strlen(s));
+        return -1;
+    }
+    nv_base_of(url, base, sizeof base);
+    if (nv_edit(base, 1) != 0) {
+        PROV_LOG("nuvio: add addon: could not save %s", evo_nuvio_store_file());
+        return -2;
+    }
+    PROV_LOG("nuvio: added addon %.120s", base);
+    S = &g_nuvio;
+    nv_load_addons();
+    return 0;
 }
 
 int evo_nuvio_list_catalog(const char *parent_id, int page, evo_provider_items_cb cb, void *ud)

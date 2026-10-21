@@ -165,7 +165,8 @@ private:
     /* Looking for an Emby/Jellyfin server on the LAN before the address
      * keyboard opens, so the field can be pre-filled (evo_net_discover_*). */
     bool m_discovering = false;
-    void openSourceKeyboard(const std::string& initial);
+    void openSourceKeyboard(const std::string& initial, bool addNuvioAddon = false);
+    bool m_addNuvioAddon = false;   /* the open keyboard adds a Nuvio addon, not a server */
     void openXtreamMenu(int focus = 0);   /* Xtream: account + XMLTV guide (#149) */
     void openProviderMenu(int focus = 0); /* IPTV: Options -> side panel        */
     void openGuidePicker();

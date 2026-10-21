@@ -33,6 +33,7 @@
 
 #include "evo_net.h"
 #include "evo_error.h"
+#include "evo_provider_log.h"
 
 /* ---- LAN discovery (Emby / Jellyfin, UDP 7359) ---- */
 
@@ -312,8 +313,12 @@ typedef struct evo_net_req {
     size_t      response_len;
 } evo_net_req_t;
 
-#define EVO_NET_IMAGE_WORKERS 2
-static pthread_t       g_worker_thread;
+/* Page requests run several at once: a provider home asks for each shelf, and
+ * one slow answer no longer holds up the rest. */
+#define EVO_NET_PAGE_WORKERS  4
+#define EVO_NET_IMAGE_WORKERS 4
+static pthread_t       g_page_threads[EVO_NET_PAGE_WORKERS];
+static int             g_page_threads_up = 0;
 static pthread_t       g_image_threads[EVO_NET_IMAGE_WORKERS];
 static int             g_image_threads_up = 0;
 static pthread_mutex_t g_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -345,6 +350,52 @@ static SSL_CTX *evo_net_get_ssl_ctx(void)
     }
     pthread_mutex_unlock(&g_ssl_init_mutex);
     return g_ssl_ctx;
+}
+
+/*
+ * The last TLS session per host, so the next request to it resumes instead of
+ * running the full handshake again. Every request is its own connection
+ * (Connection: close), so a row of posters from one image host paid the whole
+ * handshake each time.
+ */
+#define EVO_NET_TLS_CACHE 16
+static struct { char host[128]; int port; SSL_SESSION *sess; unsigned used; } s_tls[EVO_NET_TLS_CACHE];
+static unsigned        s_tls_clock;
+static pthread_mutex_t s_tls_mx = PTHREAD_MUTEX_INITIALIZER;
+
+static void tls_session_resume(SSL *ssl, const char *host, int port)
+{
+    pthread_mutex_lock(&s_tls_mx);
+    for (int i = 0; i < EVO_NET_TLS_CACHE; i++) {
+        if (s_tls[i].sess && s_tls[i].port == port && !strcmp(s_tls[i].host, host)) {
+            SSL_set_session(ssl, s_tls[i].sess);
+            s_tls[i].used = ++s_tls_clock;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&s_tls_mx);
+}
+
+/* After the response: a TLS 1.3 ticket only arrives once data has flowed. */
+static void tls_session_keep(SSL *ssl, const char *host, int port)
+{
+    if (strlen(host) >= sizeof s_tls[0].host) return;
+    SSL_SESSION *sess = SSL_get1_session(ssl);
+    if (!sess) return;
+    if (!SSL_SESSION_is_resumable(sess)) { SSL_SESSION_free(sess); return; }
+    pthread_mutex_lock(&s_tls_mx);
+    int slot = 0;
+    for (int i = 0; i < EVO_NET_TLS_CACHE; i++) {
+        if (s_tls[i].sess && s_tls[i].port == port && !strcmp(s_tls[i].host, host)) { slot = i; break; }
+        if (!s_tls[i].sess) { slot = i; break; }
+        if (s_tls[i].used < s_tls[slot].used) slot = i;
+    }
+    if (s_tls[slot].sess) SSL_SESSION_free(s_tls[slot].sess);
+    snprintf(s_tls[slot].host, sizeof s_tls[slot].host, "%s", host);
+    s_tls[slot].port = port;
+    s_tls[slot].sess = sess;
+    s_tls[slot].used = ++s_tls_clock;
+    pthread_mutex_unlock(&s_tls_mx);
 }
 #endif
 
@@ -750,6 +801,7 @@ static int execute_http(const char *method,
                 return EVO_NET_ERR_SSL_NEW;
             }
             SSL_set_tlsext_host_name(ssl, host);
+            tls_session_resume(ssl, host, port);
             SSL_set_fd(ssl, sock);
             if (SSL_connect(ssl) <= 0) {
                 SSL_free(ssl);
@@ -1026,6 +1078,7 @@ static int execute_http(const char *method,
 
 #ifndef NO_OPENSSL
         if (ssl) {
+            tls_session_keep(ssl, host, port);
             SSL_shutdown(ssl);
             SSL_free(ssl);
             ssl = NULL;
@@ -1281,6 +1334,8 @@ static void *evo_net_worker(void *arg)
         pthread_mutex_unlock(&g_queue_mutex);
 
         if (req) {
+            struct timespec t0, t1;
+            clock_gettime(CLOCK_MONOTONIC, &t0);
             /* Execute HTTP */
             int res = (req->via_avio && evo_avio_execute)
                 ? evo_avio_execute(req->method, req->url, req->post_data,
@@ -1292,6 +1347,17 @@ static void *evo_net_worker(void *arg)
                                &req->response_body, &req->response_len,
                                &req->status_code);
 
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            if (!image_worker) {
+                /* Host and path only: a query string can hold a token. */
+                const long ms = (long)((t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000);
+                const char *u = strstr(req->url, "://");
+                u = u ? u + 3 : req->url;
+                const int ulen = (int)strcspn(u, "?");
+                PROV_LOG("net %s %.*s -> %d http=%d %zu B in %ld ms%s", req->method,
+                         ulen > 120 ? 120 : ulen, u, res, req->status_code, req->response_len, ms,
+                         req->via_avio ? " (ffmpeg)" : "");
+            }
             req->success   = (res == 0);
             req->error     = res;       /* kept: the callback only gets success/status */
             req->completed = 1;
@@ -1319,7 +1385,12 @@ int evo_net_init(void)
     g_pending_count = 0;
     g_completed_count = 0;
 
-    if (pthread_create(&g_worker_thread, NULL, evo_net_worker, NULL) != 0) {
+    g_page_threads_up = 0;
+    for (int i = 0; i < EVO_NET_PAGE_WORKERS; i++) {
+        if (pthread_create(&g_page_threads[g_page_threads_up], NULL, evo_net_worker, NULL) == 0)
+            g_page_threads_up++;
+    }
+    if (g_page_threads_up == 0) {
         g_running = 0;
         return -1;
     }
@@ -1341,7 +1412,8 @@ void evo_net_shutdown(void)
     pthread_cond_broadcast(&g_queue_cond);
     pthread_mutex_unlock(&g_queue_mutex);
 
-    pthread_join(g_worker_thread, NULL);
+    for (int i = 0; i < g_page_threads_up; i++) pthread_join(g_page_threads[i], NULL);
+    g_page_threads_up = 0;
     for (int i = 0; i < g_image_threads_up; i++) pthread_join(g_image_threads[i], NULL);
     g_image_threads_up = 0;
 
@@ -1358,6 +1430,12 @@ void evo_net_shutdown(void)
     g_completed_count = 0;
 
 #ifndef NO_OPENSSL
+    pthread_mutex_lock(&s_tls_mx);
+    for (int i = 0; i < EVO_NET_TLS_CACHE; i++) {
+        if (s_tls[i].sess) SSL_SESSION_free(s_tls[i].sess);
+        s_tls[i].sess = NULL;
+    }
+    pthread_mutex_unlock(&s_tls_mx);
     pthread_mutex_lock(&g_ssl_init_mutex);
     if (g_ssl_ctx) {
         SSL_CTX_free(g_ssl_ctx);
