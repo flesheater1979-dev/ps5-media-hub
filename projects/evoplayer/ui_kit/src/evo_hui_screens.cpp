@@ -7,6 +7,7 @@
  * cursor, and entrances that stagger in rather than pop.
  */
 #include "evo_hui_screens.hpp"
+#include "evo_hui_cover.hpp"
 
 #include "evo_features.h"
 
@@ -529,7 +530,7 @@ void HomeScreen::draw_hero(DrawList &list, const Context &ctx, const Hero &hero,
     const std::uint32_t tex = art_texture(ctx, hero.art, hero.art_w, hero.art_h, hero.title);
     if (tex)
     {
-        list.image(tex, art, ::hui::gfx::kFullUv, kWhite, 28);
+        draw_art_fit(list, tex, hero.art_w, hero.art_h, art, 28, kWhite, p.surface_sel, p.surface);
     }
     else
     {
@@ -543,7 +544,11 @@ void HomeScreen::draw_hero(DrawList &list, const Context &ctx, const Hero &hero,
 
     const float x = kLeft + slide;
     ui::text(list, fonts.semibold, ui::upper(hero.eyebrow), x, 196, 20, p.accent, Align::left, 4.0f);
-    ui::text(list, fonts.display, fit(fonts.display, hero.title, 76, 940), x - 3, 282, 76, kWhite);
+    /* Show the whole title: shrink it to fit before resorting to an ellipsis. */
+    float title_size = 76.0f;
+    while (title_size > 44.0f && fonts.display.font->measure(hero.title, title_size) > 940.0f)
+        title_size -= 4.0f;
+    ui::text(list, fonts.display, fit(fonts.display, hero.title, title_size, 940), x - 3, 282, title_size, kWhite);
     ui::text(list, fonts.regular, fit(fonts.regular, hero.detail, 24, 940), x, 330, 24,
              p.text_faint);
 
@@ -649,7 +654,8 @@ void HomeScreen::draw(DrawList &list, const Context &ctx) const
             const std::uint32_t tex = art_texture(ctx, t.art, t.art_w, t.art_h, std::string());
             if (tex)
             {
-                list.image(tex, r, ::hui::gfx::kFullUv, kWhite.with_alpha(t.focused ? 1.0f : 0.82f), 18);
+                draw_art_fit(list, tex, t.art_w, t.art_h, r, 18, kWhite.with_alpha(t.focused ? 1.0f : 0.82f), p.surface_sel,
+                             p.surface);
             }
             else
             {

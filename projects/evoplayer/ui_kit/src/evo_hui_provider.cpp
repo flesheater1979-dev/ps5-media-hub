@@ -8,6 +8,7 @@
  * navigation); this only draws what it is given.
  */
 #include "evo_hui_provider.hpp"
+#include "evo_hui_cover.hpp"
 #include "ui/glyphs.hpp"
 
 #include <algorithm>
@@ -65,22 +66,6 @@ std::string icon_path(const std::string &p)
     if (p.compare(0, prefix.size(), prefix) == 0)
         return "../icons/" + p.substr(prefix.size());
     return p;
-}
-
-/* A cover-fit crop of a w x h picture into a box of the given aspect. */
-Rect cover_uv(int w, int h, float box_w, float box_h)
-{
-    if (w <= 0 || h <= 0)
-        return ::hui::gfx::kFullUv;
-    const float img = static_cast<float>(w) / static_cast<float>(h);
-    const float box = box_w / box_h;
-    if (img > box)
-    {
-        const float f = box / img;
-        return {(1.0f - f) * 0.5f, 0.0f, f, 1.0f};
-    }
-    const float f = img / box;
-    return {0.0f, (1.0f - f) * 0.5f, 1.0f, f};
 }
 
 /* The largest rect of the picture's aspect that fits inside `box`. */

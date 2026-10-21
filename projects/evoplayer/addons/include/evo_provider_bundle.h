@@ -85,7 +85,7 @@ extern "C" {
 #define EVO_BUNDLE_MAX_DOCUMENTS    4
 #define EVO_BUNDLE_MAX_DOM_NODES    4000
 #define EVO_BUNDLE_MAX_FONTS        4
-#define EVO_BUNDLE_MAX_TEXTURE_BYTES (24u << 20) /* 24 MiB of decoded art    */
+#define EVO_BUNDLE_MAX_TEXTURE_BYTES (128u << 20) /* 128 MiB of decoded art  */
 
 /* ------------------------------------------------------------------------- */
 /* Types                                                                     */
