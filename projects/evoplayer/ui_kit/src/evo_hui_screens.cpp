@@ -49,6 +49,42 @@ Color from_evo(std::uint32_t c, bool use_alpha)
             static_cast<float>((c >> 16) & 0xff) / 255.0f, a};
 }
 
+/* Relative luminance and WCAG contrast of opaque colours. */
+float rel_lum(const Color &c)
+{
+    auto lin = [](float v) { return v <= 0.03928f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f); };
+    return 0.2126f * lin(c.r) + 0.7152f * lin(c.g) + 0.0722f * lin(c.b);
+}
+float contrast(const Color &a, const Color &b)
+{
+    const float la = rel_lum(a), lb = rel_lum(b);
+    return (std::max(la, lb) + 0.05f) / (std::min(la, lb) + 0.05f);
+}
+Color over(const Color &fg, const Color &bg)
+{
+    return {fg.r * fg.a + bg.r * (1 - fg.a), fg.g * fg.a + bg.g * (1 - fg.a), fg.b * fg.a + bg.b * (1 - fg.a), 1.0f};
+}
+/* Sub text must read on the brightest background it sits on (a selected row
+ * or tile), so a theme's dim "muted" grey is lifted toward its secondary text
+ * colour until it reaches 4.5:1 there (#137). */
+Color readable(const Color &dim, const Color &strong, const Color &bg, const Color &surface_sel,
+               const Color &surface)
+{
+    const Color lit[3] = {over(surface_sel, bg), over(Color::rgb(0xffffff, 0.16f), over(surface, bg)), bg};
+    for (int step = 0; step <= 10; ++step)
+    {
+        const float t = static_cast<float>(step) / 10.0f;
+        const Color c{dim.r + (strong.r - dim.r) * t, dim.g + (strong.g - dim.g) * t,
+                      dim.b + (strong.b - dim.b) * t, 1.0f};
+        bool ok = true;
+        for (const Color &l : lit)
+            ok = ok && contrast(c, l) >= 4.5f;
+        if (ok)
+            return c;
+    }
+    return strong;
+}
+
 /* A one-line string cut to width with an ellipsis. */
 std::string fit(const ui::FontRef &font, const std::string &text, float size, float width)
 {
@@ -162,7 +198,7 @@ Palette Palette::from(const evo_rmlui_theme_t &t)
     p.accent_alt = from_evo(t.accent_alt, false);
     p.text = from_evo(t.text_primary, false);
     p.text_muted = from_evo(t.text_secondary, false);
-    p.text_faint = from_evo(t.text_muted, false);
+    p.text_faint = readable(from_evo(t.text_muted, false), p.text_muted, p.bg_top, p.surface_sel, p.surface);
     return p;
 }
 

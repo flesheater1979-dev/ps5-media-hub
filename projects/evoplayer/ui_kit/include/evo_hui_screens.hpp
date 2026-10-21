@@ -86,7 +86,7 @@ struct Palette
     hui::gfx::Color accent_alt = hui::gfx::Color::rgb(0xb06cff);
     hui::gfx::Color text = hui::gfx::Color::rgb(0xffffff);
     hui::gfx::Color text_muted = hui::gfx::Color::rgb(0xffffff, 0.66f);
-    hui::gfx::Color text_faint = hui::gfx::Color::rgb(0xffffff, 0.42f);
+    hui::gfx::Color text_faint = hui::gfx::Color::rgb(0xffffff, 0.58f);
 
     static Palette from(const evo_rmlui_theme_t &theme);
 };

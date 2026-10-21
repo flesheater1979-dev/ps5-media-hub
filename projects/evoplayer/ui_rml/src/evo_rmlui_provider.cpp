@@ -773,6 +773,9 @@ static char fancy_to_ascii(unsigned cp)
     if (cp >= 0x2074 && cp <= 0x2079) return (char)('4' + (cp - 0x2074));  /* ⁴..⁹ */
     if (cp >= 0x2080 && cp <= 0x2089) return (char)('0' + (cp - 0x2080));  /* ₀..₉ */
     switch (cp) {
+    case 0x00B2: return '2';
+    case 0x00B3: return '3';
+    case 0x00B9: return '1';
     case 0x2070: return '0';
     case 0x2071: return 'i';
     case 0x207F: return 'n';

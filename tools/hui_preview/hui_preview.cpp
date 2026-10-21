@@ -177,6 +177,27 @@ int main(int argc, char **argv)
     HostTextures host(renderer, assets);
     evo::kit::TextureCache textures(host);
     evo::kit::Palette palette;
+    /* EVO_HUI_THEME=CARBON|EMBER|AURORA|MIDNIGHT previews a built-in theme (#137). */
+    if (const char *tn = std::getenv("EVO_HUI_THEME"))
+    {
+        auto c = [](unsigned r, unsigned g, unsigned b, unsigned a) -> std::uint32_t
+        { return (a << 24) | (b << 16) | (g << 8) | r; };
+        evo_rmlui_theme_t t{};
+        const std::string n = tn;
+        if (n == "MIDNIGHT")
+            t = {tn, c(8,13,22,255), c(3,5,10,255), c(16,26,44,240), c(22,34,58,250), c(90,125,180,51), c(255,205,0,255),
+                 c(255,205,0,255), c(255,205,0,50), c(0,205,255,255), c(238,244,255,255), c(163,182,208,255), c(94,113,140,255)};
+        else if (n == "CARBON")
+            t = {tn, c(15,15,17,255), c(5,5,6,255), c(28,28,32,235), c(42,42,48,245), c(51,51,58,170), c(232,232,238,200),
+                 c(242,242,245,255), c(255,255,255,40), c(255,107,53,255), c(245,245,247,255), c(160,160,168,255), c(102,102,110,255)};
+        else if (n == "EMBER")
+            t = {tn, c(20,12,8,255), c(7,4,2,255), c(36,22,14,235), c(58,34,17,245), c(74,48,28,170), c(255,165,40,220),
+                 c(255,165,40,255), c(255,122,24,60), c(255,77,77,255), c(255,243,230,255), c(199,169,142,255), c(138,110,86,255)};
+        else if (n == "AURORA")
+            t = {tn, c(5,18,18,255), c(1,6,8,255), c(13,36,36,235), c(17,58,53,245), c(30,74,70,170), c(61,245,192,220),
+                 c(61,245,192,255), c(36,201,160,60), c(155,140,255,255), c(232,255,248,255), c(147,195,184,255), c(86,130,122,255)};
+        palette = evo::kit::Palette::from(t);
+    }
 
     GLuint framebuffer = 0, color = 0;
     glGenFramebuffers(1, &framebuffer);
