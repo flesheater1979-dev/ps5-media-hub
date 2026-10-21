@@ -806,6 +806,11 @@ int ms_list_catalog(ms_client_t *c, const char *parent_id, int page,
     if (!c->cfg.is_connected) return -1;
     const char *uid = c->cfg.user_id;
     const int start = page > 0 ? page * MS_PAGE : 0;
+    /* A home shelf shows a couple of dozen posters: ask for that many, not a
+     * whole page (a page of 96 with overviews was half a megabyte). */
+    const int hint = evo_provider_row_limit();
+    const int limit = (page == 0 && hint > 0 && hint < MS_PAGE) ? hint : MS_PAGE;
+    const int few = limit < 48 ? limit : 48;
     char path[1024];
 
     if (!parent_id || !*parent_id) {
@@ -816,24 +821,24 @@ int ms_list_catalog(ms_client_t *c, const char *parent_id, int page,
     if (!strcmp(parent_id, "v:resume")) {
         snprintf(path, sizeof path,
                  "/Users/%s/Items/Resume?MediaTypes=Video&StartIndex=%d&Limit=%d&%s",
-                 uid, start, MS_PAGE, MS_FIELDS);
+                 uid, start, limit, MS_FIELDS);
         return items_request(c, path, CTX_MIXED, start, 0, cb, ud);
     }
     if (!strcmp(parent_id, "v:nextup")) {
         snprintf(path, sizeof path, "/Shows/NextUp?UserId=%s&StartIndex=%d&Limit=%d&%s",
-                 uid, start, MS_PAGE, MS_FIELDS);
+                 uid, start, limit, MS_FIELDS);
         return items_request(c, path, CTX_MIXED, start, 0, cb, ud);
     }
     if (!strncmp(parent_id, "sim:", 4)) {
         const char *sid = strrchr(parent_id + 4, ':');
         sid = sid ? sid + 1 : parent_id + 4;
-        snprintf(path, sizeof path, "/Items/%s/Similar?UserId=%s&Limit=48&%s", sid, uid, MS_FIELDS);
+        snprintf(path, sizeof path, "/Items/%s/Similar?UserId=%s&Limit=%d&%s", sid, uid, few, MS_FIELDS);
         return items_request(c, path, CTX_MIXED, 0, 0, cb, ud);
     }
     if (!strcmp(parent_id, "v:latest")) {
         if (page > 0) return -1;
-        snprintf(path, sizeof path, "/Users/%s/Items/Latest?Limit=48&GroupItems=true&%s",
-                 uid, MS_FIELDS);
+        snprintf(path, sizeof path, "/Users/%s/Items/Latest?Limit=%d&GroupItems=true&%s",
+                 uid, few, MS_FIELDS);
         return items_request(c, path, CTX_MIXED, 0, 0, cb, ud);
     }
     if (!strcmp(parent_id, "v:favs")) {
@@ -841,7 +846,7 @@ int ms_list_catalog(ms_client_t *c, const char *parent_id, int page,
                  "/Users/%s/Items?Filters=IsFavorite&Recursive=true"
                  "&IncludeItemTypes=Movie,Series,Episode&SortBy=SortName&SortOrder=Ascending"
                  "&StartIndex=%d&Limit=%d&%s",
-                 uid, start, MS_PAGE, MS_FIELDS);
+                 uid, start, limit, MS_FIELDS);
         return items_request(c, path, CTX_MIXED, start, 0, cb, ud);
     }
     if (!strncmp(parent_id, "lib:", 4)) {
@@ -853,7 +858,7 @@ int ms_list_catalog(ms_client_t *c, const char *parent_id, int page,
         if (!strcmp(type, "livetv")) {
             snprintf(path, sizeof path,
                      "/LiveTv/Channels?UserId=%s&AddCurrentProgram=true&StartIndex=%d&Limit=%d&%s",
-                     uid, start, MS_PAGE, MS_FIELDS);
+                     uid, start, limit, MS_FIELDS);
             return items_request(c, path, CTX_LIST, start, 0, cb, ud);
         }
         const char *include = !strcmp(type, "movies")  ? "&Recursive=true&IncludeItemTypes=Movie" :
@@ -873,7 +878,7 @@ int ms_list_catalog(ms_client_t *c, const char *parent_id, int page,
         snprintf(path, sizeof path,
                  "/Users/%s/Items?ParentId=%s%s&%s%s%s&StartIndex=%d&Limit=%d&%s",
                  uid, id, include, sorts[c->sort % 4], filters[c->filter % 3], genre,
-                 start, MS_PAGE, MS_FIELDS);
+                 start, limit, MS_FIELDS);
         return items_request(c, path, CTX_LIST, start, 0, cb, ud);
     }
     if (!strncmp(parent_id, "ser:", 4)) {
@@ -894,7 +899,7 @@ int ms_list_catalog(ms_client_t *c, const char *parent_id, int page,
         snprintf(path, sizeof path,
                  "/Users/%s/Items?ParentId=%s&SortBy=ParentIndexNumber,IndexNumber,SortName&SortOrder=Ascending"
                  "&StartIndex=%d&Limit=%d&%s",
-                 uid, parent_id + 4, start, MS_PAGE, MS_FIELDS);
+                 uid, parent_id + 4, start, limit, MS_FIELDS);
         return items_request(c, path, CTX_LIST, start, 0, cb, ud);
     }
     return -1;

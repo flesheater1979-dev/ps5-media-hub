@@ -119,7 +119,8 @@ struct EvoShelf {
     Rml::String title;
     std::vector<EvoShelfCard> cards;
     bool fresh = false;          /* loaded since this home was built */
-    int  col = 0;                /* focused card */
+    bool loading = false;        /* its request is out */
+    int  col = 0;               /* focused card */
     int  first = 0;              /* left edge of the window, in cards */
 };
 

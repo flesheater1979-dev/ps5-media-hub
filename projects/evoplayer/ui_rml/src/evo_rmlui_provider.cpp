@@ -2526,7 +2526,10 @@ void EvoRmlProviderHost::LoadNextShelf()
         m_model.loading = true;
         m_shelves[i].loading = true;                    /* before the call: a provider may answer inside it */
         const std::string parent = m_shelves[i].parent;
-        if (m_provider->list_catalog(parent.c_str(), 0, &EvoRmlProviderHost::ShelfCallback, c) == 0) {
+        evo_provider_set_row_limit((int)kShelfCards);
+        const int rc = m_provider->list_catalog(parent.c_str(), 0, &EvoRmlProviderHost::ShelfCallback, c);
+        evo_provider_set_row_limit(0);
+        if (rc == 0) {
             if (gen != m_shelf_gen) return;             /* answered inside and the home changed */
             continue;                                   /* its callback loads the next */
         }

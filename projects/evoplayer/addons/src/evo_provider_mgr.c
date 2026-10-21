@@ -270,6 +270,10 @@ static int g_play_paused;
 void evo_provider_set_paused(int paused) { g_play_paused = paused ? 1 : 0; }
 int  evo_provider_is_paused(void) { return g_play_paused; }
 
+static int g_row_limit;
+void evo_provider_set_row_limit(int rows) { g_row_limit = rows > 0 ? rows : 0; }
+int  evo_provider_row_limit(void) { return g_row_limit; }
+
 const evo_provider_t *evo_provider_find(const char *id)
 {
     if (!id) return NULL;

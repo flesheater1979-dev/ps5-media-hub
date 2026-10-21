@@ -467,6 +467,15 @@ int  evo_provider_count(void);
 const evo_provider_t *evo_provider_at(int index);
 const evo_provider_t *evo_provider_find(const char *id);
 
+/*
+ * How many rows the caller will show, set around one list_catalog call (0 =
+ * no limit, the default). A home shelf shows 24 posters; a provider that pages
+ * may ask its server for that many on page 0 instead of a whole page. Others
+ * ignore it.
+ */
+void evo_provider_set_row_limit(int rows);
+int  evo_provider_row_limit(void);
+
 /* 1 when `id` is safe to use as a directory name. Everything that builds a
  * path from a provider id goes through this first. */
 int  evo_provider_id_valid(const char *id);

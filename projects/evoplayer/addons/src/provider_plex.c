@@ -811,9 +811,11 @@ static int plex_request_media(int server_index, const char *path,
              "X-Plex-Container-Start: %lld",
              (long long)page * PLEX_CATALOG_PAGE_SIZE);
 
+    /* A home shelf asks for only the posters it shows (evo_provider_row_limit). */
+    const int hint = evo_provider_row_limit();
     snprintf(size_header, sizeof size_header,
              "X-Plex-Container-Size: %d",
-             PLEX_CATALOG_PAGE_SIZE);
+             (page == 0 && hint > 0 && hint < PLEX_CATALOG_PAGE_SIZE) ? hint : PLEX_CATALOG_PAGE_SIZE);
 
     const char *req_headers[] = {
         PLEX_HEADERS,

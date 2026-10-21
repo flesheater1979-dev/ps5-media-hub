@@ -23,7 +23,7 @@
  *
  * The cost of going through image2 is that the decoder is chosen from the
  * FILENAME, so the cache file has to be named for its sniffed type - see
- * sniff_ext(). A poster whose format has no decoder in this build (WebP, GIF)
+ * sniff_ext(). A poster whose format has no decoder in this build (GIF)
  * is refused on arrival rather than written and failed later.
  *
  * The decoded texture lives in the render interface's "evo:mem/" registry,
@@ -157,12 +157,15 @@ const char* sniff_ext(const char* bytes, size_t len)
 {
     if (len >= 8 && memcmp(bytes, "\x89PNG\r\n\x1a\n", 8) == 0) return ".png";
     if (len >= 3 && memcmp(bytes, "\xff\xd8\xff", 3) == 0)      return ".jpg";
-    return nullptr;   /* WebP and GIF land here: no decoder in this build. */
+    /* WebP: Stremio's poster host (images.metahub.space) sends it. The build
+     * has the webp decoder, and image2 picks it by the extension. */
+    if (len >= 12 && memcmp(bytes, "RIFF", 4) == 0 && memcmp(bytes + 8, "WEBP", 4) == 0) return ".webp";
+    return nullptr;   /* GIF lands here: no decoder in this build. */
 }
 
 /* Every extension sniff_ext() can produce, for locating a file a previous
  * session cached when the bytes are not in hand to sniff again. */
-const char* const kArtExts[] = { ".png", ".jpg" };
+const char* const kArtExts[] = { ".png", ".jpg", ".webp" };
 
 /*
  * Why this module logs at all, and why it is capped.
