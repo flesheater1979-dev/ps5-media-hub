@@ -118,6 +118,7 @@ private:
     bool adoptChannelPlaylist(const char* url);
     static void OnSourceSubmitted(const char* text, void* userdata);
     static void OnGuideSubmitted(const char* text, void* userdata);
+    static void OnXtreamGuideSubmitted(const char* text, void* userdata);
 
     void browseUsb();
     static std::vector<std::string> scanUsbPlaylists();
@@ -165,6 +166,7 @@ private:
      * keyboard opens, so the field can be pre-filled (evo_net_discover_*). */
     bool m_discovering = false;
     void openSourceKeyboard(const std::string& initial);
+    void openXtreamMenu(int focus = 0);   /* Xtream: account + XMLTV guide (#149) */
     void openProviderMenu(int focus = 0); /* IPTV: Options -> side panel        */
     void openGuidePicker();
     void applyChoice(const std::string& id);

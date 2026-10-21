@@ -150,6 +150,7 @@ ADDON_SRCS := \
     addons/src/evo_hls_variants.c \
     addons/src/provider_iptv.c \
     addons/src/provider_xtream.c \
+    addons/src/xtream_epg.c \
     addons/src/provider_emby.c \
     addons/src/provider_jellyfin.c \
     addons/src/provider_plex.c \
@@ -203,8 +204,8 @@ CORE_SRCS := \
     core/src/screens/SettingsScreen.cpp \
     core/src/screens/SubtitlePickerScreen.cpp \
     core/src/screens/AudioTrackPickerScreen.cpp \
-    core/src/screens/TextReaderScreen.cpp \
     core/src/screens/ChapterPickerScreen.cpp \
+    core/src/screens/TextReaderScreen.cpp \
     core/src/screens/MediaInfoScreen.cpp \
     core/src/screens/SurroundTestScreen.cpp \
     core/src/screens/DeveloperToolsScreen.cpp \

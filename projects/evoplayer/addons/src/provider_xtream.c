@@ -129,6 +129,8 @@ int xtream_init(void)
             snprintf(g_cfg.status, sizeof g_cfg.status, "%s", v);
         else if (strcmp(k, "exp_date") == 0)
             snprintf(g_cfg.exp_date, sizeof g_cfg.exp_date, "%s", v);
+        else if (strcmp(k, "xmltv") == 0)
+            snprintf(g_cfg.xmltv_url, sizeof g_cfg.xmltv_url, "%s", v);
     }
     fclose(f);
 
@@ -152,6 +154,7 @@ int xtream_save_config(void)
     fprintf(f, "stream_format=%s\n", g_cfg.stream_format[0] ? g_cfg.stream_format : "m3u8");
     if (g_cfg.status[0])   fprintf(f, "status=%s\n", g_cfg.status);
     if (g_cfg.exp_date[0]) fprintf(f, "exp_date=%s\n", g_cfg.exp_date);
+    if (g_cfg.xmltv_url[0]) fprintf(f, "xmltv=%s\n", g_cfg.xmltv_url);
     fclose(f);
     return 0;
 }
@@ -170,6 +173,45 @@ void xtream_set_server(const char *host, int port, const char *username, const c
     g_cfg.use_https = use_https;
     if (!g_cfg.stream_format[0])
         snprintf(g_cfg.stream_format, sizeof g_cfg.stream_format, "m3u8");
+}
+
+/* The guide to load: the user's own address, else the panel's xmltv.php. */
+static void guide_url(char *out, size_t sz, char *label, size_t lsz)
+{
+    if (g_cfg.xmltv_url[0]) {
+        snprintf(out, sz, "%s", g_cfg.xmltv_url);
+        const char *b = strstr(out, "://");
+        b = b ? b + 3 : out;
+        size_t n = strcspn(b, "/?");
+        snprintf(label, lsz, "%.*s", (int)n, b);
+        return;
+    }
+    const char *scheme = g_cfg.use_https ? "https" : "http";
+    int default_port = g_cfg.use_https ? 443 : 80;
+    if (g_cfg.port > 0 && g_cfg.port != default_port)
+        snprintf(out, sz, "%s://%s:%d/xmltv.php?username=%s&password=%s",
+                 scheme, g_cfg.host, g_cfg.port, g_cfg.username, g_cfg.password);
+    else
+        snprintf(out, sz, "%s://%s/xmltv.php?username=%s&password=%s",
+                 scheme, g_cfg.host, g_cfg.username, g_cfg.password);
+    snprintf(label, lsz, "the panel (%s)", g_cfg.host);
+}
+
+static void kick_guide(void)
+{
+    if (!g_cfg.host[0] || !g_cfg.username[0] || !g_cfg.password[0]) return;
+    char url[600], label[96];
+    guide_url(url, sizeof url, label, sizeof label);
+    xtream_epg_load(url, label);
+}
+
+const char *xtream_get_xmltv(void) { return g_cfg.xmltv_url; }
+
+void xtream_set_xmltv(const char *url)
+{
+    snprintf(g_cfg.xmltv_url, sizeof g_cfg.xmltv_url, "%s", url ? url : "");
+    xtream_save_config();
+    kick_guide();
 }
 
 void xtream_set_stream_format(const char *fmt)
@@ -259,6 +301,7 @@ static void on_auth_resp(int success, int status, const char *body, size_t len, 
         if (stat[0]) snprintf(g_cfg.status, sizeof g_cfg.status, "%s", stat);
         if (exp[0])  snprintf(g_cfg.exp_date, sizeof g_cfg.exp_date, "%s", exp);
         xtream_save_config();
+        kick_guide();
         if (ctx->cb) ctx->cb(1, "Account active", ctx->ud);
     } else if (auth == 0) {
         g_cfg.is_connected = false;
@@ -453,6 +496,10 @@ static void on_live_streams_resp(int success, int status, const char *body, size
             snprintf(items[i].next_title, sizeof items[i].next_title, "%s", next_obj->valuestring);
         }
 
+        if (!items[i].now_title[0] && epg_id && epg_id->valuestring)
+            xtream_epg_lookup(epg_id->valuestring, items[i].now_title, sizeof items[i].now_title,
+                              items[i].next_title, sizeof items[i].next_title);
+
         if (items[i].now_title[0]) {
             if (items[i].next_title[0])
                 snprintf(items[i].subtitle, sizeof items[i].subtitle, "%s | Next: %s",
@@ -460,7 +507,8 @@ static void on_live_streams_resp(int success, int status, const char *body, size
             else
                 snprintf(items[i].subtitle, sizeof items[i].subtitle, "%s", items[i].now_title);
         } else if (epg_id && epg_id->valuestring && epg_id->valuestring[0]) {
-            snprintf(items[i].subtitle, sizeof items[i].subtitle, "EPG: %s", epg_id->valuestring);
+            snprintf(items[i].subtitle, sizeof items[i].subtitle, "%s",
+                     xtream_epg_state() == XT_EPG_LOADING ? "Loading the guide..." : "No guide data");
         } else {
             snprintf(items[i].subtitle, sizeof items[i].subtitle, "Live Broadcast");
         }
@@ -787,6 +835,8 @@ static int xtream_list_catalog(const char *parent_id, int page,
         if (cb) cb(0, NULL, 0, 0, ud);
         return -1;
     }
+
+    if (xtream_epg_state() == XT_EPG_NONE) kick_guide();   /* launch without a fresh sign-in */
 
     /* 1. Root level: 3 distinct catalogs */
     if (!parent_id || !*parent_id) {

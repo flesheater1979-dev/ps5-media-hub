@@ -60,10 +60,10 @@ enum class SettingKey : int {
     DeveloperTools,
     ConsoleModel,
     QuitEvo,
-    DeepBlacks,
     /* EXPERIMENTAL */
     MotionSmoothing,
     MatchVideoRate,
+    DeepBlacks,
 };
 
 /*
@@ -90,7 +90,7 @@ struct SettingDef {
 const SettingKey kVideoKeys[] = {
     SettingKey::DefaultAspect, SettingKey::ResumePlayback, SettingKey::VideoDecoder,
     SettingKey::Upscaling, SettingKey::AiNetwork, SettingKey::RefreshRate,
-    SettingKey::HdrOutput, SettingKey::DeepBlacks,
+    SettingKey::HdrOutput,
 };
 const SettingKey kAudioKeys[] = {
     SettingKey::OutputChannels, SettingKey::AudioPassthrough, SettingKey::SurroundTest, SettingKey::NavigationSounds,
@@ -112,7 +112,7 @@ const SettingKey kSystemKeys[] = {
  * nobody turns one on expecting a shipped feature, and they default to off.
  */
 const SettingKey kExperimentalKeys[] = {
-    SettingKey::MotionSmoothing, SettingKey::MatchVideoRate,
+    SettingKey::MotionSmoothing, SettingKey::MatchVideoRate, SettingKey::DeepBlacks,
 };
 
 struct SectionSpec {

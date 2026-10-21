@@ -13,7 +13,8 @@
 
 extern "C" {
 #include "evo_provider.h"
-#include "provider_stremio.h"                       /* the Remove-addon rows */
+#include "addon_xtream.h"                           /* the XMLTV guide row (#149) */
+#include "provider_stremio.h"                     /* the Remove-addon rows */
 #include "evo_boot_trace.h"
 #include "evo_readdir.h"
 #include "evo_favorites.h"
@@ -1495,6 +1496,9 @@ bool ProviderHostScreen::handleInput(uint32_t pressed, uint32_t held, uint32_t r
         } else if (op && std::strcmp(op->id, "iptv") == 0 &&
                    !evo_rmlui_provider_get_query()[0]) {
             openProviderMenu();     /* playlist or guide, for the one on screen */
+        } else if (op && std::strcmp(op->id, "xtream") == 0 &&
+                   !evo_rmlui_provider_get_query()[0]) {
+            openXtreamMenu();       /* account or XMLTV guide (#149) */
         } else {
             evo_rmlui_provider_show_setup();
         }
@@ -1722,6 +1726,52 @@ void ProviderHostScreen::openProviderMenu(int focus)
     pb.rows.push_back(r);
 
     pb.show("", "LIVE TV", "Options", pl, "", "", "SELECT", "CLOSE", focus);
+}
+
+void ProviderHostScreen::OnXtreamGuideSubmitted(const char* text, void* userdata)
+{
+    (void)userdata;
+    std::string value = text ? text : "";
+    size_t b = value.find_first_not_of(" \t\r\n");
+    if (b == std::string::npos) {
+        value.clear();
+    } else {
+        value = value.substr(b, value.find_last_not_of(" \t\r\n") - b + 1);
+    }
+    if (!value.empty() && value.rfind("http://", 0) != 0 && value.rfind("https://", 0) != 0) {
+        toast("XTREAM", "Guide must start with http:// or https://");
+        return;
+    }
+    xtream_set_xmltv(value.c_str());
+    toast("XTREAM", value.empty() ? "Guide: the panel's own" : "Loading your guide...");
+    evo_rmlui_provider_hide_panel();
+    evo_rmlui_provider_reload();
+}
+
+void ProviderHostScreen::openXtreamMenu(int focus)
+{
+    evo_feedback(EVO_FB_OPEN);
+    m_panelPage = "xtream";
+
+    PanelBuild pb;
+    PanelBuild::Row r;
+    r.id = "xt:account"; r.title = "Account"; r.icon = "/assets/icons/icon_tv.png";
+    r.detail = xtream_get_config()->host[0] ? std::string(xtream_get_config()->host)
+                                            : std::string("None yet");
+    r.chevron = 1;
+    pb.rows.push_back(r);
+
+    r = PanelBuild::Row();
+    r.id = "xt:guide"; r.title = "XMLTV guide"; r.icon = "/assets/icons/icon_recent_files.png";
+    r.chevron = 1;
+    const std::string own = xtream_get_xmltv();
+    const std::string st = xtream_epg_status();
+    r.detail = (own.empty() ? std::string("The panel's own guide") : "Your own: " + guideLabel(own)) +
+               (st.empty() ? std::string() : " · " + st);
+    if (xtream_epg_state() == XT_EPG_EMPTY || xtream_epg_state() == XT_EPG_FAILED) r.warn = 1;
+    pb.rows.push_back(r);
+
+    pb.show("", "XTREAM", "Options", xtream_get_config()->host, "", "", "SELECT", "CLOSE", focus);
 }
 
 void ProviderHostScreen::openGuidePicker()
@@ -2023,6 +2073,18 @@ void ProviderHostScreen::applyChoice(const std::string& id)
             delete c;
         }, ctx);
         if (rc != 0) { toast("OPTIONS", "Could not reach the server"); delete ctx; }
+        return;
+    }
+    if (id == "xt:account") {
+        evo_rmlui_provider_hide_panel();
+        evo_rmlui_provider_show_setup();
+        return;
+    }
+    if (id == "xt:guide") {
+        const std::string own = xtream_get_xmltv();
+        evo_keyboard_open("XMLTV guide address (empty = the panel's own)",
+                          own.empty() ? "https://" : own.c_str(), 255,
+                          &ProviderHostScreen::OnXtreamGuideSubmitted, this);
         return;
     }
     if (id == "panel:back") {
