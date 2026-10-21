@@ -121,6 +121,7 @@ public:
     virtual void tickScrubAutoCommit() = 0;
 
     virtual void jumpChapter(int direction) = 0;
+    virtual void jumpToChapter(int index) = 0;   /* #150 picker */
 
     virtual void cycleViewMode() = 0;
     virtual ViewMode getViewMode() const = 0;

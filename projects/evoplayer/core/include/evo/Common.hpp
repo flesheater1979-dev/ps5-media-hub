@@ -57,7 +57,8 @@ enum class ScreenId : int {
     AudioTrackPicker = 31,
     SafeToClose = 32,    /* the frame EVO parks on after QUIT (SafeToCloseScreen) */
     SettingsAudio = 33,  /* #118 */
-    SettingsExperimental = 34  /* #105 */
+    SettingsExperimental = 34, /* #105 */
+    ChapterPicker = 35         /* #150 */
 };
 
 // Playback Quality Profile

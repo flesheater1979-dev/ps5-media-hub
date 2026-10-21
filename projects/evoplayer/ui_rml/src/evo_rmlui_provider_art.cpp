@@ -50,6 +50,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <list>
 #include <string>
 #include <unordered_map>
@@ -96,6 +97,7 @@ struct Entry {
     size_t      bytes = 0;    /* decoded size, 0 until registered */
     bool        ready = false;
     bool        failed = false;
+    uint64_t    last_req = 0;  /* ms of the last request for this key (#155) */
 };
 
 struct ArtState {
@@ -110,6 +112,7 @@ struct ArtState {
      * cost is visible in the frame time rather than hidden in a callback. */
     std::vector<std::string> arrived;
     int in_flight = 0;
+    unsigned evictions = 0, redecodes = 0;   /* #155: counted, logged in batches */
 };
 
 ArtState& S()
@@ -189,21 +192,43 @@ void touch(const std::string& key)
     s.lru.push_front(key);
 }
 
+uint64_t now_ms()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000ull + (uint64_t)(ts.tv_nsec / 1000000);
+}
+
+/*
+ * #155: a tile that already holds its key never asks for the art again, so
+ * evicting an image that is on screen blanks it for good. The screen cannot be
+ * asked which keys it shows, so anything requested in the last kPinMs counts as
+ * on screen and is skipped. Only past twice the budget is that overridden, so
+ * memory stays bounded.
+ */
+constexpr uint64_t kPinMs = 120000;
+
 void evict_to_budget()
 {
     ArtState& s = S();
     EvoRenderBridge* r = EvoRmlApp::Instance().RenderBridge();
-    while (s.used > s.budget && !s.lru.empty()) {
-        std::string victim = s.lru.back();
-        s.lru.pop_back();
-        auto it = s.by_key.find(victim);
-        if (it == s.by_key.end()) continue;
+    const uint64_t now = now_ms();
+    const size_t hard = s.budget * 2;
+    for (auto lit = s.lru.end(); s.used > s.budget && lit != s.lru.begin();) {
+        --lit;
+        auto it = s.by_key.find(*lit);
+        if (it == s.by_key.end()) { lit = s.lru.erase(lit); continue; }
+        if (s.used <= hard && now - it->second.last_req < kPinMs) continue;   /* on screen */
+        lit = s.lru.erase(lit);
         if (it->second.ready && r) r->DropMemoryTexture(it->second.key);
         s.used -= it->second.bytes;
         /* The raw file stays: it is the disk cache, and re-decoding it is far
          * cheaper than downloading it again. */
         it->second.ready = false;
         it->second.bytes = 0;
+        if ((++s.evictions % 20) == 1)
+            PROV_LOG("art EVICT n=%u redecode=%u used=%zuK budget=%zuK",
+                     s.evictions, s.redecodes, s.used >> 10, s.budget >> 10);
     }
 }
 
@@ -474,6 +499,7 @@ extern "C" int evo_provider_art_request(const char* provider_id, const char* url
 
     auto it = s.by_key.find(key);
     if (it != s.by_key.end()) {
+        it->second.last_req = now_ms();
         if (it->second.failed) return -1;
         if (it->second.ready) { touch(key); return 1; }
         /* Bytes are on disk from a previous session or an earlier eviction:
@@ -481,7 +507,7 @@ extern "C" int evo_provider_art_request(const char* provider_id, const char* url
          * no filename yet, so there is nothing to look for. */
         if (!it->second.file.empty()) {
             FILE* f = fopen(it->second.file.c_str(), "rb");
-            if (f) { fclose(f); s.arrived.push_back(key); }
+            if (f) { fclose(f); s.arrived.push_back(key); s.redecodes++; }
         }
         return 0;
     }
@@ -497,6 +523,7 @@ extern "C" int evo_provider_art_request(const char* provider_id, const char* url
 
     Entry e;
     e.key = key;
+    e.last_req = now_ms();
     s.by_key.emplace(key, e);
 
     /* Already cached on disk from a previous run: no network at all. Which

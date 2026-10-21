@@ -44,6 +44,8 @@ extern volatile int pb_prebuffer_hold;
 #include <cstdio>
 #include <cstring>
 #include <cmath>
+#include <ctime>
+#include <algorithm>
 
 namespace evo {
 
@@ -280,6 +282,14 @@ bool PlayerScreen::handleInput(uint32_t pressed, uint32_t held, uint32_t release
     if (pressed & PadButtons::R1) {
         playback->jumpChapter(1);
         return true;
+    }
+    /* #150: R3 opens the chapter list - only for a file that has chapters. */
+    if (pressed & PadButtons::R3) {
+        auto meta = Application::getInstance().getMediaMetadataService();
+        if (meta && meta->getChapterCount() > 0 && !playback->isScrubbing() && screenMgr) {
+            screenMgr->navigateTo(ScreenId::ChapterPicker);
+            return true;
+        }
     }
     if (pressed & PadButtons::Left) {
         playback->moveScrub(-10.0);
@@ -833,6 +843,49 @@ void PlayerScreen::render(uint32_t* framebuffer, int width, int height) {
         p.debug_overlay = evo_fps_counter_enabled();
         p.music_mode = playback->isMusicMode() ? 1 : 0;
         p.music_codec = "AUDIO";
+
+        /* #150: chapters. */
+        static double chapterStarts[128];
+        static char chapterTitle[96], scrubChapterTitle[96];
+        chapterTitle[0] = scrubChapterTitle[0] = '\0';
+        if (metaService && !playback->isLiveSource() && !playback->isMusicMode()) {
+            const int cn = static_cast<int>(std::min<size_t>(metaService->getChapterCount(), 128));
+            for (int i = 0; i < cn; ++i)
+                chapterStarts[i] = metaService->getChapter(i)->startTimeSeconds;
+            p.chapter_count = cn;
+            p.chapter_starts = chapterStarts;
+            if (cn > 0) {
+                int ci = metaService->getChapterIndexAtPosition(playback->getPositionSeconds());
+                if (ci >= 0)
+                    std::snprintf(chapterTitle, sizeof(chapterTitle), "%s", metaService->getChapter(ci)->title.c_str());
+                if (playback->isScrubbing()) {
+                    int si = metaService->getChapterIndexAtPosition(playback->getScrubTargetSeconds());
+                    if (si >= 0)
+                        std::snprintf(scrubChapterTitle, sizeof(scrubChapterTitle), "%s",
+                                      metaService->getChapter(si)->title.c_str());
+                }
+                p.chapter_title = chapterTitle;
+                p.scrub_chapter_title = scrubChapterTitle;
+            }
+        }
+
+        /* #151: time left, and the clock time the video ends at. The end time
+         * moves while paused, as the remaining time is fixed then. */
+        static char remainingBuf[24], endsAtBuf[16];
+        remainingBuf[0] = endsAtBuf[0] = '\0';
+        if (!playback->isLiveSource() && !playback->isMusicMode() && p.duration_sec > 1.0) {
+            const long left = static_cast<long>(std::max(0.0, p.duration_sec - p.position_sec));
+            if (left >= 3600)
+                std::snprintf(remainingBuf, sizeof(remainingBuf), "-%ld:%02ld:%02ld", left / 3600, (left / 60) % 60, left % 60);
+            else
+                std::snprintf(remainingBuf, sizeof(remainingBuf), "-%ld:%02ld", left / 60, left % 60);
+            time_t endT = time(nullptr) + left;
+            struct tm tmv;
+            if (localtime_r(&endT, &tmv))
+                std::snprintf(endsAtBuf, sizeof(endsAtBuf), "%02d:%02d", tmv.tm_hour, tmv.tm_min);
+            p.remaining = remainingBuf;
+            p.ends_at = endsAtBuf;
+        }
 
         evo_rmlui_update_playback_params(&p);
         if (m_showStatsForNerds) {

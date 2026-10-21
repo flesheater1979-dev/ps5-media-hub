@@ -1708,16 +1708,40 @@ void PlaybackController::jumpChapter(int direction) {
         return;
     }
 
-    int currentChapter = metaService->getChapterIndexAtPosition(getPositionSeconds());
-    int targetChapter = currentChapter + direction;
+    const double pos = getPositionSeconds();
+    const int count = static_cast<int>(metaService->getChapterCount());
+    const int cur = metaService->getChapterIndexAtPosition(pos);   /* -1 before the first start */
 
-    if (targetChapter >= 0 && targetChapter < static_cast<int>(metaService->getChapterCount())) {
-        const ChapterInfo* ch = metaService->getChapter(targetChapter);
-        if (ch) {
-            seekTo(ch->startTimeSeconds);
-            toast("CHAPTER", ch->title.c_str());
+    if (direction > 0) {
+        /* The last chapter has nothing after it: stay put, say so. */
+        if (cur + 1 >= count) {
+            toast("CHAPTER", "LAST CHAPTER");
+            return;
         }
+        jumpToChapter(cur + 1);
+        return;
     }
+
+    /* Previous: a few seconds in restarts this chapter, early goes back one,
+     * and the first chapter (or before it) goes to 0:00. */
+    const ChapterInfo* here = cur >= 0 ? metaService->getChapter(cur) : nullptr;
+    if (here && pos - here->startTimeSeconds > 3.0) {
+        jumpToChapter(cur);
+    } else if (cur > 0) {
+        jumpToChapter(cur - 1);
+    } else {
+        seekTo(0.0);
+        toast("CHAPTER", "START");
+    }
+}
+
+void PlaybackController::jumpToChapter(int index) {
+    auto metaService = Application::getInstance().getMediaMetadataService();
+    if (!metaService) return;
+    const ChapterInfo* ch = metaService->getChapter(static_cast<size_t>(index < 0 ? 0 : index));
+    if (!ch) return;
+    seekTo(ch->startTimeSeconds);
+    toast("CHAPTER", ch->title.c_str());
 }
 
 void PlaybackController::cycleViewMode() {

@@ -73,6 +73,17 @@ typedef struct {
      * (#music-view) instead of the video-centric centre overlay / captions. */
     int music_mode;
     const char* music_codec;
+    /* #150: chapter marks. chapter_starts[chapter_count] are start times in
+     * seconds (ticks on the seek bar); chapter_title is the one the playhead is
+     * in, scrub_chapter_title the one under the scrub cursor. 0 chapters hides
+     * the chapter hints. */
+    int chapter_count;
+    const double* chapter_starts;
+    const char* chapter_title;
+    const char* scrub_chapter_title;
+    /* #151: "21:40" the video ends at, and "-1:12:05" left. NULL/"" hides. */
+    const char* ends_at;
+    const char* remaining;
 } evo_playback_osd_params_t;
 
 /*

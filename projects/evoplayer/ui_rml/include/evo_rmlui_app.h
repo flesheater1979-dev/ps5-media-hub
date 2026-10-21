@@ -34,6 +34,7 @@ struct EvoPlaybackState {
     std::string audio_track;
     std::string sub_track;
     int sub_delay_ms = 0;
+    int chapter_count = 0;   /* #150 */
     bool is_live = false;
     int view_mode = 0; // 0=FIT, 1=FILL, 2=STRETCH
     bool show_stats = false;

@@ -152,6 +152,14 @@ void OsdScreen::set(const evo_playback_osd_params_t &p)
     audio_track_ = str(p.audio_track);
     sub_track_ = str(p.sub_track);
     music_codec_ = str(p.music_codec);
+    chapter_title_ = str(p.chapter_title);
+    scrub_chapter_title_ = str(p.scrub_chapter_title);
+    ends_at_ = str(p.ends_at);
+    remaining_ = str(p.remaining);
+    chapter_starts_.clear();
+    for (int i = 0; p.chapter_starts && i < p.chapter_count && i < 128; ++i)
+        chapter_starts_.push_back(p.chapter_starts[i]);
+    raw_.chapter_starts = nullptr;
     sub_lines_ = split_lines(p.subtitle_text);
     sub2_lines_ = split_lines(p.subtitle_text2);
     raw_.title = raw_.metadata = nullptr; /* never read the copied pointers */
@@ -287,9 +295,37 @@ void OsdScreen::draw_bottom(DrawList &list, const Context &ctx) const
             list.rounded_rect({sx - 2, track.y - 14, 4, track.h + 28}, 2, kWhite);
             list.pop_opacity();
         }
-        ui::text(list, fonts.mono, clock_text(raw_.position_sec), track.x, 970, 24, kWhite);
+        /* #150: a tick at each chapter start, skipping any closer than 6 px. */
+        if (raw_.duration_sec > 0.0)
+        {
+            float last = -100.0f;
+            for (const double cs : chapter_starts_)
+            {
+                if (cs <= 1.0 || cs >= raw_.duration_sec - 1.0)
+                    continue;
+                const float cx = track.x + track.w * static_cast<float>(cs / raw_.duration_sec);
+                if (cx - last < 6.0f)
+                    continue;
+                last = cx;
+                list.rounded_rect({cx - 1.5f, track.y - 5, 3, track.h + 10}, 1.5f, kWhite.with_alpha(0.85f));
+            }
+        }
+        const std::string cur = clock_text(raw_.position_sec);
+        ui::text(list, fonts.mono, cur, track.x, 970, 24, kWhite);
+        /* The chapter name beside the time; under the cursor while scrubbing. */
+        const std::string &ch = (scrub_.value > 0.5f && !scrub_chapter_title_.empty()) ? scrub_chapter_title_
+                                                                                     : chapter_title_;
+        if (!ch.empty())
+            ui::text(list, fonts.semibold, fit(fonts.semibold, ch, 20, 800),
+                     track.x + fonts.mono.measure(cur, 24) + 28, 968, 20, p.accent);
         ui::text(list, fonts.mono, clock_text(raw_.duration_sec), track.x + track.w, 970, 24,
                  kWhite.with_alpha(0.7f), Align::right);
+        /* #151: time left and the clock time it ends, centred. */
+        if (!remaining_.empty())
+        {
+            const std::string mid = ends_at_.empty() ? remaining_ : remaining_ + "   -   ends at " + ends_at_;
+            ui::text(list, fonts.regular, mid, 960, 968, 20, kWhite.with_alpha(0.7f), Align::center);
+        }
     }
 
     /* Controls, one row of hints. */
@@ -298,11 +334,17 @@ void OsdScreen::draw_bottom(DrawList &list, const Context &ctx) const
                   raw_.view_mode == 0 ? "Fit" : (raw_.view_mode == 1 ? "Fill" : "Stretch"));
     const std::string audio = "Audio: " + (audio_track_.empty() ? std::string("Default") : audio_track_);
     const std::string subs = "Subs: " + (sub_track_.empty() ? std::string("Off") : sub_track_);
-    ui::Hint hints[6];
+    ui::Hint hints[10];
     int n = 0;
     hints[n++] = {ui::Button::cross, raw_.paused ? "Play" : "Pause"};
     if (!raw_.is_live)
         hints[n++] = {ui::Button::dpad, "Seek 10s"};
+    if (!raw_.is_live && raw_.chapter_count > 0)
+    {
+        hints[n++] = {ui::Button::l1, "Prev chapter"};
+        hints[n++] = {ui::Button::r1, "Next chapter"};
+        hints[n++] = {ui::Button::right_stick, "Chapter list"};
+    }
     hints[n++] = {ui::Button::r2, audio.c_str()};
     hints[n++] = {ui::Button::square, "Info"};
     hints[n++] = {ui::Button::triangle, aspect};
@@ -349,10 +391,13 @@ void OsdScreen::draw_centre(DrawList &list, const Context &ctx) const
     if (scrub_.value > 0.01f)
     {
         list.push_opacity(scrub_.value);
-        const Rect cap{960 - 170, 470, 340, 110};
+        const Rect cap{960 - 170, 470, 340, scrub_chapter_title_.empty() ? 110.0f : 150.0f};
         list.rounded_rect(cap, 28, kBlack.with_alpha(0.6f));
         ui::text(list, fonts.semibold, "SEEK TO", 960, cap.y + 38, 16, p.accent, Align::center, 3.0f);
         ui::text(list, fonts.mono, clock_text(raw_.scrub_target), 960, cap.y + 86, 40, kWhite, Align::center);
+        if (!scrub_chapter_title_.empty())
+            ui::text(list, fonts.regular, fit(fonts.regular, scrub_chapter_title_, 18, 320), 960, cap.y + 134, 18,
+                     kWhite.with_alpha(0.8f), Align::center);
         list.pop_opacity();
     }
 }

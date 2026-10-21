@@ -2980,6 +2980,9 @@ void EvoRmlApp::UpdatePlaybackState(const EvoPlaybackState& state) {
         for (const char* id : k_vod_only)
             if (Rml::Element* e = m_playback_doc->GetElementById(id))
                 e->SetProperty("display", live_off);
+        /* #150: the chapter hint only for a file that has chapters. */
+        if (Rml::Element* e = m_playback_doc->GetElementById("item-chapter"))
+            e->SetProperty("display", (state.is_live || state.chapter_count == 0) ? "none" : "flex");
         if (Rml::Element* e = m_playback_doc->GetElementById("item-subs"))
             e->SetProperty("display", (state.is_live && no_subs) ? "none" : "flex");
     }

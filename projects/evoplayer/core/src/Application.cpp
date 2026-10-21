@@ -5,6 +5,7 @@
 #include "evo/screens/SettingsScreen.hpp"
 #include "evo/screens/SubtitlePickerScreen.hpp"
 #include "evo/screens/AudioTrackPickerScreen.hpp"
+#include "evo/screens/ChapterPickerScreen.hpp"
 #include "evo/screens/TextReaderScreen.hpp"
 #include "evo/screens/MediaInfoScreen.hpp"
 #include "evo/screens/SurroundTestScreen.hpp"
@@ -472,6 +473,7 @@ bool Application::initScreens() {
     m_screenManager->registerScreen(std::make_unique<SettingsSectionScreen>(ScreenId::SettingsExperimental));
     m_screenManager->registerScreen(std::make_unique<SubtitlePickerScreen>());
     m_screenManager->registerScreen(std::make_unique<AudioTrackPickerScreen>());
+    m_screenManager->registerScreen(std::make_unique<ChapterPickerScreen>());
     m_screenManager->registerScreen(std::make_unique<TextReaderScreen>());
     m_screenManager->registerScreen(std::make_unique<MediaInfoScreen>());
     m_screenManager->registerScreen(std::make_unique<SurroundTestScreen>());
@@ -1430,7 +1432,14 @@ int Application::run() {
              * 0x0002 (L3) not at all. Accepting both means it works whichever
              * bit this pad and firmware decide to send.
              */
-            if (pressed & (PadButtons::L3 | PadButtons::R3)) {
+            /* #150: on the player, R3 opens the chapter list for a file that
+             * has chapters; L3 stays the screenshot there. */
+            bool r3IsChapters = false;
+            if ((pressed & PadButtons::R3) && m_screenManager &&
+                m_screenManager->getCurrentScreenId() == ScreenId::Player && m_mediaMetadataService &&
+                m_mediaMetadataService->getChapterCount() > 0)
+                r3IsChapters = true;
+            if ((pressed & PadButtons::L3) || ((pressed & PadButtons::R3) && !r3IsChapters)) {
                 evo_bt("screenshot: stick click pressed=%#010x", pressed);
                 evo_boot_log_flush();
                 std::string shotPath;
@@ -1451,7 +1460,7 @@ int Application::run() {
                     notifyOnScreen("EVO: screenshot failed");
                     evo_feedback(EVO_FB_BOUNDARY);
                 }
-                pressed &= ~(PadButtons::L3 | PadButtons::R3);
+                pressed &= ~(PadButtons::L3 | (r3IsChapters ? 0u : PadButtons::R3));
             }
 
             if (evo_webui_active()) {

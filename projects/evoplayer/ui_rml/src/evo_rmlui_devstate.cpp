@@ -63,6 +63,7 @@ const char* screen_name(int id)
     case 31: return "AudioTrackPicker";
     case 32: return "SafeToClose";
     case 33: return "SettingsAudio";
+    case 35: return "ChapterPicker";
     default: return "?";
     }
 }

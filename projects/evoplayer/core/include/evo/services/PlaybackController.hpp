@@ -57,6 +57,7 @@ public:
     void tickScrubAutoCommit() override;
 
     void jumpChapter(int direction) override;
+    void jumpToChapter(int index) override;
 
     void cycleViewMode() override;
     ViewMode getViewMode() const override { return m_viewMode; }

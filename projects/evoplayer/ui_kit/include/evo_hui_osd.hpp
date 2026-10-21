@@ -42,6 +42,8 @@ class OsdScreen
     std::string title_, meta_;
     std::string badges_[9]; /* res hdr codec fps audio decoder upscale smooth deepblack */
     std::string audio_track_, sub_track_, music_codec_;
+    std::string chapter_title_, scrub_chapter_title_, ends_at_, remaining_;   /* #150 / #151 */
+    std::vector<double> chapter_starts_;
     std::vector<std::string> sub_lines_, sub2_lines_;
 
     bool hud_on_ = false;
