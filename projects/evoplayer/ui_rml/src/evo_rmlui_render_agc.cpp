@@ -88,7 +88,7 @@ Rml::CompiledGeometryHandle EvoRenderInterfaceAGC::CompileGeometry(
     auto *geom = new EvoAgcCompiledGeometry();
     geom->vertex_count = (uint32_t)vertices.size();
     geom->vertex_bytes = (vertices.size() * sizeof(Rml::Vertex) + 255u) & ~255u;
-    geom->vertex_data = evo_direct_mem_alloc(geom->vertex_bytes);
+    geom->vertex_data = evo_direct_mem_alloc_gpu(geom->vertex_bytes);
 
     if (!geom->vertex_data) {
         delete geom;
@@ -150,7 +150,7 @@ Rml::CompiledGeometryHandle EvoRenderInterfaceAGC::CompileGeometry(
 
     geom->index_count = (uint32_t)indices.size();
     geom->index_bytes = (indices.size() * sizeof(uint16_t) + 255u) & ~255u;
-    geom->index_data = evo_direct_mem_alloc(geom->index_bytes);
+    geom->index_data = evo_direct_mem_alloc_gpu(geom->index_bytes);
 
     if (!geom->index_data) {
         evo_direct_mem_free(geom->vertex_data);
@@ -485,7 +485,7 @@ Rml::TextureHandle EvoRenderInterfaceAGC::CreateTextureInternal(const uint32_t *
      * others came out scrambled. Over-allocate and align by hand, keeping the
      * raw pointer for the free.
      */
-    tex->alloc_base = evo_direct_mem_alloc(tex->alloc_bytes + 255u);
+    tex->alloc_base = evo_direct_mem_alloc_gpu(tex->alloc_bytes + 255u);
     if (!tex->alloc_base) {
         evo_agc_runtime_note_drop(1);
         delete tex;
@@ -613,6 +613,14 @@ void EvoRenderInterfaceAGC::ReleaseTexture(Rml::TextureHandle texture)
     if (!tex)
         return;
 
+    /* A memory texture's handle came from LoadTexture and RmlUi may release it
+     * itself; forget it here so SetMemoryTexture / DropMemoryTexture do not
+     * free the same pool block a second time. */
+    for (auto &kv : m_mem_textures) {
+        if (kv.second.handle == texture)
+            kv.second.handle = 0;
+    }
+
     if (tex->pixels) {
         evo_direct_mem_free(tex->alloc_base);
         tex->pixels = nullptr;
@@ -650,7 +658,9 @@ void EvoRenderInterfaceAGC::SetMemoryTexture(const std::string &key,
         entry.pixels[i] = (a << 24) | (b << 16) | (g << 8) | r;
     }
 
-    entry.handle = CreateTextureInternal(entry.pixels.data(), w, h);
+    /* No GPU copy yet: LoadTexture makes one the first time RmlUi draws this
+     * key. The kit screens read the pixels and upload their own, so an eager
+     * copy here held every poster in the 64 MiB pool twice. */
 }
 
 const uint32_t *EvoRenderInterfaceAGC::MemoryTexturePixels(const std::string &key, int *w, int *h) const

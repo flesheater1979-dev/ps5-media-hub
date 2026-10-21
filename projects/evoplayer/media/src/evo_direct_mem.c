@@ -194,7 +194,15 @@ void evo_direct_mem_shutdown(void)
     pthread_mutex_unlock(&g_direct_pool.lock);
 }
 
-void *evo_direct_mem_alloc(size_t bytes)
+/*
+ * heap_fallback: when the pool is full, the CPU-only callers (video scratch,
+ * rotate ring) still get memory from malloc(). The GPU callers must not: a
+ * malloc() buffer is not mapped for the GPU, so a texture or vertex buffer
+ * placed there faults the GPU and the kernel kills EVO with no signal and no
+ * log line. That is what a fast scroll through a 100-poster Stremio list did
+ * on 2026-10-21. They get NULL instead and draw nothing.
+ */
+static void *pool_alloc(size_t bytes, int heap_fallback)
 {
     if (bytes == 0) return NULL;
 
@@ -202,7 +210,7 @@ void *evo_direct_mem_alloc(size_t bytes)
     if (!g_direct_pool.initialized) {
         if (evo_direct_mem_init(EVO_DIRECT_MEM_DEFAULT_SIZE) != 0) {
             pthread_mutex_unlock(&g_direct_pool.lock);
-            return malloc(bytes);
+            return heap_fallback ? malloc(bytes) : NULL;
         }
     }
 
@@ -238,9 +246,28 @@ void *evo_direct_mem_alloc(size_t bytes)
         curr = curr->next;
     }
 
+    size_t used = g_direct_pool.allocated_size, total = g_direct_pool.total_size;
     pthread_mutex_unlock(&g_direct_pool.lock);
-    /* Direct pool exhausted; graceful fallback to system allocator */
-    return malloc(bytes);
+    if (heap_fallback)
+        return malloc(bytes);   /* CPU-only buffer: the heap will do */
+
+    /* First few, then one in 256: a full pool fails every frame. */
+    static unsigned s_gpu_fail;
+    unsigned n = ++s_gpu_fail;
+    if (n <= 8 || (n & 255u) == 0)
+        evo_boot_log("direct_mem: GPU alloc of %zu bytes refused, pool full "
+                     "(%zu/%zu used, fail #%u)", bytes, used, total, n);
+    return NULL;
+}
+
+void *evo_direct_mem_alloc(size_t bytes)
+{
+    return pool_alloc(bytes, 1);
+}
+
+void *evo_direct_mem_alloc_gpu(size_t bytes)
+{
+    return pool_alloc(bytes, 0);
 }
 
 void *evo_direct_mem_calloc(size_t count, size_t size)

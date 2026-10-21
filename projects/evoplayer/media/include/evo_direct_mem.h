@@ -53,6 +53,13 @@ void evo_direct_mem_shutdown(void);
 void *evo_direct_mem_alloc(size_t bytes);
 
 /**
+ * Same, for memory the GPU reads (textures, vertex/index buffers). Returns
+ * NULL when the pool is full instead of falling back to malloc(): a heap
+ * buffer is not GPU-mapped, and the GPU fault kills EVO with no log.
+ */
+void *evo_direct_mem_alloc_gpu(size_t bytes);
+
+/**
  * Allocate zero-initialized memory from the direct memory region.
  */
 void *evo_direct_mem_calloc(size_t count, size_t size);

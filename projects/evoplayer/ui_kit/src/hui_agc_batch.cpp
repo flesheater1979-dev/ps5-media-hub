@@ -68,7 +68,7 @@ bool AgcBatch::init()
     }
 
     const std::size_t index_bytes = kMaxVertices * sizeof(std::uint16_t);
-    indices_base_ = evo_direct_mem_alloc(index_bytes + 255u);
+    indices_base_ = evo_direct_mem_alloc_gpu(index_bytes + 255u);
     if (!indices_base_)
         return false;
     indices_ = reinterpret_cast<std::uint16_t *>(
@@ -129,7 +129,7 @@ AgcBatch::Texture *AgcBatch::make_texture(int width, int height, int bytes_per_p
     const std::size_t bytes = static_cast<std::size_t>(height) * static_cast<std::size_t>(tex->pitch);
     /* A T# stores the base >> 8: the pixels must start on 256 bytes, and
      * evo_direct_mem_alloc only promises 64 (see CreateTextureInternal). */
-    tex->alloc_base = evo_direct_mem_alloc(bytes + 255u);
+    tex->alloc_base = evo_direct_mem_alloc_gpu(bytes + 255u);
     if (!tex->alloc_base)
     {
         evo_agc_runtime_note_drop(1);
