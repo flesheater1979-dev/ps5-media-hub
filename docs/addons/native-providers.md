@@ -165,6 +165,22 @@ says why (no stream addon / torrent links only, needs debrid). Torrentio
 addresses with settings (`providers=yts,eztv|qualityfilter=...`) load fine.
 User guide: the GitHub wiki page "Stremio-Addons".
 
+## The addon list was never saved (fixed 2026-10-21)
+
+`addons/src/cJSON.c` carried a stripped "minimal printer for client requests"
+that printed only objects of strings and numbers: every array came out as
+`null`, with no escaping and a fixed 1 KB buffer. So `addons.json` was always
+written as `{"addons":null}` and every added addon was gone at the next start,
+and the network-share list (`evo_network_shares.json`, a top-level array) was
+written as `{}`. The printer now handles any tree with escaping
+(`test_cjson_print_roundtrip`). Hardware-verified: two addons added, EVO
+closed and relaunched, both still there.
+
+The card is named **Stremio** now. Adding and removing addons is OPTIONS,
+labelled "Add & manage addons" in the button bar; from inside the card the
+menu opens on "Add addon". (A first try put an "Add addon" tile in the poster
+grid; it read as a movie and was dropped.)
+
 ## Testing (all on the console, no browser involved)
 
 - Screens are EVO's own: `evo-remote.sh key` + `key l3` screenshots.

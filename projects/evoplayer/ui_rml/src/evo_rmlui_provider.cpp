@@ -1713,6 +1713,8 @@ bool EvoRmlProviderHost::RenderKit(int width, int height)
     icon = (m_provider && m_provider->icon && m_provider->icon[0])
          ? std::string("../icons/") + m_provider->icon : std::string();
     p.provider_icon = icon.c_str();
+    /* Stremio: OPTIONS is where addons are added and removed - say so. */
+    p.options_hint = m_provider_id == "addons" ? "Add & manage addons" : "";
     p.breadcrumb = m_model.breadcrumb.c_str();
     p.status = m_model.status.c_str();
     p.query = m_model.query.c_str();

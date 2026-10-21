@@ -393,12 +393,12 @@ static void emit_root(evo_provider_items_cb cb, void *ud)
     for (int i = 0; i < S->nad; ++i) max += S->ad[i].ncats + 1;
     evo_provider_item_t *items = (evo_provider_item_t *)calloc((size_t)max, sizeof *items);
     if (!items) { if (cb) cb(0, NULL, 0, 0, ud); return; }
+    int k = 0;
     /* The built-in Cinemeta lends its catalogs only when nothing added has any. */
     int others = 0;
     for (int i = 0; i < S->nad; ++i)
         for (int c = 0; !S->ad[i].builtin && S->ad[i].loaded == 1 && c < S->ad[i].ncats; ++c)
             if (!S->ad[i].cats[c].needs_extra) others = 1;
-    int k = 0;
     for (int i = 0; i < S->nad; ++i) {
         addon_t *a = &S->ad[i];
         if (a->builtin && (others || a->loaded < 0)) continue;
@@ -1142,7 +1142,7 @@ static int ad_resolve(const char *item_id, evo_provider_resolve_cb cb, void *ud)
 
 const evo_provider_t evo_provider_stremio = {
     .id            = "addons",
-    .name          = "Stremio Addons",
+    .name          = "Stremio",
     .icon          = "brand_stremio.png",
     .caps          = EVO_PROVIDER_CAP_CATALOG | EVO_PROVIDER_CAP_SEARCH |
                      EVO_PROVIDER_CAP_RESOLVE | EVO_PROVIDER_CAP_CONFIG |

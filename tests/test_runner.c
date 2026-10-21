@@ -22,6 +22,7 @@
 #include "evo_provider_bundle.h"
 #include "evo_error.h"
 #include "evo_net.h"
+#include "cJSON.h"
 #include "evo_playlist_sniff.h"
 #include "evo_changelog.h"
 #include "SDL_ps5tilemap.inc"
@@ -438,6 +439,44 @@ static void test_provider_bundle_path_safety(void)
  * #90: query-value escaping. Providers build query strings by hand, so a raw
  * '&' or '=' in a search term changes the request rather than the term.
  */
+/*
+ * The cJSON printer. EVO's copy used to print every array as null, so the
+ * Stremio addon list was saved as {"addons":null} and lost at the next start.
+ */
+static void test_cjson_print_roundtrip(void)
+{
+    TEST_START("cJSON: arrays, nesting and escaping survive print + parse");
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON *arr = cJSON_CreateArray();
+    cJSON_AddItemToObject(root, "addons", arr);
+    cJSON_AddItemToArray(arr, cJSON_CreateString("https://torrentio.strem.fun/a|b=c/manifest.json"));
+    cJSON_AddItemToArray(arr, cJSON_CreateString("say \"hi\"\\\n"));
+    cJSON_AddNumberToObject(root, "port", 8096);
+    cJSON_AddNumberToObject(root, "ratio", 1.5);
+    cJSON_AddItemToObject(root, "on", cJSON_CreateTrue());
+    cJSON *top = cJSON_CreateArray();             /* a top-level array, as the share list is */
+    cJSON_AddItemToArray(top, root);
+
+    char *txt = cJSON_Print(top);
+    TEST_ASSERT(txt != NULL, "print failed");
+    TEST_ASSERT(strcmp(txt, "[{\"addons\":[\"https://torrentio.strem.fun/a|b=c/manifest.json\","
+                            "\"say \\\"hi\\\"\\\\\\n\"],\"port\":8096,\"ratio\":1.5,\"on\":true}]") == 0,
+                "printed JSON is wrong");
+
+    cJSON *back = cJSON_Parse(txt);
+    TEST_ASSERT(back && cJSON_IsArray(back), "re-parse failed");
+    cJSON *a = cJSON_GetObjectItem(cJSON_GetArrayItem(back, 0), "addons");
+    TEST_ASSERT(a && cJSON_GetArraySize(a) == 2, "addon list lost in the round trip");
+    TEST_ASSERT(strcmp(cJSON_GetArrayItem(a, 1)->valuestring, "say \"hi\"\\\n") == 0,
+                "escaped string changed in the round trip");
+
+    cJSON_Delete(back);
+    free(txt);
+    cJSON_Delete(top);
+    TEST_PASS();
+}
+
 static void test_provider_url_escape(void)
 {
     TEST_START("Providers: URL query-value escaping");
@@ -916,6 +955,7 @@ int main(void)
     test_emby_media_sources();
     test_provider_bundle_path_safety();
     test_provider_url_escape();
+    test_cjson_print_roundtrip();
     test_navigation_grid_and_focus();
     test_changelog_model_integrity();
     test_iptv_provider_catalog_and_epg();

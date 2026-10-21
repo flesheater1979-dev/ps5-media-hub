@@ -103,6 +103,7 @@ void ProviderGridScreen::set(const evo_hui_provider_params_t &p)
     variant_ = p.variant;
     name_ = str(p.provider_name);
     icon_ = str(p.provider_icon);
+    options_hint_ = str(p.options_hint);
     crumb_ = str(p.breadcrumb);
     status_ = str(p.status);
     query_ = str(p.query);
@@ -847,7 +848,7 @@ void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
             hints.push_back({ui::Button::square, "Search"});
             if (multi_page_)
                 hints.push_back({ui::Button::l1, "Page", ui::Button::r1});
-            hints.push_back({ui::Button::options, "Servers"});
+            hints.push_back({ui::Button::options, options_hint_.empty() ? "Servers" : options_hint_.c_str()});
         }
         ui::HintLayout layout;
         layout.size = 30;

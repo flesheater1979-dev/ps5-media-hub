@@ -615,6 +615,7 @@ typedef struct {
 typedef struct {
     const char* provider_name;
     const char* provider_icon;   /* "../icons/<file>", "" = the generic one */
+    const char* options_hint;    /* the OPTIONS label in the button bar, "" = "Servers" */
     const char* breadcrumb;
     const char* status;
     const char* query;

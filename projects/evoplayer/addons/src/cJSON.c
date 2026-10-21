@@ -545,32 +545,116 @@ cJSON_bool cJSON_AddNumberToObject(cJSON * const object, const char * const name
     return false;
 }
 
+/*
+ * The printer. EVO's copy once had a "minimal printer for client requests"
+ * here: objects of strings and numbers only, no escaping, a fixed 1 KB buffer.
+ * Every array came out as null, so addons.json was saved as {"addons":null}
+ * and the network-share list as {} - both lost at the next start (2026-10-21).
+ * This one prints any tree, escapes strings and grows its buffer. Both entry
+ * points print compact JSON.
+ */
+typedef struct {
+    char  *buf;
+    size_t len, cap;
+    int    failed;
+} print_buf_t;
+
+static void pb_put(print_buf_t *p, const char *s, size_t n)
+{
+    if (p->failed) return;
+    if (p->len + n + 1 > p->cap) {
+        size_t cap = p->cap ? p->cap : 256;
+        while (p->len + n + 1 > cap) cap *= 2;
+        char *grown = (char*)global_hooks.malloc_fn(cap);
+        if (!grown) { p->failed = 1; return; }
+        if (p->buf) {
+            memcpy(grown, p->buf, p->len);
+            global_hooks.free_fn(p->buf);
+        }
+        p->buf = grown;
+        p->cap = cap;
+    }
+    memcpy(p->buf + p->len, s, n);
+    p->len += n;
+    p->buf[p->len] = '\0';
+}
+
+static void pb_str(print_buf_t *p, const char *s)
+{
+    pb_put(p, "\"", 1);
+    for (const unsigned char *c = (const unsigned char*)(s ? s : ""); *c; ++c) {
+        char esc[8];
+        switch (*c) {
+        case '"':  pb_put(p, "\\\"", 2); break;
+        case '\\': pb_put(p, "\\\\", 2); break;
+        case '\b': pb_put(p, "\\b", 2); break;
+        case '\f': pb_put(p, "\\f", 2); break;
+        case '\n': pb_put(p, "\\n", 2); break;
+        case '\r': pb_put(p, "\\r", 2); break;
+        case '\t': pb_put(p, "\\t", 2); break;
+        default:
+            if (*c < 0x20) {
+                snprintf(esc, sizeof esc, "\\u%04x", (unsigned)*c);
+                pb_put(p, esc, 6);
+            } else {
+                pb_put(p, (const char*)c, 1);   /* UTF-8 passes through */
+            }
+        }
+    }
+    pb_put(p, "\"", 1);
+}
+
+static void pb_value(print_buf_t *p, const cJSON *item, int depth)
+{
+    char num[64];
+    if (!item || depth > 64) { pb_put(p, "null", 4); return; }
+    switch (item->type & 0xFF) {
+    case cJSON_False: pb_put(p, "false", 5); break;
+    case cJSON_True:  pb_put(p, "true", 4); break;
+    case cJSON_Number: {
+        const double d = item->valuedouble;
+        if (d != d || d > 1e308 || d < -1e308)         /* NaN / inf: not JSON */
+            snprintf(num, sizeof num, "null");
+        else if (d == (double)(long long)d && d < 9e15 && d > -9e15)
+            snprintf(num, sizeof num, "%lld", (long long)d);
+        else
+            snprintf(num, sizeof num, "%.17g", d);
+        pb_put(p, num, strlen(num));
+        break;
+    }
+    case cJSON_String: pb_str(p, item->valuestring); break;
+    case cJSON_Raw:
+        if (item->valuestring) pb_put(p, item->valuestring, strlen(item->valuestring));
+        else pb_put(p, "null", 4);
+        break;
+    case cJSON_Array:
+    case cJSON_Object: {
+        const int obj = (item->type & 0xFF) == cJSON_Object;
+        pb_put(p, obj ? "{" : "[", 1);
+        for (const cJSON *c = item->child; c; c = c->next) {
+            if (obj) {
+                pb_str(p, c->string);
+                pb_put(p, ":", 1);
+            }
+            pb_value(p, c, depth + 1);
+            if (c->next) pb_put(p, ",", 1);
+        }
+        pb_put(p, obj ? "}" : "]", 1);
+        break;
+    }
+    default: pb_put(p, "null", 4); break;
+    }
+}
+
 char *cJSON_PrintUnformatted(const cJSON *item)
 {
-    /* Minimal printer for client requests */
-    char *out = (char*)global_hooks.malloc_fn(1024);
-    if (!out) return NULL;
-    if (cJSON_IsObject(item)) {
-        strcpy(out, "{");
-        cJSON *c = item->child;
-        while (c) {
-            char temp[256];
-            if (cJSON_IsString(c)) {
-                snprintf(temp, sizeof(temp), "\"%s\":\"%s\"", c->string, c->valuestring ? c->valuestring : "");
-            } else if (cJSON_IsNumber(c)) {
-                snprintf(temp, sizeof(temp), "\"%s\":%d", c->string, c->valueint);
-            } else {
-                snprintf(temp, sizeof(temp), "\"%s\":null", c->string);
-            }
-            strcat(out, temp);
-            if (c->next) strcat(out, ",");
-            c = c->next;
-        }
-        strcat(out, "}");
-    } else {
-        strcpy(out, "{}");
+    print_buf_t p = { NULL, 0, 0, 0 };
+    pb_value(&p, item, 0);
+    if (p.failed) {
+        if (p.buf) global_hooks.free_fn(p.buf);
+        return NULL;
     }
-    return out;
+    return p.buf;
 }
 
 char *cJSON_Print(const cJSON *item)

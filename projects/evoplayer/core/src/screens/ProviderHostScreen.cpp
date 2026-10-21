@@ -865,7 +865,7 @@ void ProviderHostScreen::openPickerMenu()
                     std::string("Look for ") + p->name + " on your home network",
                     "../icons/icon_activity.png", false);
         } else if (p->ui_embedded) {
-            add("address", "Add Stremio addon", "Paste an addon's manifest URL (https://.../manifest.json)",
+            add("address", "Add addon", "Type an addon's manifest URL (https://.../manifest.json)",
                 "../icons/icon_keyboard.png", false);
             if (id == "addons")
                 for (int i = 0; i < evo_stremio_addon_count(); ++i)
@@ -1417,6 +1417,10 @@ bool ProviderHostScreen::handleInput(uint32_t pressed, uint32_t held, uint32_t r
             for (int i = 0; i < (int)m_pickIds.size(); ++i)
                 if (m_pickIds[i] == id) m_pickIndex = i;
             if (m_picking) openPickerMenu();
+            /* From inside Stremio, OPTIONS is "Add & manage addons": start on Add. */
+            if (id == "addons")
+                for (int i = 0; i < (int)m_menu.size(); ++i)
+                    if (m_menu[i].id == "address") m_menuIndex = i;
         } else if (op && std::strcmp(op->id, "iptv") == 0 &&
                    !evo_rmlui_provider_get_query()[0]) {
             openProviderMenu();     /* playlist or guide, for the one on screen */
