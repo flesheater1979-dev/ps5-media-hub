@@ -22,6 +22,7 @@ namespace
 {
 
 constexpr float kLeft = NavRail::kWidth + 64.0f;
+constexpr float kPreviewW = 600.0f; /* preview card, right of the rows */
 const Color kWhite = Color::rgb(0xffffff);
 const Color kInk = Color::rgb(0x0b0d16);
 
@@ -75,6 +76,38 @@ void SettingsScreen::set(const evo_rmlui_settings_params_t &p)
         r.toggle_on = p.rows[i].toggle_on;
         r.is_disabled = p.rows[i].is_disabled;
         rows_.push_back(r);
+    }
+    detect_preview();
+}
+
+void SettingsScreen::detect_preview()
+{
+    preview_kind_ = 0;
+    preview_level_ = 0;
+    int focus = -1;
+    for (size_t i = 0; i < rows_.size(); ++i)
+        if (rows_[i].is_focused)
+            focus = static_cast<int>(i);
+    if (focus < 0)
+        return;
+    /* An OPTION belongs to the VALUE row above it; the preview follows the option. */
+    int owner = focus, steps = 0;
+    while (owner > 0 && rows_[owner].kind == EVO_RMLUI_ROW_OPTION)
+    {
+        --owner;
+        ++steps;
+    }
+    const std::string &t = rows_[owner].title;
+    if (t == "Deep Blacks")
+        preview_kind_ = 1;
+    else if (t == "Upscaling")
+        preview_kind_ = 2;
+    if (steps > 0)
+        preview_level_ = steps - 1;
+    else
+    {
+        const std::string &b = rows_[owner].badge;
+        preview_level_ = (b == "HIGH") ? 2 : (b == "LOW" || b == "FSR1") ? 1 : (b == "OFF") ? 0 : 2;
     }
 }
 
@@ -154,7 +187,7 @@ void SettingsScreen::update(float dt)
         scroll_.target = std::max(0.0f, want);
         if (!row_cursor_snapped_)
             scroll_.snap(scroll_.target);
-        row_target = {kLeft + 480.0f + 24.0f, top - scroll_.target, 1824.0f - (kLeft + 480.0f) - 48.0f, h};
+        row_target = {kLeft + 480.0f + 24.0f, top - scroll_.target, 1824.0f - (kLeft + 480.0f) - 48.0f - (preview_kind_ ? kPreviewW + 24.0f : 0.0f), h};
     }
 
     if (!row_cursor_snapped_ && row_target.w > 0)
@@ -235,6 +268,83 @@ void SettingsScreen::draw_row(DrawList &list, const Context &ctx, const RowData 
     }
 }
 
+/* Mock still: sky, moon, three ridges, foreground. `dark` 0..1 pulls the lifted
+ * blacks toward true black; `coarse` overlays a pixel grid for the low-res look. */
+static void mock_scene(DrawList &list, const Rect &r, float dark, bool coarse)
+{
+    auto mix = [&](uint32_t lifted, uint32_t deep) {
+        Color a = Color::rgb(lifted), b = Color::rgb(deep);
+        return Color{a.r + (b.r - a.r) * dark, a.g + (b.g - a.g) * dark, a.b + (b.b - a.b) * dark, 1.0f};
+    };
+    list.push_clip(r);
+    list.gradient_rect(r, 0, mix(0x2c3550, 0x0a1226), mix(0xc9884f, 0xb8793f));
+    list.circle(r.x + r.w * 0.72f, r.y + r.h * 0.30f, r.h * 0.09f, Color::rgb(0xf6e3b0));
+    const uint32_t lift[3] = {0x4a4e5c, 0x3e424f, 0x353946}, deep[3] = {0x1b1722, 0x120f17, 0x09070c};
+    const float cx[3] = {0.18f, 0.48f, 0.80f}, top[3] = {0.40f, 0.30f, 0.46f}, wd[3] = {0.6f, 0.5f, 0.55f};
+    for (int i = 0; i < 3; ++i)
+    {
+        float xy[6] = {r.x + r.w * (cx[i] - wd[i] * 0.5f), r.y + r.h, r.x + r.w * cx[i], r.y + r.h * (0.30f + top[i] * 0.4f),
+                       r.x + r.w * (cx[i] + wd[i] * 0.5f), r.y + r.h};
+        list.polygon(xy, 3, mix(lift[i], deep[i]));
+    }
+    list.rounded_rect({r.x, r.y + r.h * 0.86f, r.w, r.h * 0.14f}, 0, mix(0x42434d, 0x050407));
+    if (coarse)
+        for (float gy = r.y; gy < r.y + r.h; gy += 9.0f)
+            for (float gx = r.x + (static_cast<int>((gy - r.y) / 9.0f) & 1) * 9.0f; gx < r.x + r.w; gx += 18.0f)
+                list.rounded_rect({gx, gy, 9.0f, 9.0f}, 0, Color::rgb(0x808080, 0.10f));
+    list.pop_clip();
+}
+
+void SettingsScreen::draw_preview(DrawList &list, const Context &ctx, const Rect &box) const
+{
+    const ui::Fonts &fonts = ctx.fonts;
+    const Palette &p = ctx.palette;
+    list.rounded_rect(box, 24, kWhite.with_alpha(0.05f));
+    list.bordered_rect(box, 24, Color::rgb(0x000000, 0.0f), 1.0f, p.border);
+
+    const bool db = preview_kind_ == 1;
+    static const char *kDb[3] = {"OFF", "LOW", "HIGH"};
+    static const char *kUp[3] = {"OFF", "FSR1", "ANIME4K"};
+    const int lvl = std::min(std::max(preview_level_, 0), 2);
+    const float x = box.x + 24.0f, w = box.w - 48.0f;
+
+    ui::text(list, fonts.semibold, "PREVIEW", x, box.y + 40, 16, p.text_muted, Align::left, 2.0f);
+    ui::text(list, fonts.display, db ? "Deep Blacks" : "Upscaling", x, box.y + 84, 32, kWhite);
+
+    const float sw = (w - 16.0f) * 0.5f, sh = sw * 9.0f / 16.0f, sy = box.y + 112.0f;
+    Rect a{x, sy, sw, sh}, b{x + sw + 16.0f, sy, sw, sh};
+    mock_scene(list, a, 0.0f, !db);
+    mock_scene(list, b, db ? 0.5f * lvl : 0.0f, !db && lvl == 0);
+    list.bordered_rect(a, 12, Color::rgb(0x000000, 0.0f), 1.0f, p.border);
+    list.bordered_rect(b, 12, Color::rgb(0x000000, 0.0f), 2.0f, p.accent);
+
+    for (int i = 0; i < 2; ++i)
+    {
+        const Rect &r = i ? b : a;
+        std::string label = i == 0 ? "OFF" : (db ? kDb[lvl] : kUp[lvl]);
+        float lw = fonts.semibold.measure(label, 16) + 24.0f;
+        Rect tag{r.x + 10, r.y + 10, lw, 28};
+        list.rounded_rect(tag, 14, i ? p.accent : Color::rgb(0x000000, 0.6f));
+        ui::text(list, fonts.semibold, label, tag.cx(), tag.cy() + 6, 16, i ? kInk : kWhite, Align::center);
+    }
+
+    /* Choice chips: the highlighted one is filled, so moving through the options reads live. */
+    const char *const *names = db ? kDb : kUp;
+    float cx = x, cy = sy + sh + 28.0f;
+    ui::Painter paint(list, fonts, p.kit_theme());
+    for (int i = 0; i < 3; ++i)
+    {
+        float cw = fonts.semibold.measure(names[i], 18) + 36.0f;
+        paint.chip({cx, cy, cw, 36}, names[i], i == lvl ? 1.0f : 0.0f, {});
+        cx += cw + 10.0f;
+    }
+
+    const char *benefit = db ? "Dark scenes look deeper instead of washed out."
+                             : "Soft 1080p looks crisper on a 4K screen.";
+    ui::text(list, fonts.regular, fit(fonts.regular, benefit, 20, w), x, cy + 76.0f, 20, p.text_faint);
+    ui::text(list, fonts.regular, db ? "Best on OLED and HDR screens." : "Higher modes cost more GPU.", x, cy + 106.0f, 20, p.text_faint);
+}
+
 void SettingsScreen::draw(DrawList &list, const Context &ctx) const
 {
     const ui::Fonts &fonts = ctx.fonts;
@@ -307,7 +417,7 @@ void SettingsScreen::draw(DrawList &list, const Context &ctx) const
         list.push_opacity(row_in * (rows_[i].is_disabled ? 0.4f : 1.0f));
 
         float h = (rows_[i].kind == EVO_RMLUI_ROW_OPTION) ? 56.0f : 72.0f;
-        Rect r{pane.x + 24.0f, row_y(static_cast<int>(i)), pane.w - 48.0f, h};
+        Rect r{pane.x + 24.0f, row_y(static_cast<int>(i)), pane.w - 48.0f - (preview_kind_ ? kPreviewW + 24.0f : 0.0f), h};
 
         if (rows_[i].is_focused && !params_.sidebar_focused)
         {
@@ -325,6 +435,8 @@ void SettingsScreen::draw(DrawList &list, const Context &ctx) const
     }
 
     list.pop_clip();
+    if (preview_kind_)
+        draw_preview(list, ctx, {pane.x + pane.w - kPreviewW - 24.0f, kRowsTop - 12.0f, kPreviewW, kRowsBottom - kRowsTop + 24.0f});
     list.pop_clip();
 
     const ui::Hint hints[] = {

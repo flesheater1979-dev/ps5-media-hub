@@ -43,6 +43,12 @@ class SettingsScreen
     float row_y(int index) const { return row_top(index) - scroll_.value; }
     void draw_row(hui::gfx::DrawList &list, const Context &ctx, const RowData &row, const hui::gfx::Rect &r, int index) const;
 
+    /* #158: 0 none, 1 Deep Blacks, 2 Upscaling; level is the highlighted choice. */
+    void detect_preview();
+    void draw_preview(hui::gfx::DrawList &list, const Context &ctx, const hui::gfx::Rect &box) const;
+    int preview_kind_ = 0;
+    int preview_level_ = 0;
+
     evo_rmlui_settings_params_t params_{};
     std::string title_;
     std::string subtitle_;

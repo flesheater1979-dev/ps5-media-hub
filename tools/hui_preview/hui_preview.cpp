@@ -538,6 +538,8 @@ int main(int argc, char **argv)
         {"mediainfo", 6, [&] { clear_focus(); }},
         {"settings_sidebar", 3, [&] { clear_focus(); fill_settings_fixture(sp, 0); }},
         {"settings_rows", 3, [&] { clear_focus(); fill_settings_fixture(sp, 1); }},
+        {"settings_deepblacks", 3, [&] { clear_focus(); fill_settings_fixture(sp, 2); }},
+        {"settings_upscaling", 3, [&] { clear_focus(); fill_settings_fixture(sp, 3); }},
         {"browser", 2, [&] { clear_focus(); bp.rows[3].is_focused = 1; bp.cursor_index = 3; }},
         {"browser_sources", 2, [&] { clear_focus(); bp.sidebar_focused = 1; bp.sidebar_index = 3; }},
         {"browser_menu", 2, [&] { clear_focus(); bp.rows[3].is_focused = 1; bp.cursor_index = 3;
