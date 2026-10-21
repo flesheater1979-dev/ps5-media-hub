@@ -27,6 +27,8 @@
 #include "evo_changelog.h"
 #include "SDL_ps5tilemap.inc"
 #include <sys/time.h>
+#include <sys/stat.h>
+#include "evo_data_path.h"
 #include "pp_playback.h"
 
 /* Test runner assertion tracking */
@@ -287,6 +289,13 @@ static void test_emby_url_and_config(void)
                 "Stream URL path malformed");
     TEST_ASSERT(strstr(stream_url, "api_key=sample_token_xyz") != NULL,
                 "Stream URL missing API authentication token");
+
+    ms_client_t *mc = ms_client(MS_EMBY);
+    TEST_ASSERT(ms_set_source(mc, "http://192.168.0.50:8096") == 0, "ms_set_source failed");
+    TEST_ASSERT(ms_is_configured(mc) == 1, "ms_is_configured should be 1");
+    TEST_ASSERT(ms_set_source(mc, "") == 0, "ms_set_source empty failed");
+    TEST_ASSERT(ms_is_configured(mc) == 0, "ms_is_configured should be 0 after empty source");
+    TEST_ASSERT(strcmp(ms_get_source(mc), "") == 0, "ms_get_source should be empty");
 
     TEST_PASS();
 }
@@ -703,6 +712,9 @@ static void test_iptv_provider_catalog_and_epg(void)
     TEST_ASSERT(verified_gloob_epg, "GLOOB EPG not verified");
     TEST_ASSERT(verified_ae_epg, "A&E EPG not verified");
 
+    TEST_ASSERT(p->set_source("") == 0, "IPTV provider set_source empty failed");
+    TEST_ASSERT(p->is_configured() == 0, "IPTV provider should not be configured after clearing");
+
     p->shutdown();
     remove(test_m3u_path);
 
@@ -945,6 +957,10 @@ static void test_error_reporting(void)
 
 int main(void)
 {
+    mkdir("/tmp/evo_test_data", 0777);
+    setenv("EVO_DATA_DIR_OVERRIDE", "/tmp/evo_test_data", 1);
+    evo_data_path_rebind();
+
     printf("\n======================================================================\n");
     printf("  EVO Player — Automated Test Suite & Coverage Verification\n");
     printf("======================================================================\n\n");

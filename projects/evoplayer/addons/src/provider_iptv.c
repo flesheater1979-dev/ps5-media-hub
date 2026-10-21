@@ -42,6 +42,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "evo_provider.h"
 #include "evo_net.h"
@@ -2167,10 +2168,11 @@ static int iptv_set_source(const char *value)
      * which is how a user undoes a typo without having to retype anything. */
     if (!*value) {
         G.playlist_url[0] = 0;
+        G.last_url[0] = 0;
+        G.playlist_file[0] = 0;
         G.loaded = 0;
         free_channels();
-        resolve_playlist_source();
-        provider_iptv_save_conf();
+        unlink(evo_data_path(IPTV_CONF));
         PROV_LOG("iptv: source cleared; usb fallback='%s'", G.playlist_file);
         return 0;
     }

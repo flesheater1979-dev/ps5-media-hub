@@ -2,6 +2,7 @@
 #define EVO_FILE_SYSTEM_BROWSER_HPP
 
 #include "evo/interfaces/IFileSystemBrowser.hpp"
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -44,6 +45,10 @@ public:
 
     void setSortFoldersFirst(bool enabled) { m_sortFoldersFirst = enabled; }
 
+    /* The mounts that have files, in order. Cached for a few seconds, so the
+     * main loop can poll it for plug / unplug toasts. */
+    std::vector<std::string> usbMounts() const;
+
     /*
      * Library view: collect every file of one category under the current
      * source, recursively, instead of listing one directory.
@@ -59,13 +64,14 @@ private:
     void scanRecursive(const std::string& basePath, const std::string& relPath,
                        const std::string& query, int depth, const std::string& sourcePrefix = "");
     bool isSafePath(const std::string& path) const;
-    std::vector<std::string> usbMounts() const;   /* the mounts that have files, in order */
 
     std::vector<MediaSourceInfo> m_sources;
     std::string m_currentPath;
     std::string m_searchQuery;
     std::vector<BrowserEntry> m_entries;
     bool m_sortFoldersFirst = true;
+    mutable std::vector<std::string> m_usbMounts;   /* usbMounts() cache */
+    mutable uint64_t m_usbMountsAtMs = 0;           /* when it was scanned; 0 = not yet */
 };
 
 } // namespace evo

@@ -403,7 +403,7 @@ static void kb_open(const char *title, const char *initial_value, int max_len,
         phone_local_ip(ip, sizeof ip);
         if (ip[0]) {
             g_kb.phone = 1;
-            snprintf(g_kb.title, sizeof g_kb.title, "%.48s - phone: %s:%d/input",
+            snprintf(g_kb.title, sizeof g_kb.title, "%.48s - phone: %s:%d",
                      g_kb.prompt, ip, EVO_LOG_SERVER_PORT);
         }
     }

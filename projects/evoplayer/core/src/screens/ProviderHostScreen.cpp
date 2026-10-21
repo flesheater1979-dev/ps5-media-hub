@@ -647,6 +647,7 @@ void ProviderHostScreen::enterPicker()
     m_web = false;
     m_webSeen = false;
     m_menu.clear();
+    m_showRemoveConfirm = false;
     m_pickIds.clear();
     m_pickDetail.clear();
 
@@ -777,35 +778,48 @@ void ProviderHostScreen::renderPicker(uint32_t* framebuffer, int width, int heig
     params.cursor_index = total ? m_pickIndex : -1;
     int rows = std::min(EVO_RMLUI_LIST_ROWS, total);
     params.row_count = rows;
+    std::string rowDetails[EVO_RMLUI_LIST_ROWS];
     for (int i = 0; i < rows; ++i) {
         const evo_provider_t* p = evo_provider_find(m_pickIds[i].c_str());
         bool web = p && (p->caps & EVO_PROVIDER_CAP_WEBUI) && !isNativeWeb(p);
         bool server = p && isNativeWeb(p);
         params.rows[i].title = p ? p->name : m_pickIds[i].c_str();
-        params.rows[i].detail = m_pickDetail[i].c_str();
+        const bool isFocused = (!railFocused && i == m_pickIndex);
+        rowDetails[i] = m_pickDetail[i];
+        if (isFocused && p && p->is_configured && p->is_configured()) {
+            rowDetails[i] += "  \u00b7  OPTIONS to edit";
+        }
+        params.rows[i].detail = rowDetails[i].c_str();
         params.rows[i].icon_path = p ? provider_icon(p) : "../icons/icon_folder.png";
         params.rows[i].badge = web ? "WEB" : server ? "SERVER"
                              : (p && (p->caps & EVO_PROVIDER_CAP_LIVE)) ? "LIVE" : "";
         params.rows[i].progress = -1;
         params.rows[i].has_chevron = 1;
-        params.rows[i].is_focused = (!railFocused && i == m_pickIndex);
+        params.rows[i].is_focused = isFocused;
     }
 
     const evo_provider_t* fp = (m_pickIndex >= 0 && m_pickIndex < total)
                              ? evo_provider_find(m_pickIds[m_pickIndex].c_str()) : nullptr;
     params.hint_count = 0;
-    params.hints[params.hint_count].glyph_path = "../icons/btn_cross.png";
-    params.hints[params.hint_count++].label = "OPEN";
-    /* Square still edits the address / playlist directly; the OPTIONS menu
-     * lists that and everything else, so it is the one announced. */
-    params.hints[params.hint_count].glyph_path = "../icons/icon_settings.png";
-    params.hints[params.hint_count++].label = "OPTIONS";
-    if (fp && isNativeWeb(fp) && fp->is_configured()) {
-        params.hints[params.hint_count].glyph_path = "../icons/btn_triangle.png";
-        params.hints[params.hint_count++].label = "WEB VERSION";
+    if (!m_menu.empty() && fp) {
+        params.hints[params.hint_count].glyph_path = "../icons/btn_cross.png";
+        params.hints[params.hint_count++].label = "SELECT";
+        params.hints[params.hint_count].glyph_path = "../icons/btn_options.png";
+        params.hints[params.hint_count++].label = "OPTION";
+        params.hints[params.hint_count].glyph_path = "../icons/btn_circle.png";
+        params.hints[params.hint_count++].label = "CLOSE";
+    } else {
+        params.hints[params.hint_count].glyph_path = "../icons/btn_cross.png";
+        params.hints[params.hint_count++].label = "OPEN";
+        params.hints[params.hint_count].glyph_path = "../icons/btn_options.png";
+        params.hints[params.hint_count++].label = "OPTION";
+        if (fp && isNativeWeb(fp) && fp->is_configured && fp->is_configured()) {
+            params.hints[params.hint_count].glyph_path = "../icons/btn_triangle.png";
+            params.hints[params.hint_count++].label = "WEB VERSION";
+        }
+        params.hints[params.hint_count].glyph_path = "../icons/btn_circle.png";
+        params.hints[params.hint_count++].label = "CLOSE";
     }
-    params.hints[params.hint_count].glyph_path = "../icons/btn_circle.png";
-    params.hints[params.hint_count++].label = "BACK";
 
     if (!m_menu.empty() && fp) {
         params.menu_count = std::min((int)m_menu.size(), EVO_RMLUI_LIST_MENU_ROWS);
@@ -824,6 +838,30 @@ void ProviderHostScreen::renderPicker(uint32_t* framebuffer, int width, int heig
 
     evo_rmlui_update_list(&params);
     evo_rmlui_render_list(framebuffer, width, height);
+
+    if (m_showRemoveConfirm) {
+        evo_rmlui_dialog_params_t dlg;
+        std::memset(&dlg, 0, sizeof(dlg));
+        const evo_provider_t* p = evo_provider_find(m_removeProviderId.c_str());
+        bool isPlaylist = p && !(p->caps & EVO_PROVIDER_CAP_WEBUI) && !isNativeWeb(p);
+        dlg.eyebrow = isPlaylist ? "REMOVE PLAYLIST" : "REMOVE SERVER";
+        dlg.title = m_removeConfirmTitle.c_str();
+        dlg.detail = m_removeConfirmDetail.c_str();
+        dlg.progress_pct = -1.0;
+        dlg.action_count = 2;
+        dlg.focused_action = m_removeConfirmButton;
+
+        dlg.actions[0].label = "CANCEL";
+        dlg.actions[0].icon_path = "../icons/btn_circle.png";
+        dlg.actions[0].is_primary = (m_removeConfirmButton == 0) ? 1 : 0;
+
+        dlg.actions[1].label = "REMOVE";
+        dlg.actions[1].icon_path = "../icons/btn_cross.png";
+        dlg.actions[1].is_primary = (m_removeConfirmButton == 1) ? 1 : 0;
+
+        evo_rmlui_update_dialog(&dlg);
+        evo_rmlui_render_dialog(framebuffer, width, height);
+    }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -856,7 +894,7 @@ void ProviderHostScreen::openPickerMenu()
             "../icons/icon_resume.png", false);
     if (p->caps & EVO_PROVIDER_CAP_CONFIG) {
         if (web) {
-            add("address", configured ? "Change server" : "Set server address",
+            add("address", configured ? "Edit server" : "Set server address",
                 (src && src[0]) ? std::string("Address and port - now ") + src
                                 : std::string("Type http(s)://host:port"),
                 "../icons/icon_keyboard.png", false);
@@ -873,7 +911,7 @@ void ProviderHostScreen::openPickerMenu()
                         std::string("Remove ") + evo_stremio_addon_name(i),
                         evo_stremio_addon_url(i), "../icons/icon_power.png", true);
         } else {
-            add("address", configured ? "Change playlist" : "Add playlist",
+            add("address", configured ? "Edit playlist" : "Add playlist",
                 "Type a URL or pick an .m3u from USB", "../icons/icon_tv.png", false);
         }
     }
@@ -887,6 +925,15 @@ void ProviderHostScreen::openPickerMenu()
     if (signedIn && p->sign_out)
         add("signout", "Sign out", "Forget the saved session on this console",
             "../icons/icon_power.png", true);
+    if (configured && p->set_source) {
+        if (web || server) {
+            add("remove", "Remove server", "Forget this server and its saved sign-in",
+                "../icons/icon_power.png", true);
+        } else if (!p->ui_embedded) {
+            add("remove", "Remove playlist", "Forget this playlist on this console",
+                "../icons/icon_power.png", true);
+        }
+    }
 
     if (m_menu.empty()) {
         evo_feedback(EVO_FB_BOUNDARY);
@@ -969,6 +1016,27 @@ void ProviderHostScreen::runPickerMenu(const std::string& action)
         int keep = m_pickIndex;
         enterPicker();
         m_pickIndex = keep;
+    } else if (action == "remove") {
+        m_removeProviderId = id;
+        m_showRemoveConfirm = true;
+        m_removeConfirmButton = 0;
+        const char* src = p->get_source ? p->get_source() : "";
+        std::string srcDisplay = (src && src[0]) ? src : "";
+        const bool web = (p->caps & EVO_PROVIDER_CAP_WEBUI) != 0;
+        const bool server = isNativeWeb(p);
+        if (web || server) {
+            std::string hostStr = srcDisplay;
+            if (hostStr.rfind("http://", 0) == 0) hostStr = hostStr.substr(7);
+            else if (hostStr.rfind("https://", 0) == 0) hostStr = hostStr.substr(8);
+            while (!hostStr.empty() && hostStr.back() == '/') hostStr.pop_back();
+            m_removeConfirmTitle = hostStr.empty() ? ("Remove " + std::string(p->name) + " server?")
+                                                   : ("Remove " + std::string(p->name) + " server " + hostStr + "?");
+            m_removeConfirmDetail = "Your sign-in on this console is forgotten too.";
+        } else {
+            m_removeConfirmTitle = "Remove " + std::string(p->name) + " playlist?";
+            m_removeConfirmDetail = (src && src[0]) ? src : "The saved playlist on this console is forgotten.";
+        }
+        evo_feedback(EVO_FB_OPEN);
     }
 }
 
@@ -1153,6 +1221,7 @@ void ProviderHostScreen::onExit()
     }
     m_resolving = false;
     m_picking = false;
+    m_showRemoveConfirm = false;
     m_streamPick = false;
     g_pick_stage = PickStage::Idle;
     ++g_pick_gen;
@@ -1201,6 +1270,39 @@ bool ProviderHostScreen::handleInput(uint32_t pressed, uint32_t held, uint32_t r
     if (signInQcInput(pressed)) return true;
 
     if (m_picking) {
+        if (m_showRemoveConfirm) {
+            if (pressed & (PadButtons::Left | PadButtons::Right)) {
+                m_removeConfirmButton = (m_removeConfirmButton == 0) ? 1 : 0;
+                evo_feedback(EVO_FB_MOVE);
+                return true;
+            }
+            if (pressed & (PadButtons::Circle | PadButtons::Options)) {
+                m_showRemoveConfirm = false;
+                evo_feedback(EVO_FB_CANCEL);
+                return true;
+            }
+            if (pressed & PadButtons::Cross) {
+                if (m_removeConfirmButton == 0) { // Cancel
+                    m_showRemoveConfirm = false;
+                    evo_feedback(EVO_FB_CANCEL);
+                } else { // Confirm Remove
+                    m_showRemoveConfirm = false;
+                    const evo_provider_t* p = evo_provider_find(m_removeProviderId.c_str());
+                    if (p) {
+                        bool isPlaylist = !(p->caps & EVO_PROVIDER_CAP_WEBUI) && !isNativeWeb(p);
+                        if (p->set_source) p->set_source("");
+                        if (p->sign_out) p->sign_out();
+                        evo_feedback(EVO_FB_CONFIRM);
+                        toast(p->name, isPlaylist ? "Playlist removed" : "Server removed");
+                        int keep = m_pickIndex;
+                        enterPicker();
+                        m_pickIndex = keep;
+                    }
+                }
+                return true;
+            }
+            return true;
+        }
         if (!m_menu.empty()) return pickerMenuInput(pressed);
         auto psm = Application::getInstance().getScreenManager();
         if (psm && psm->isRailFocused()) return false;

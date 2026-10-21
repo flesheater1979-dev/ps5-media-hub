@@ -148,6 +148,13 @@ private:
     std::vector<std::string> m_pickIds;
     std::vector<std::string> m_pickDetail;
 
+    /* Confirmation dialog for "Remove server" / "Remove playlist". */
+    bool m_showRemoveConfirm = false;
+    int m_removeConfirmButton = 0;
+    std::string m_removeProviderId;
+    std::string m_removeConfirmTitle;
+    std::string m_removeConfirmDetail;
+
     /* #101: hosting a web-UI provider. The browser is a system overlay, so
      * m_opened (the RmlUi host) stays false; m_webSeen notes that the session
      * really started, so its end can be told from "not open yet". */

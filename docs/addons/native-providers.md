@@ -54,7 +54,7 @@ masking on EVO's keyboard.
 
 **Phone input.** Server addresses, playlist URLs and addon links open EVO's own
 keyboard through `evo_keyboard_open_phone` (never the system IME, which cannot
-show a link or take remote text). Its title reads `... - PHONE: <ip>:9780/input`.
+show a link or take remote text). Its title reads `... - phone: <ip>:9780`.
 A phone browser on the same network opens that page (served by
 `evo_log_server.c`, nothing to install), types or pastes, and Send submits the
 text as if typed. `POST /input` needs the `X-EVO-Input` header (so another

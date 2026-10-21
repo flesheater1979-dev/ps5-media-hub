@@ -62,7 +62,7 @@ void evo_keyboard_open(const char *title,
 /*
  * Like evo_keyboard_open, for a long input (an address, a link) that is slow to
  * type with a pad. Always EVO's own keyboard, never the system IME, and the
- * title gains "phone: <ip>:9780/input". A phone browser on the same
+ * title gains "phone: <ip>:9780". A phone browser on the same
  * network opens that page and sends the text, which is submitted as if typed.
  * Served by evo_log_server.c; without a network address it is a plain open.
  */

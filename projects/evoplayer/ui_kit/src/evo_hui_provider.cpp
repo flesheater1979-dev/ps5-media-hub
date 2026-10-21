@@ -848,7 +848,7 @@ void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
             hints.push_back({ui::Button::square, "Search"});
             if (multi_page_)
                 hints.push_back({ui::Button::l1, "Page", ui::Button::r1});
-            hints.push_back({ui::Button::options, options_hint_.empty() ? "Servers" : options_hint_.c_str()});
+            hints.push_back({ui::Button::options, options_hint_.empty() ? "Edit server" : options_hint_.c_str()});
         }
         ui::HintLayout layout;
         layout.size = 30;

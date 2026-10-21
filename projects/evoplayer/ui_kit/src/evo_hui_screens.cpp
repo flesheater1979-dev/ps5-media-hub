@@ -716,7 +716,8 @@ ui::Button button_for(const std::string &glyph)
     static const Map map[] = {{"btn_cross", ui::Button::cross},     {"btn_circle", ui::Button::circle},
                               {"btn_square", ui::Button::square},   {"btn_triangle", ui::Button::triangle},
                               {"btn_dpad", ui::Button::dpad},       {"btn_lstick", ui::Button::left_stick},
-                              {"btn_options", ui::Button::options}, {"btn_touchpad", ui::Button::touchpad}};
+                              {"btn_options", ui::Button::options}, {"icon_settings", ui::Button::options},
+                              {"options", ui::Button::options},      {"btn_touchpad", ui::Button::touchpad}};
     for (const Map &m : map)
         if (glyph.find(m.name) != std::string::npos)
             return m.button;

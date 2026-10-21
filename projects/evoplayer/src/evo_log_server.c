@@ -5,16 +5,20 @@
  * USB stick pull or FTP. Every line is already credential-redacted before it
  * reaches the ring, so nothing here needs to filter.
  *
- *   GET /              a small page that tails the log in the browser
+ *   GET /              the input page if a keyboard is open, else tails the log
+ *   GET /log           tails the log in the browser
  *   GET /stream        Server-Sent Events, one event per line
  *   GET /raw           plain text, kept open (curl -N http://<ps5>:9780/raw)
- *   GET /log           snapshot of the ring (the last ~128 KiB), then closes
+ *   GET /snapshot      snapshot of the ring (the last ~128 KiB), then closes
  *   GET /stats         one JSON snapshot of memory, read-ahead, network and
  *                      playback (evo_stats.c) - tools/evo-dash.py graphs it
  *   GET /input         the phone page: type or paste text for the console's
  *                      open keyboard (evo_keyboard_open_phone) and send it
  *   GET /input/state   {"open":0|1,"title":"..."} for that page
  *   POST /input        the text as the body; needs the X-EVO-Input header
+ *
+ * Case-insensitive paths and trailing slashes are accepted for /input, /input/state,
+ * /log, etc. Unknown GET paths redirect (302) to /input.
  *
  * Query options (stream, raw, log):
  *   tail=0        only lines logged from now on (default: the whole ring first)
@@ -281,6 +285,21 @@ static int ci_prefix(const char *s, const char *p)
     return 1;
 }
 
+/* Lower-case ASCII and drop trailing slashes (except root "/"). */
+static void normalize_path(char *dst, const char *src, size_t cap)
+{
+    size_t i = 0;
+    while (*src && i + 1 < cap) {
+        char c = *src++;
+        if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
+        dst[i++] = c;
+    }
+    dst[i] = '\0';
+    while (i > 1 && dst[i - 1] == '/') {
+        dst[--i] = '\0';
+    }
+}
+
 /* The value of header `name` (lower case, with the colon) in a request head, or NULL. */
 static const char *header_value(const char *req, const char *name)
 {
@@ -397,12 +416,15 @@ static void *conn_thread(void *arg)
         ls_opts_t o;
         parse_query(q, &o);
 
+        char norm[512];
+        normalize_path(norm, target, sizeof norm);
+
         pthread_mutex_lock(&s_mx);
         const int busy = s_clients >= LS_MAX_CLIENTS;
         if (!busy) s_clients++;
         pthread_mutex_unlock(&s_mx);
 
-        const int post_input = !strcmp(method, "POST") && !strcmp(target, "/input");
+        const int post_input = !strcmp(method, "POST") && !strcmp(norm, "/input");
         if (strcmp(method, "GET") != 0 && !post_input)
             send_str(fd, "HTTP/1.1 405 Method Not Allowed\r\nConnection: close\r\n\r\n");
         else if (busy)
@@ -410,7 +432,7 @@ static void *conn_thread(void *arg)
         else {
             if (post_input) {
                 serve_input_post(fd, req, body, blen, too_big);
-            } else if (!strcmp(target, "/input")) {
+            } else if (!strcmp(norm, "/input")) {
                 char head[160];
                 snprintf(head, sizeof head,
                          "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
@@ -418,16 +440,35 @@ static void *conn_thread(void *arg)
                          sizeof k_input_page - 1);
                 send_str(fd, head);
                 send_all(fd, k_input_page, sizeof k_input_page - 1);
-            } else if (!strcmp(target, "/input/state")) {
+            } else if (!strcmp(norm, "/input/state")) {
                 serve_input_state(fd);
-            } else if (!strcmp(target, "/")) {
+            } else if (!strcmp(norm, "/")) {
+                if (evo_keyboard_phone_info(NULL, 0)) {
+                    char head[160];
+                    snprintf(head, sizeof head,
+                             "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+                             "Cache-Control: no-store\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
+                             sizeof k_input_page - 1);
+                    send_str(fd, head);
+                    send_all(fd, k_input_page, sizeof k_input_page - 1);
+                } else {
+                    char head[160];
+                    snprintf(head, sizeof head,
+                             "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+                             "Cache-Control: no-cache\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
+                             sizeof k_page - 1);
+                    send_str(fd, head);
+                    send_all(fd, k_page, sizeof k_page - 1);
+                }
+            } else if (!strcmp(norm, "/log")) {
                 char head[160];
                 snprintf(head, sizeof head,
                          "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
-                         "Content-Length: %zu\r\nConnection: close\r\n\r\n", sizeof k_page - 1);
+                         "Cache-Control: no-cache\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
+                         sizeof k_page - 1);
                 send_str(fd, head);
                 send_all(fd, k_page, sizeof k_page - 1);
-            } else if (!strcmp(target, "/stats")) {
+            } else if (!strcmp(norm, "/stats")) {
                 char body[2048], head[192];
                 size_t n = evo_stats_json(body, sizeof body);
                 snprintf(head, sizeof head,
@@ -436,14 +477,14 @@ static void *conn_thread(void *arg)
                          "Content-Length: %zu\r\nConnection: close\r\n\r\n", n);
                 send_str(fd, head);
                 send_all(fd, body, n);
-            } else if (!strcmp(target, "/stream"))
+            } else if (!strcmp(norm, "/stream"))
                 serve_stream(fd, 's', &o);
-            else if (!strcmp(target, "/raw"))
+            else if (!strcmp(norm, "/raw"))
                 serve_stream(fd, 'r', &o);
-            else if (!strcmp(target, "/log"))
+            else if (!strcmp(norm, "/snapshot"))
                 serve_snapshot(fd, &o);
             else
-                send_str(fd, "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+                send_str(fd, "HTTP/1.1 302 Found\r\nLocation: /input\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
             pthread_mutex_lock(&s_mx);
             s_clients--;
             pthread_mutex_unlock(&s_mx);

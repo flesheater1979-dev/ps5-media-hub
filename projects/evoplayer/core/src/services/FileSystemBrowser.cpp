@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <sys/stat.h>
+#include <time.h>
 
 namespace evo {
 
@@ -61,12 +62,29 @@ static bool hasEntries(const char* path) {
     return any;
 }
 
+static uint64_t nowMs() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return static_cast<uint64_t>(ts.tv_sec) * 1000u + static_cast<uint64_t>(ts.tv_nsec / 1000000);
+}
+
+/* Cached: BrowserScreen asks usbHome() several times a frame and once per folder
+ * row, and each scan opens and reads all ten mounts - over a thousand directory
+ * reads a second on the USB source, the ones on a real stick going to the device.
+ * refresh() drops the cache, so a drive plugged in or pulled shows on the next
+ * move, or within kUsbMountsTtlMs while the browser sits still. */
+static const uint64_t kUsbMountsTtlMs = 3000;
+
 std::vector<std::string> FileSystemBrowser::usbMounts() const {
+    const uint64_t now = nowMs();
+    if (m_usbMountsAtMs != 0 && now - m_usbMountsAtMs < kUsbMountsTtlMs) return m_usbMounts;
     evo_jailbreak_ensure();
     std::vector<std::string> out;
     for (const char* m : kUsbMounts) {
         if (hasEntries(m)) out.push_back(m);
     }
+    m_usbMounts = out;
+    m_usbMountsAtMs = now;
     return out;
 }
 
@@ -209,6 +227,7 @@ bool FileSystemBrowser::navigateUp() {
 
 bool FileSystemBrowser::refresh() {
     m_entries.clear();
+    m_usbMountsAtMs = 0;   /* rescan the drives once per refresh */
 
     evo_jailbreak_ensure();
 

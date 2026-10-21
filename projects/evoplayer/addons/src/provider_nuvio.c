@@ -20,6 +20,7 @@
  */
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "evo_provider.h"
 #include "provider_stremio.h"
@@ -87,12 +88,11 @@ static const char *nv_get_source(void)
 static int nv_set_source(const char *value)
 {
     if (!value || !value[0]) {                   /* empty: back to the built-in Nuvio */
-        FILE *c = fopen(evo_data_path(NUVIO_CONF), "w");
-        if (c) fclose(c);
+        unlink(evo_data_path(NUVIO_CONF));
         g_host[0] = '\0';
         g_port = NUVIO_DEFAULT_PORT;
         g_https = 0;
-        return c ? 0 : -1;
+        return 0;
     }
     char host[128];
     int port = NUVIO_DEFAULT_PORT, tls = 0;

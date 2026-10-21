@@ -14,6 +14,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <unistd.h>
 
 #include "addon_xtream.h"
 #include "evo_provider.h"
@@ -1260,7 +1261,8 @@ static int xtream_provider_set_source(const char *value)
 {
     if (!value || !*value) {
         memset(&g_cfg, 0, sizeof g_cfg);
-        xtream_save_config();
+        unlink(evo_data_path(XTREAM_CONF));
+        unlink(XTREAM_CONF_USB);
         return 0;
     }
 

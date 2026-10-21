@@ -167,6 +167,12 @@ const char *ms_get_source(ms_client_t *c)
 
 int ms_set_source(ms_client_t *c, const char *value)
 {
+    if (!value || !value[0]) {
+        memset(&c->cfg, 0, sizeof c->cfg);
+        unlink(evo_data_path(c->conf));
+        if (c->usb_conf) unlink(c->usb_conf);
+        return 0;
+    }
     char host[128];
     int port = 8096, tls = 0;
     if (evo_provider_parse_web_source(value, host, sizeof host, &port, &tls, 8096) != 0)
