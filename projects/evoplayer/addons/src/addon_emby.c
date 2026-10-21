@@ -609,6 +609,28 @@ static void map_item(ms_client_t *c, cJSON *o, int ctx, evo_provider_item_t *it)
     }
     if (!strcmp(type, "Movie") || !strcmp(type, "Series") || !strcmp(type, "Episode"))
         append_meta(o, it);
+
+    /* The wide image and the title logo, for the shelves' background. An episode
+     * or season borrows its series' backdrop. */
+    {
+        cJSON *bd = cJSON_GetObjectItem(o, "BackdropImageTags");
+        cJSON *pbd = cJSON_GetObjectItem(o, "ParentBackdropImageTags");
+        const char *bid = NULL;
+        if (bd && cJSON_GetArraySize(bd) > 0) bid = id;
+        else if (pbd && cJSON_GetArraySize(pbd) > 0 && jstr(o, "ParentBackdropItemId")[0])
+            bid = jstr(o, "ParentBackdropItemId");
+        char base[200];
+        ms_base(c, base, sizeof base);
+        if (bid)
+            snprintf(it->backdrop_url, sizeof it->backdrop_url,
+                     "%s/Items/%s/Images/Backdrop?maxWidth=1280&quality=70&format=jpg", base, bid);
+        if (tags && cJSON_GetObjectItem(tags, "Logo"))
+            snprintf(it->logo_url, sizeof it->logo_url,
+                     "%s/Items/%s/Images/Logo?maxWidth=480", base, id);
+        else if (jstr(o, "ParentLogoItemId")[0] && jstr(o, "ParentLogoImageTag")[0])
+            snprintf(it->logo_url, sizeof it->logo_url,
+                     "%s/Items/%s/Images/Logo?maxWidth=480", base, jstr(o, "ParentLogoItemId"));
+    }
 }
 
 /* " · ★ 7.8 · PG-13 · Action, Drama" on the end of the subtitle line, and the
@@ -957,11 +979,14 @@ static void row_add(evo_provider_row_t *rows, int *n, int max, const char *id,
 
 static void on_details(int ok, int status, const char *body, size_t len, void *ud)
 {
-    (void)len;
     rows_ctx_t *x = (rows_ctx_t *)ud;
-    cJSON *o = (ok && status == 200 && body) ? cJSON_Parse(body) : NULL;
+    cJSON *root = (ok && status == 200 && body) ? cJSON_Parse(body) : NULL;
+    /* /Items?Ids= answers {"Items":[item]}; an older server's /Users/../Items/id the item itself. */
+    cJSON *its = root ? cJSON_GetObjectItem(root, "Items") : NULL;
+    cJSON *o = (its && cJSON_IsArray(its)) ? cJSON_GetArrayItem(its, 0) : root;
     evo_provider_row_t rows[16];
     int n = 0;
+    PROV_LOG("media server details -> ok=%d http=%d len=%zu parsed=%d", ok, status, len, o != NULL);
     if (o) {
         char buf[160];
         cJSON *tl = cJSON_GetObjectItem(o, "Taglines");
@@ -1007,9 +1032,10 @@ static void on_details(int ok, int status, const char *body, size_t len, void *u
             row_add(rows, &n, 16, "", jstr(p, "Name"), jstr(p, "Role")[0] ? jstr(p, "Role") : "Cast");
             ++cast;
         }
-        cJSON_Delete(o);
     }
+    PROV_LOG("media server details: %d row(s)", n);
     if (x->cb) x->cb(o != NULL, rows, n, x->ud);
+    if (root) cJSON_Delete(root);
     free(x);
 }
 
@@ -1053,8 +1079,8 @@ int ms_panel(ms_client_t *c, const char *item_id, const char *kind, evo_provider
     char path[400];
     ms_request_fn_t fn = NULL;
     if (!strcmp(kind, "details")) {
-        snprintf(path, sizeof path, "/Users/%s/Items/%s?Fields=People,Genres,Studios,Taglines,CommunityRating,OfficialRating",
-                 c->cfg.user_id, item_server_id(item_id));
+        snprintf(path, sizeof path, "/Items?Ids=%s&UserId=%s&Fields=People,Genres,Studios,Taglines,CommunityRating,OfficialRating",
+                 item_server_id(item_id), c->cfg.user_id);
         fn = on_details;
     } else if (!strcmp(kind, "genres")) {
         const char *lib = strrchr(item_id, ':');

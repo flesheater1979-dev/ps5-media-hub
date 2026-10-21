@@ -506,15 +506,47 @@ the title back to the URL - the #9 defect again.
 Condensed from the superseded research document. Endpoint detail belongs in each
 provider's own story.
 
-**Emby / Jellyfin.** `POST /emby/Users/AuthenticateByName` returns
-`AccessToken` + `User.Id`; every later call carries `X-Emby-Token`.
-`/emby/Users/{uid}/Views` for libraries, `/emby/Users/{uid}/Items?ParentId=…`
-for contents, `/emby/Videos/{id}/stream?Static=true&api_key=…` for a direct
-stream, `/emby/Items/{id}/Images/Primary` for a poster, and the three
-`/emby/Sessions/Playing*` posts for progress. Jellyfin is the same shapes with a
-different auth header. `addon_emby.c` implements all of this; #90 added an https
-scheme option and removed a hardcoded LAN default that made an unconfigured
-provider look configured.
+**Emby / Jellyfin.** Emby lives under `/emby/` and sends `X-Emby-Token`;
+Jellyfin has no prefix and sends `Authorization: MediaBrowser ... Token="..."`
+(web-version progress reports use the same split). Sign-in is
+`POST /Users/AuthenticateByName` (or Quick Connect on Jellyfin), which returns
+`AccessToken` + `User.Id`. Libraries come from `/Users/{uid}/Views`, contents
+from `/Users/{uid}/Items?ParentId=…`, a direct stream from
+`/Videos/{id}/stream?Static=true`, posters/backdrops/logos from
+`/Items/{id}/Images/{Primary|Backdrop|Logo}`, and progress from the three
+`/Sessions/Playing*` posts (`PlayMethod` DirectPlay or Transcode, real
+`IsPaused`, a `DeviceId` made once per console and saved as `device_id=`).
+Details and cast use `/Items?Ids={id}&UserId={uid}&Fields=People,…` (the older
+per-user item URL answers 404 on some servers). Watched and favourite use
+`/UserPlayedItems` and `/UserFavoriteItems` on Jellyfin, which accept POST and
+DELETE (hardware-checked). `addon_emby.c` implements all of this.
+
+### Home layout: shelves for every provider
+
+Every provider with a catalog opens on the same shelves screen
+(`ui_kit/src/evo_hui_provider.cpp`, data and focus in
+`ui_rml/src/evo_rmlui_provider.cpp`). A provider only changes the rows:
+each folder in its root becomes a shelf of up to 24 cards, with a "See all"
+card when there is more, and the rest of the folders gather in a closing "More"
+shelf. Poster cards and channel cards (logo on a plate, LIVE pill, now line)
+share one card size. A root that is not a list of folders (a flat playlist)
+falls back to the plain level. Mapping:
+
+| Provider | Shelf | Card |
+|---|---|---|
+| Emby / Jellyfin | Continue Watching, Next Up, Recently Added, Favourites, one per library | poster |
+| Stremio addons / Nuvio | one per addon catalog (`c:` ids); two with one name get " - Movies" / " - Series" | poster |
+| Plex | one per library, found by opening each server first | poster |
+| IPTV | one per channel group, plus Favourites and Languages | channel |
+| Xtream | Live, Movies, Series | category |
+
+"See all" and folder levels use the same card, 8 across and 2 rows a page
+(`EVO_PROVIDER_COLS`, `EVO_PROVIDER_PAGE_SIZE`), with the focused card's title
+(or the channel's now/next) at the top right. The focused card's `backdrop_url`
+and `logo_url` are fetched after the cursor has rested and drawn behind the
+shelves. Triangle opens the item menu when the provider has `item_action` or
+`panel`; Stremio and Nuvio offer Details & cast built from the title's meta
+reply (`panel` hook, kind "details").
 
 **IPTV.** An M3U/M3U8 playlist. `#EXTINF` carries `tvg-id`, `tvg-logo` and
 `group-title` as unordered quoted attributes, and the display name is

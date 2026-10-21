@@ -446,6 +446,10 @@ static void map_meta(int a, cJSON *m, evo_provider_item_t *it)
     snprintf(it->overview, sizeof it->overview, "%s", jstr(m, "description"));
     const char *poster = jstr(m, "poster");
     if (!strncmp(poster, "http", 4)) snprintf(it->art_url, sizeof it->art_url, "%s", poster);
+    if (!strncmp(jstr(m, "background"), "http", 4))
+        snprintf(it->backdrop_url, sizeof it->backdrop_url, "%s", jstr(m, "background"));
+    if (!strncmp(jstr(m, "logo"), "http", 4))
+        snprintf(it->logo_url, sizeof it->logo_url, "%s", jstr(m, "logo"));
     it->is_folder = series;
     it->kind = series ? EVO_MEDIA_FOLDER : EVO_MEDIA_VIDEO;
 }
@@ -813,6 +817,146 @@ static int st_list_catalog(const char *parent_id, int page,
 }
 
 /* ------------------------------------------------------------------------- */
+/* Details and cast (the Triangle panel)                                     */
+/* ------------------------------------------------------------------------- */
+
+typedef struct {
+    ad_set_t *set;
+    char type[24];
+    char id[160];
+    evo_provider_rows_cb cb;
+    void *ud;
+} panel_ctx_t;
+
+static void prow(evo_provider_row_t *rows, int *n, int max, const char *title, const char *detail)
+{
+    if (*n >= max || !detail || !detail[0]) return;
+    evo_provider_row_t *r = &rows[(*n)++];
+    r->id[0] = '\0';
+    snprintf(r->title, sizeof r->title, "%s", title);
+    snprintf(r->detail, sizeof r->detail, "%s", detail);
+}
+
+/* A field that is a string, or an array of strings: "a, b, c". */
+static void join_field(cJSON *v, char *out, size_t cap, int limit)
+{
+    size_t b = 0;
+    out[0] = '\0';
+    if (!v) return;
+    if (cJSON_IsString(v)) { snprintf(out, cap, "%s", v->valuestring); return; }
+    for (int i = 0; cJSON_IsArray(v) && i < cJSON_GetArraySize(v) && i < limit && b + 2 < cap; ++i) {
+        cJSON *e = cJSON_GetArrayItem(v, i);
+        if (cJSON_IsString(e) && e->valuestring[0])
+            b += (size_t)snprintf(out + b, cap - b, "%s%s", b ? ", " : "", e->valuestring);
+    }
+}
+
+/* Only the rows the addon sent: fields differ between Cinemeta, TMDB and AIOMetadata. */
+static void build_details(cJSON *meta, evo_provider_row_t *rows, int *n, int max)
+{
+    char buf[160];
+    cJSON *v;
+    if (!meta) return;
+
+    size_t b = 0;
+    buf[0] = '\0';
+    v = cJSON_GetObjectItem(meta, "imdbRating");
+    const char *rating = v && cJSON_IsString(v) ? v->valuestring : "";
+    double rnum = v && cJSON_IsNumber(v) ? v->valuedouble : 0;
+    if (rating[0]) b += (size_t)snprintf(buf + b, sizeof buf - b, "%s/10 IMDb", rating);
+    else if (rnum > 0) b += (size_t)snprintf(buf + b, sizeof buf - b, "%.1f/10 IMDb", rnum);
+    const char *rel = jstr(meta, "releaseInfo")[0] ? jstr(meta, "releaseInfo") : jstr(meta, "year");
+    if (rel[0]) b += (size_t)snprintf(buf + b, sizeof buf - b, "%s%s", b ? " · " : "", rel);
+    if (jstr(meta, "runtime")[0]) b += (size_t)snprintf(buf + b, sizeof buf - b, "%s%s", b ? " · " : "", jstr(meta, "runtime"));
+    if (b) prow(rows, n, max, "Rating", buf);
+
+    join_field(cJSON_GetObjectItem(meta, "genres"), buf, sizeof buf, 8);
+    if (!buf[0]) join_field(cJSON_GetObjectItem(meta, "genre"), buf, sizeof buf, 8);
+    prow(rows, n, max, "Genres", buf);
+
+    join_field(cJSON_GetObjectItem(meta, "director"), buf, sizeof buf, 4);
+    prow(rows, n, max, "Director", buf);
+
+    /* One row per actor, as the media-server panel does. The addons that give no
+     * "cast" list name people under links[] with the category "Cast". */
+    int cast = 0;
+    cJSON *c = cJSON_GetObjectItem(meta, "cast");
+    for (int i = 0; c && cJSON_IsArray(c) && i < cJSON_GetArraySize(c) && cast < 10; ++i) {
+        cJSON *e = cJSON_GetArrayItem(c, i);
+        const char *name = cJSON_IsString(e) ? e->valuestring : jstr(e, "name");
+        if (!name[0]) continue;
+        prow(rows, n, max, name, "Cast");
+        ++cast;
+    }
+    cJSON *links = cJSON_GetObjectItem(meta, "links");
+    for (int i = 0; !cast && links && cJSON_IsArray(links) && i < cJSON_GetArraySize(links) && cast < 10; ++i) {
+        cJSON *e = cJSON_GetArrayItem(links, i);
+        if (strcmp(jstr(e, "category"), "Cast") || !jstr(e, "name")[0]) continue;
+        prow(rows, n, max, jstr(e, "name"), "Cast");
+        ++cast;
+    }
+}
+
+static void deliver_panel(panel_ctx_t *x)
+{
+    evo_provider_row_t rows[16];
+    int n = 0;
+    cJSON *meta = S->meta ? cJSON_GetObjectItem(S->meta, "meta") : NULL;
+    build_details(meta, rows, &n, 16);
+    if (x->cb) x->cb(n > 0, rows, n, x->ud);
+    free(x);
+}
+
+static void on_panel_meta(int ok, int status, const char *body, size_t len, void *ud)
+{
+    (void)len;
+    panel_ctx_t *x = (panel_ctx_t *)ud;
+    S = x->set;
+    cJSON *root = (ok && status == 200 && body) ? cJSON_Parse(body) : NULL;
+    if (!root || !cJSON_GetObjectItem(root, "meta")) {
+        if (root) cJSON_Delete(root);
+        if (x->cb) x->cb(0, NULL, 0, x->ud);
+        free(x);
+        return;
+    }
+    if (S->meta) cJSON_Delete(S->meta);
+    S->meta = root;
+    snprintf(S->meta_key, sizeof S->meta_key, "%s:%s", x->type, x->id);
+    deliver_panel(x);
+}
+
+static int st_panel(const char *item_id, const char *kind, evo_provider_rows_cb cb, void *ud)
+{
+    if (!item_id || !kind || strcmp(kind, "details")) return -1;
+    if (strncmp(item_id, "m:", 2) && strncmp(item_id, "s:", 2)) return -1;
+    int a;
+    char type[24];
+    const char *id;
+    if (split3(item_id + 2, &a, type, sizeof type, &id) != 0) return -1;
+
+    panel_ctx_t *x = (panel_ctx_t *)calloc(1, sizeof *x);
+    if (!x) return -2;
+    x->set = S;
+    x->cb = cb; x->ud = ud;
+    snprintf(x->type, sizeof x->type, "%s", type);
+    snprintf(x->id, sizeof x->id, "%s", id);
+
+    char key[256];
+    snprintf(key, sizeof key, "%s:%s", type, id);
+    if (S->meta && !strcmp(S->meta_key, key)) {        /* already fetched for the episode list */
+        deliver_panel(x);
+        return 0;
+    }
+    int m = find_meta_addon(a, type, id);
+    if (m < 0) { free(x); return -1; }
+    char url[EVO_PROVIDER_MAX_URL];
+    snprintf(url, sizeof url, "%s/meta/%s/%s.json", S->ad[m].base, type, id);
+    int rc = ad_get(url, on_panel_meta, x);
+    if (rc != 0) free(x);
+    return rc;
+}
+
+/* ------------------------------------------------------------------------- */
 /* Search                                                                    */
 /* ------------------------------------------------------------------------- */
 
@@ -1112,6 +1256,12 @@ int evo_nuvio_search(const char *query, int page, evo_provider_items_cb cb, void
     return st_search(query, page, cb, ud);
 }
 
+int evo_nuvio_panel(const char *item_id, const char *kind, evo_provider_rows_cb cb, void *ud)
+{
+    S = &g_nuvio;
+    return st_panel(item_id, kind, cb, ud);
+}
+
 int evo_nuvio_resolve(const char *item_id, evo_provider_resolve_cb cb, void *ud)
 {
     S = &g_nuvio;
@@ -1140,6 +1290,12 @@ static int ad_resolve(const char *item_id, evo_provider_resolve_cb cb, void *ud)
     return st_resolve(item_id, cb, ud);
 }
 
+static int ad_panel(const char *item_id, const char *kind, evo_provider_rows_cb cb, void *ud)
+{
+    S = &g_addons;
+    return st_panel(item_id, kind, cb, ud);
+}
+
 const evo_provider_t evo_provider_stremio = {
     .id            = "addons",
     .name          = "Stremio",
@@ -1157,4 +1313,5 @@ const evo_provider_t evo_provider_stremio = {
     .get_source    = ad_get_source,
     .set_source    = ad_set_source,
     .ui_embedded   = "mediaserver",
+    .panel         = ad_panel,
 };

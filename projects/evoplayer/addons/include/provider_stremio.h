@@ -28,6 +28,7 @@ int         evo_stremio_addon_remove(int i);
 int evo_nuvio_list_catalog(const char *parent_id, int page, evo_provider_items_cb cb, void *ud);
 int evo_nuvio_search(const char *query, int page, evo_provider_items_cb cb, void *ud);
 int evo_nuvio_resolve(const char *item_id, evo_provider_resolve_cb cb, void *ud);
+int evo_nuvio_panel(const char *item_id, const char *kind, evo_provider_rows_cb cb, void *ud);
 /* In provider_nuvio.c: the page-storage file of the Nuvio site in use,
  * relative to the data root ("webui/<host>_<port>.json"). */
 const char *evo_nuvio_store_file(void);

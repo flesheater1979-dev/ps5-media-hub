@@ -184,7 +184,8 @@ typedef struct evo_provider_item {
     char    subtitle[EVO_PROVIDER_MAX_SUBTITLE];  /* year, group-title, S01E02 */
     char    overview[EVO_PROVIDER_MAX_OVERVIEW];
     char    art_url[EVO_PROVIDER_MAX_ART_URL];    /* poster / channel logo */
-    char    backdrop_url[EVO_PROVIDER_MAX_ART_URL];
+    char    backdrop_url[EVO_PROVIDER_MAX_ART_URL];   /* wide image behind the shelves */
+    char    logo_url[EVO_PROVIDER_MAX_ART_URL];       /* title logo (transparent PNG) */
 
     int64_t duration_sec;       /* 0 for a folder or a live stream */
     int64_t resume_pos_sec;     /* 0 if none */

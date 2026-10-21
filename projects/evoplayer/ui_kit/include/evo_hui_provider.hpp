@@ -58,8 +58,8 @@ class ProviderGridScreen
     bool setup_shown() const;
     hui::gfx::Rect card_rect(int index) const;
     void draw_setup(hui::gfx::DrawList &list, const Context &ctx) const;
-    void draw_card(hui::gfx::DrawList &list, const Context &ctx, const Row &row, const hui::gfx::Rect &c) const;
-    void draw_detail(hui::gfx::DrawList &list, const Context &ctx) const;
+    void draw_poster_card(hui::gfx::DrawList &list, const Context &ctx, const Row &row, bool see_all, float cx, float y) const;
+    void draw_selected_line(hui::gfx::DrawList &list, const Context &ctx) const;
     void draw_panel(hui::gfx::DrawList &list, const Context &ctx) const;
     void draw_art(hui::gfx::DrawList &list, const Context &ctx, const hui::gfx::Rect &r, float radius,
                   const std::uint32_t *art, int w, int h, const std::string &key, bool folder,
@@ -91,6 +91,11 @@ class ProviderGridScreen
     std::vector<PanelRow> panel_rows_;
 
     bool shelves_active_ = false, item_menu_ = false;
+    /* The focused card's wide image and logo, behind and over the shelves. */
+    const std::uint32_t *bd_ = nullptr, *logo_ = nullptr;
+    int bd_w_ = 0, bd_h_ = 0, logo_w_ = 0, logo_h_ = 0;
+    std::string bd_key_, logo_key_;
+    float bd_alpha_ = 0.0f;                 /* fades in when a new image arrives */
     int shelf_total_ = 0, shelf_focus_abs_ = 0;
     std::vector<Shelf> shelves_;
     float scroll_y_ = 0.0f;                 /* in shelves */

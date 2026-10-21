@@ -32,7 +32,7 @@ const Color kRed = Color::rgb(0xff6b6b);
 const Color kLive = Color::rgb(0xff4d4d);
 const Color kAmber = Color::rgb(0xffb020);
 
-constexpr int kCols = 4;
+constexpr int kCols = 8;                  /* a folder level: the shelf card, wrapped into 8 columns */
 constexpr float kGridX = NavRail::kWidth + 64.0f;
 constexpr float kGridTop = 214.0f;
 constexpr float kCardW = 232.0f;
@@ -45,6 +45,7 @@ constexpr float kShelfPitch = 404.0f;
 constexpr float kPosterW = 176.0f;
 constexpr float kPosterH = 264.0f;
 constexpr float kCardStride = 198.0f;
+constexpr float kGridPitch = 332.0f;       /* a folder level's row height: card + two text lines */
 
 std::string str(const char *s) { return std::string(s ? s : ""); }
 
@@ -146,6 +147,19 @@ void ProviderGridScreen::set(const evo_hui_provider_params_t &p)
     }
     shelves_active_ = p.shelves_active != 0;
     item_menu_ = p.item_menu != 0;
+    {
+        const std::string bk = str(p.backdrop_key);
+        if (bk != bd_key_)
+            bd_alpha_ = 0.0f;
+        bd_key_ = bk;
+        bd_ = p.backdrop;
+        bd_w_ = p.backdrop_w;
+        bd_h_ = p.backdrop_h;
+        logo_key_ = str(p.logo_key);
+        logo_ = p.logo;
+        logo_w_ = p.logo_w;
+        logo_h_ = p.logo_h;
+    }
     shelf_total_ = p.shelf_total;
     shelf_focus_abs_ = p.shelf_focus_abs;
     shelves_.clear();
@@ -172,6 +186,9 @@ void ProviderGridScreen::set(const evo_hui_provider_params_t &p)
             row.art_h = r.art_h;
             row.is_folder = r.is_folder != 0;
             row.played = r.played != 0;
+            row.is_live = r.is_live != 0;
+            row.now = str(r.now);
+            row.next = str(r.next);
             row.progress = r.progress;
             s.cards.push_back(std::move(row));
             s.see_all.push_back(r.see_all ? 1 : 0);
@@ -256,13 +273,13 @@ Rect ProviderGridScreen::card_rect(int index) const
 {
     const int col = index % kCols;
     const int row = index / kCols;
-    const float h = channels() ? 300.0f : 334.0f;
-    return {kGridX + col * (kCardW + kGap), kGridTop + row * (h + kGap), kCardW, h};
+    return {kGridX + col * kCardStride, kGridTop + 26.0f + row * kGridPitch, kPosterW, kPosterH};
 }
 
 void ProviderGridScreen::update(float dt)
 {
     age_ += dt;
+    bd_alpha_ = std::min(1.0f, bd_alpha_ + dt * 2.2f);
     if (panel_open_)
         panel_age_ += dt;
     Rect target{};
@@ -407,203 +424,82 @@ void ProviderGridScreen::draw_art(DrawList &list, const Context &ctx, const Rect
     }
 }
 
-void ProviderGridScreen::draw_card(DrawList &list, const Context &ctx, const Row &row, const Rect &c) const
+/* One card, the same on a shelf and in a folder level: a poster, or a channel logo
+ * on a plate with a LIVE pill. `cx`,`y` is its top-left; the title sits under it. */
+void ProviderGridScreen::draw_poster_card(DrawList &list, const Context &ctx, const Row &row, bool see_all, float cx,
+                                          float y) const
 {
     const ui::Fonts &fonts = ctx.fonts;
     const Palette &pal = ctx.palette;
-
-    if (!channels())
+    const Rect poster{cx, y, kPosterW, kPosterH};
+    list.shadow(poster, 14, 16, kBlack.with_alpha(0.35f));
+    if (see_all)
     {
-        /* poster wall card */
-        const Rect poster{c.x, c.y, c.w, 268.0f};
-        list.shadow(poster, 16, 18, kBlack.with_alpha(0.35f));
-        draw_art(list, ctx, poster, 16, row.art, row.art_w, row.art_h, row.art_key, row.is_folder, row.initial, 80.0f,
-                 false);
-        if (row.played)
-        {
-            const float w2 = fonts.semibold.measure("WATCHED", 13, 1.2f) + 18;
-            Rect pill{poster.x + 10, poster.y + 10, w2, 24};
-            list.rounded_rect(pill, 12, kBlack.with_alpha(0.62f));
-            ui::text(list, fonts.semibold, "WATCHED", pill.cx(), pill.y + 17, 13, kWhite, Align::center, 1.2f);
-        }
-        if (row.progress > 0)
-        {
-            Rect bar{poster.x + 10, poster.y + poster.h - 14, poster.w - 20, 5};
-            list.rounded_rect(bar, 2.5f, kBlack.with_alpha(0.55f));
-            list.rounded_rect({bar.x, bar.y, bar.w * std::min(100, row.progress) / 100.0f, bar.h}, 2.5f, pal.accent);
-        }
-        ui::text(list, fonts.semibold, fonts.semibold.font->fit(row.title, 19, c.w), c.x + 2, c.y + 296, 19,
-                 kWhite.with_alpha(0.92f));
-        ui::text(list, fonts.regular, fonts.regular.font->fit(row.subtitle, 15, c.w), c.x + 2, c.y + 320, 15,
-                 pal.text_faint);
+        list.gradient_rect(poster, 14, pal.accent_soft, pal.bg_bottom);
+        const std::uint32_t chev = ctx.textures.icon("../icons/icon_chevron.png");
+        if (chev)
+            list.image(chev, {poster.cx() - 22, poster.cy() - 40, 44, 44}, ::hui::gfx::kFullUv, kWhite.with_alpha(0.85f));
+        ui::text(list, fonts.semibold, "SEE ALL", poster.cx(), poster.cy() + 38, 18, kWhite, Align::center, 2.0f);
         return;
     }
-
-    /* channel / group card */
-    list.shadow(c, 18, 18, kBlack.with_alpha(0.3f));
-    list.rounded_rect(c, 18, pal.surface);
-    const Rect preview{c.x + 10, c.y + 10, c.w - 20, 132};
-    draw_art(list, ctx, preview, 12, row.art, row.art_w, row.art_h, row.art_key, row.is_folder, row.initial, 64.0f,
-             true);
-    if (row.is_folder)
+    /* A channel: its logo whole, on a plate, in the same card size as a poster. */
+    draw_art(list, ctx, poster, 14, row.art, row.art_w, row.art_h, row.art_key, row.is_folder, row.initial, 72.0f,
+             row.is_live);
+    if (row.is_live)
     {
-        const float w2 = fonts.semibold.measure(kind_word(variant_), 12, 1.2f) + 16;
-        Rect pill{preview.x + 8, preview.y + 8, w2, 22};
-        list.rounded_rect(pill, 11, kBlack.with_alpha(0.6f));
-        ui::text(list, fonts.semibold, kind_word(variant_), pill.cx(), pill.y + 16, 12, kWhite, Align::center, 1.2f);
-    }
-    else if (row.is_live)
-    {
-        Rect pill{preview.x + 8, preview.y + 8, 48, 22};
+        Rect pill{poster.x + 8, poster.y + 8, 48, 22};
         list.rounded_rect(pill, 11, kLive);
         ui::text(list, fonts.semibold, "LIVE", pill.cx(), pill.y + 16, 12, kWhite, Align::center, 1.2f);
     }
-    float y = c.y + 168;
-    ui::text(list, fonts.semibold, fonts.semibold.font->fit(row.title, 18, c.w - 24), c.x + 14, y, 18, kWhite);
-    y += 24;
-    if (row.is_folder || row.now.empty())
+    if (row.played)
     {
-        ui::text(list, fonts.regular, fonts.regular.font->fit(row.subtitle, 14, c.w - 24), c.x + 14, y, 14,
-                 pal.text_faint);
+        const float w2 = fonts.semibold.measure("WATCHED", 12, 1.2f) + 16;
+        Rect pill{poster.x + 8, poster.y + 8, w2, 22};
+        list.rounded_rect(pill, 11, kBlack.with_alpha(0.62f));
+        ui::text(list, fonts.semibold, "WATCHED", pill.cx(), pill.y + 16, 12, kWhite, Align::center, 1.2f);
     }
-    else
+    if (row.progress > 0)
     {
-        ui::text(list, fonts.semibold, "NOW", c.x + 14, y, 11, pal.accent, Align::left, 1.2f);
-        ui::text(list, fonts.regular, fonts.regular.font->fit(row.now, 14, c.w - 70), c.x + 52, y, 14, pal.text_muted);
-        if (!row.next.empty())
-        {
-            y += 20;
-            ui::text(list, fonts.semibold, "NEXT", c.x + 14, y, 11, pal.text_faint, Align::left, 1.2f);
-            ui::text(list, fonts.regular, fonts.regular.font->fit(row.next, 14, c.w - 70), c.x + 52, y, 14,
-                     pal.text_faint);
-        }
+        Rect bar{poster.x + 8, poster.y + poster.h - 12, poster.w - 16, 5};
+        list.rounded_rect(bar, 2.5f, kBlack.with_alpha(0.55f));
+        list.rounded_rect({bar.x, bar.y, bar.w * std::min(100, row.progress) / 100.0f, bar.h}, 2.5f, pal.accent);
     }
-    /* footer */
-    const char *kind = row.is_folder ? kind_word(variant_)
-                       : (variant_ == EVO_HUI_PROVIDER_XTREAM && !row.is_live) ? "VOD" : (row.is_live || variant_ == EVO_HUI_PROVIDER_LIVETV) ? "CHANNEL" : "VOD";
-    const char *tag = row.is_folder ? "OPEN" : ((variant_ == EVO_HUI_PROVIDER_XTREAM && !row.is_live) ? "PLAY" : "WATCH");
-    list.line(c.x + 14, c.y + c.h - 36, c.x + c.w - 14, c.y + c.h - 36, 1.0f, kWhite.with_alpha(0.08f));
-    ui::text(list, fonts.semibold, kind, c.x + 14, c.y + c.h - 14, 12, pal.text_faint, Align::left, 1.4f);
-    ui::text(list, fonts.semibold, tag, c.x + c.w - 14, c.y + c.h - 14, 12, pal.accent, Align::right, 1.4f);
+    ui::text(list, fonts.semibold, fonts.semibold.font->fit(row.title, 18, kPosterW), cx + 2, poster.y + poster.h + 28, 18,
+             kWhite.with_alpha(0.92f));
+    const std::string &line2 = (row.is_live && !row.now.empty()) ? row.now : row.subtitle;
+    ui::text(list, fonts.regular, fonts.regular.font->fit(line2, 15, kPosterW), cx + 2, poster.y + poster.h + 50, 15,
+             row.is_live && !row.now.empty() ? pal.text_muted : pal.text_faint);
 }
 
-void ProviderGridScreen::draw_detail(DrawList &list, const Context &ctx) const
+/* The focused card, top right: what it is, how far in (and what is on now). */
+void ProviderGridScreen::draw_selected_line(DrawList &list, const Context &ctx) const
 {
+    if (!has_selected_)
+        return;
     const ui::Fonts &fonts = ctx.fonts;
     const Palette &pal = ctx.palette;
-    list.push_opacity(tween::stagger(age_, 3, 0.08f, 0.5f));
-    list.rounded_rect(kDetail, 28, pal.surface);
-    const float x = kDetail.x + 32;
-    const float w = kDetail.w - 64;
-
-    if (!channels())
+    const float rx = 1824.0f;
+    const std::uint32_t logo_tex = logo_ ? ctx.textures.pixels(logo_, logo_w_, logo_h_, hash_of(logo_key_)) : 0;
+    if (logo_tex)
     {
-        ui::text(list, fonts.semibold, sel_folder_ ? "OPEN" : "PLAY", x, kDetail.y + 48, 16, pal.accent,
-                 Align::left, 3.0f);
-        Rect poster{x, kDetail.y + 70, 168, 236};
-        draw_art(list, ctx, poster, 14, sel_art_, sel_art_w_, sel_art_h_, sel_art_key_, sel_folder_, sel_initial_, 64.0f,
-                 false);
-        const float tx = poster.x + poster.w + 24;
-        const float tw = x + w - tx;
-        float y = poster.y + 34;
-        y = ui::paragraph(list, fonts.display, sel_title_, tx, y, 28, tw, 34, kWhite, 3);
-        if (!sel_sub_.empty())
-            ui::text(list, fonts.regular, fonts.regular.font->fit(sel_sub_, 18, tw), tx, y + 4, 18, pal.text_muted);
-        y += 34;
-        if (sel_played_)
-            ui::text(list, fonts.semibold, "WATCHED", tx, y, 14, pal.accent, Align::left, 1.6f);
-        if (!sel_resume_.empty())
-        {
-            ui::text(list, fonts.regular, sel_resume_, tx, poster.y + poster.h - 26, 16, pal.text_muted);
-            Rect bar{tx, poster.y + poster.h - 14, tw, 6};
-            list.rounded_rect(bar, 3, kWhite.with_alpha(0.14f));
-            list.rounded_rect({bar.x, bar.y, bar.w * std::min(100, sel_progress_) / 100.0f, bar.h}, 3, pal.accent);
-        }
-        if (!sel_overview_.empty())
-            ui::paragraph(list, fonts.regular, sel_overview_, x, poster.y + poster.h + 44, 18, w, 27, pal.text_muted, 9);
-        const char *verb = sel_folder_ ? "OPEN" : (sel_resume_.empty() ? "PLAY" : "RESUME");
-        Rect act{x, kDetail.y + kDetail.h - 84, w, 56};
-        list.rounded_rect(act, 28, pal.accent.with_alpha(0.28f));
-        ui::text(list, fonts.semibold, verb, act.cx(), act.cy() + 7, 20, kWhite, Align::center, 2.0f);
-        list.pop_opacity();
-        return;
-    }
-
-    const bool xt = variant_ == EVO_HUI_PROVIDER_XTREAM;
-    ui::text(list, fonts.semibold,
-             sel_folder_ ? (xt ? "SELECTED CATEGORY" : "SELECTED GROUP") : (xt ? "SELECTED ITEM" : "SELECTED CHANNEL"), x,
-             kDetail.y + 46, 15, pal.accent, Align::left, 3.0f);
-    Rect plate{x, kDetail.y + 66, w, 150};
-    draw_art(list, ctx, plate, 16, sel_art_, sel_art_w_, sel_art_h_, sel_art_key_, sel_folder_, sel_initial_, 72.0f, true);
-    if (sel_folder_)
-    {
-        const char *k = kind_word(variant_);
-        const float w2 = fonts.semibold.measure(k, 12, 1.2f) + 18;
-        Rect pill{plate.x + 10, plate.y + 10, w2, 24};
-        list.rounded_rect(pill, 12, kBlack.with_alpha(0.6f));
-        ui::text(list, fonts.semibold, k, pill.cx(), pill.y + 17, 12, kWhite, Align::center, 1.2f);
+        Rect lr = contain_rect(logo_w_, logo_h_, {rx - 440.0f, 40.0f, 440.0f, 96.0f});
+        lr.x = rx - lr.w;
+        list.image(logo_tex, lr, ::hui::gfx::kFullUv, kWhite);
     }
     else
+        ui::text(list, fonts.display, fonts.display.font->fit(sel_title_, 32, 760.0f), rx, 128, 32, kWhite, Align::right);
+    std::string line = sel_sub_;
+    if (!sel_now_.empty())
     {
-        Rect pill{plate.x + 10, plate.y + 10, 74, 24};
-        list.rounded_rect(pill, 12, kLive);
-        ui::text(list, fonts.semibold, "\xE2\x97\x8F LIVE", pill.cx(), pill.y + 17, 12, kWhite, Align::center, 1.0f);
-    }
-    float y = plate.y + plate.h + 36;
-    float tx = x;
-    if (!sel_folder_ && !sel_num_.empty())
-        tx += ui::text(list, fonts.semibold, sel_num_, x, y, 14, pal.accent, Align::left, 1.2f) + 14;
-    ui::text(list, fonts.regular, fonts.regular.font->fit(sel_tech_, 14, x + w - tx), tx, y, 14, pal.text_faint);
-    y += 38;
-    y = ui::paragraph(list, fonts.display, sel_title_, x, y, 28, w, 34, kWhite, 2);
-    if (!sel_sub_.empty())
-        ui::text(list, fonts.regular, fonts.regular.font->fit(sel_sub_, 17, w), x, y + 2, 17, pal.text_muted);
-
-    if (!sel_folder_)
-    {
-        Rect box{x, kDetail.y + 410, w, 168};
-        list.rounded_rect(box, 16, kBlack.with_alpha(0.28f));
-        ui::text(list, fonts.semibold, "CHANNEL GUIDE", box.x + 18, box.y + 30, 12, pal.text_faint, Align::left, 1.8f);
-        if (!sel_now_.empty())
-            ui::text(list, fonts.semibold, "\xE2\x97\x8F ON AIR", box.x + box.w - 18, box.y + 30, 12, kLive, Align::right,
-                     1.2f);
-        float ry = box.y + 62;
-        if (!sel_now_.empty())
-        {
-            ui::text(list, fonts.semibold, "NOW", box.x + 18, ry, 12, pal.accent, Align::left, 1.2f);
-            ui::text(list, fonts.regular, fonts.regular.font->fit(sel_now_, 17, box.w - 100), box.x + 72, ry, 17, kWhite);
-            ry += 32;
-        }
+        line = "Now: " + sel_now_;
         if (!sel_next_.empty())
-        {
-            ui::text(list, fonts.semibold, "NEXT", box.x + 18, ry, 12, pal.text_faint, Align::left, 1.2f);
-            ui::text(list, fonts.regular, fonts.regular.font->fit(sel_next_, 17, box.w - 100), box.x + 72, ry, 17,
-                     pal.text_muted);
-            ry += 32;
-        }
-        if (sel_now_.empty() && sel_next_.empty())
-        {
-            ui::text(list, fonts.semibold, "GUIDE", box.x + 18, ry, 12, pal.accent, Align::left, 1.2f);
-            const std::string msg =
-                xt ? "Live broadcast \xE2\x80\x94 guide loading / standby" : (epg_status_.empty() ? "Live Broadcast" : epg_status_);
-            ui::paragraph(list, fonts.regular, msg, box.x + 78, ry, 16, box.w - 96, 22, pal.text_muted, 3);
-            if (epg_setup_ && !xt)
-            {
-                ui::text(list, fonts.semibold, "OPTIONS", box.x + 18, box.y + box.h - 22, 12, pal.accent, Align::left, 1.2f);
-                ui::text(list, fonts.semibold, "SET UP A GUIDE", box.x + 100, box.y + box.h - 22, 12, pal.text_muted,
-                         Align::left, 1.2f);
-            }
-        }
+            line += "   Next: " + sel_next_;
     }
-
-    const char *verb = sel_folder_ ? (xt ? "OPEN CATEGORY" : "OPEN GROUP") : (xt ? "OPEN STREAM" : "WATCH CHANNEL");
-    Rect act{x, kDetail.y + kDetail.h - 84, w, 56};
-    list.rounded_rect(act, 28, pal.accent.with_alpha(0.28f));
-    ui::text(list, fonts.semibold, verb, act.cx(), act.cy() + 7, 20, kWhite, Align::center, 2.0f);
-    if (multi_page_)
-        ui::text(list, fonts.regular, "Use L1 / R1 or D-pad up/down to flip pages", kDetail.cx(), kDetail.y + kDetail.h - 96,
-                 13, pal.text_faint, Align::center);
-    list.pop_opacity();
+    if (!sel_resume_.empty())
+        line += (line.empty() ? "" : "  -  ") + sel_resume_;
+    else if (sel_played_)
+        line += (line.empty() ? "" : "  -  ") + std::string("Watched");
+    ui::text(list, fonts.regular, fonts.regular.font->fit(line, 19, 760.0f), rx, 162, 19, pal.text_muted, Align::right);
 }
 
 void ProviderGridScreen::draw_setup(DrawList &list, const Context &ctx) const
@@ -794,39 +690,7 @@ void ProviderGridScreen::draw_shelves(DrawList &list, const Context &ctx) const
             /* ease the card out where it meets the rail on the left */
             const float edge = cx < kGridX ? std::max(0.0f, 1.0f - (kGridX - cx) / kCardStride) : 1.0f;
             list.push_opacity(edge);
-            const Rect poster{cx, y + 44.0f, kPosterW, kPosterH};
-            const bool see_all = i < s.see_all.size() && s.see_all[i];
-            list.shadow(poster, 14, 16, kBlack.with_alpha(0.35f));
-            if (see_all)
-            {
-                list.gradient_rect(poster, 14, pal.accent_soft, pal.bg_bottom);
-                const std::uint32_t chev = ctx.textures.icon("../icons/icon_chevron.png");
-                if (chev)
-                    list.image(chev, {poster.cx() - 22, poster.cy() - 40, 44, 44}, ::hui::gfx::kFullUv, kWhite.with_alpha(0.85f));
-                ui::text(list, fonts.semibold, "SEE ALL", poster.cx(), poster.cy() + 38, 18, kWhite, Align::center, 2.0f);
-            }
-            else
-            {
-                draw_art(list, ctx, poster, 14, row.art, row.art_w, row.art_h, row.art_key, row.is_folder, row.initial, 72.0f,
-                         false);
-                if (row.played)
-                {
-                    const float w2 = fonts.semibold.measure("WATCHED", 12, 1.2f) + 16;
-                    Rect pill{poster.x + 8, poster.y + 8, w2, 22};
-                    list.rounded_rect(pill, 11, kBlack.with_alpha(0.62f));
-                    ui::text(list, fonts.semibold, "WATCHED", pill.cx(), pill.y + 16, 12, kWhite, Align::center, 1.2f);
-                }
-                if (row.progress > 0)
-                {
-                    Rect bar{poster.x + 8, poster.y + poster.h - 12, poster.w - 16, 5};
-                    list.rounded_rect(bar, 2.5f, kBlack.with_alpha(0.55f));
-                    list.rounded_rect({bar.x, bar.y, bar.w * std::min(100, row.progress) / 100.0f, bar.h}, 2.5f, pal.accent);
-                }
-                ui::text(list, fonts.semibold, fonts.semibold.font->fit(row.title, 18, kPosterW), cx + 2, poster.y + poster.h + 28,
-                         18, kWhite.with_alpha(0.92f));
-                ui::text(list, fonts.regular, fonts.regular.font->fit(row.subtitle, 15, kPosterW), cx + 2,
-                         poster.y + poster.h + 50, 15, pal.text_faint);
-            }
+            draw_poster_card(list, ctx, row, i < s.see_all.size() && s.see_all[i], cx, y + 44.0f);
             list.pop_opacity();
         }
         list.pop_opacity();
@@ -842,23 +706,13 @@ void ProviderGridScreen::draw_shelves(DrawList &list, const Context &ctx) const
         list.bordered_rect(ring.inset(-5), 20, Color::rgb(0x000000, 0.0f), 4, kWhite);
     }
 
-    /* the focused title, top right: what it is, how far in */
-    if (has_selected_)
-    {
-        const float rx = 1824.0f;
-        ui::text(list, fonts.display, fonts.display.font->fit(sel_title_, 32, 760.0f), rx, 128, 32, kWhite, Align::right);
-        std::string line = sel_sub_;
-        if (!sel_resume_.empty())
-            line += (line.empty() ? "" : "  -  ") + sel_resume_;
-        else if (sel_played_)
-            line += (line.empty() ? "" : "  -  ") + std::string("Watched");
-        ui::text(list, fonts.regular, fonts.regular.font->fit(line, 19, 760.0f), rx, 162, 19, pal.text_muted, Align::right);
-    }
+    draw_selected_line(list, ctx);
 }
 
 void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
 {
-    draw_backdrop(list, ctx);
+    const std::uint32_t bd_tex = (shelves_active_ && bd_) ? ctx.textures.pixels(bd_, bd_w_, bd_h_, hash_of(bd_key_)) : 0;
+    draw_backdrop(list, ctx, bd_tex, bd_alpha_);
     const ui::Fonts &fonts = ctx.fonts;
     const Palette &pal = ctx.palette;
     const bool xt = variant_ == EVO_HUI_PROVIDER_XTREAM;
@@ -880,29 +734,6 @@ void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
         if (channels())
             list.circle(kGridX + 76 + tw + 18, 118, 6, kLive.with_alpha(0.6f + 0.4f * ui::breathe(ctx.time)));
         ui::text(list, fonts.regular, crumb_, kGridX + 76, 168, 20, pal.text_muted);
-        if (!empty_ && !shelves_active_)
-        {
-            float right = 1824.0f;
-            std::string counter;
-            if (live)
-                counter = std::to_string(count_) + (folder_level_ ? " GROUPS" : " CHANNELS");
-            else if (xt)
-                counter = std::to_string(count_) + (folder_level_ ? " CATEGORIES" : " ITEMS");
-            else
-                counter = std::to_string(count_) + (count_ == 1 ? " ITEM" : " ITEMS");
-            const float cw = fonts.semibold.measure(counter, 15, 1.4f) + 24;
-            Rect cp{right - cw, 108, cw, 32};
-            list.rounded_rect(cp, 16, kWhite.with_alpha(0.08f));
-            ui::text(list, fonts.semibold, counter, cp.cx(), cp.y + 22, 15, pal.text_muted, Align::center, 1.4f);
-            right -= cw + 12;
-            if (multi_page_)
-            {
-                const float pw = fonts.semibold.measure(page_info_, 15, 1.4f) + 24;
-                Rect pp{right - pw, 108, pw, 32};
-                list.rounded_rect(pp, 16, pal.accent.with_alpha(0.25f));
-                ui::text(list, fonts.semibold, page_info_, pp.cx(), pp.y + 22, 15, kWhite, Align::center, 1.4f);
-            }
-        }
         list.pop_opacity();
     }
 
@@ -956,21 +787,17 @@ void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
         {
             const float rise = tween::stagger(age_, static_cast<int>(i), 0.04f, 0.4f);
             list.push_opacity(rise);
-            Rect c = card_rect(static_cast<int>(i));
-            c.y += (1.0f - rise) * 16.0f;
-            draw_card(list, ctx, rows_[i], c);
+            const Rect c = card_rect(static_cast<int>(i));
+            draw_poster_card(list, ctx, rows_[i], false, c.x, c.y + (1.0f - rise) * 16.0f);
             list.pop_opacity();
         }
         if (focus_ >= 0 && focus_ < static_cast<int>(rows_.size()))
         {
-            Rect ring = ring_.value();
-            if (!channels())
-                ring.h = 268.0f;
-            list.glow(ring, 18, 20, pal.accent.with_alpha(0.32f + 0.1f * ui::breathe(ctx.time)));
-            list.bordered_rect(ring.inset(-5), 22, Color::rgb(0x000000, 0.0f), 4, kWhite);
+            const Rect ring = ring_.value();
+            list.glow(ring, 16, 20, pal.accent.with_alpha(0.32f + 0.1f * ui::breathe(ctx.time)));
+            list.bordered_rect(ring.inset(-5), 20, Color::rgb(0x000000, 0.0f), 4, kWhite);
         }
-        if (has_selected_)
-            draw_detail(list, ctx);
+        draw_selected_line(list, ctx);
     }
 
     /* tuning */
@@ -997,10 +824,16 @@ void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
     {
         float x = 192;
         x += ui::text(list, fonts.semibold, ui::upper(name_), x, 1030, 16, pal.text_faint, Align::left, 1.6f) + 16;
-        if (channels())
+        if (!empty_ && !shelves_active_ && !setup_shown())
         {
-            const char *pill = live ? (folder_level_ ? "GROUPS" : "CHANNEL GUIDE") : (folder_level_ ? "CATEGORIES" : "CHANNEL GUIDE");
-            x += ui::text(list, fonts.semibold, pill, x, 1030, 13, pal.text_faint, Align::left, 1.4f) + 16;
+            std::string counter;
+            if (live)
+                counter = std::to_string(count_) + (folder_level_ ? " GROUPS" : " CHANNELS");
+            else if (xt)
+                counter = std::to_string(count_) + (folder_level_ ? " CATEGORIES" : " ITEMS");
+            else
+                counter = std::to_string(count_) + (count_ == 1 ? " ITEM" : " ITEMS");
+            x += ui::text(list, fonts.semibold, counter, x, 1030, 13, pal.text_faint, Align::left, 1.4f) + 16;
         }
         if (multi_page_)
             x += ui::text(list, fonts.semibold, page_info_, x, 1030, 13, pal.text_faint, Align::left, 1.4f) + 16;
@@ -1009,7 +842,7 @@ void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
                      pal.accent, Align::left, 1.6f);
 
         std::vector<ui::Hint> hints;
-        if (channels())
+        if (channels() && (empty_ || setup_shown()))
         {
             const char *go = (empty_ && !loading_) ? "Select" : (folder_level_ ? "Open" : "Watch");
             hints.push_back({ui::Button::cross, go});
@@ -1026,11 +859,13 @@ void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
         }
         else
         {
-            hints.push_back({ui::Button::cross, (shelves_active_ ? sel_folder_ : folder_level_) ? "Open" : "Play"});
+            hints.push_back({ui::Button::cross, (has_selected_ ? sel_folder_ : folder_level_) ? "Open" : "Play"});
             hints.push_back({ui::Button::circle, "Back"});
             hints.push_back({ui::Button::square, "Search"});
             if (item_menu_)
                 hints.push_back({ui::Button::triangle, "More"});
+            else if (has_selected_ && !sel_folder_)
+                hints.push_back({ui::Button::triangle, "Favorite"});
             if (multi_page_)
                 hints.push_back({ui::Button::l1, "Page", ui::Button::r1});
             hints.push_back({ui::Button::options, options_hint_.empty() ? "Edit server" : options_hint_.c_str()});

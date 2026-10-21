@@ -6,6 +6,7 @@
  * own focus navigation anywhere in the codebase; EVO's existing screens are
  * untouched and keep working exactly as before alongside it.
  */
+#include <chrono>
 #include "evo_rmlui_provider.h"
 #include "evo_rmlui_app.h"
 #include "evo_rmlui_render_bridge.h"
@@ -765,8 +766,10 @@ void EvoRmlProviderHost::ItemsCallback(int ok, const evo_provider_item_t* items,
 
     if (self->m_shelf_wait_root) {
         self->m_shelf_wait_root = false;
-        self->BuildShelves(items, count);
-        return;
+        if (self->BeginShelves(items, count)) return;
+        /* Not a list of rows (a flat playlist, nothing yet): the plain level. */
+        self->m_shelves.clear();
+        self->m_shelves_on = false;
     }
     self->m_has_more = has_more != 0;
     self->ApplyItems(items, count, has_more);
@@ -1308,8 +1311,9 @@ void EvoRmlProviderHost::PushArtRequests()
     int focus_idx = FocusedRowIndex();
     if (focus_idx < 0) focus_idx = 0;
 
-    size_t start = (focus_idx > 4) ? (size_t)(focus_idx - 4) : 0;
-    size_t end = (start + 16 < n) ? (start + 16) : n;
+    (void)focus_idx;
+    size_t start = 0;
+    size_t end = n;                                  /* a page is what is on screen */
 
     bool queue_full = false;
 
@@ -1431,34 +1435,35 @@ bool EvoRmlProviderHost::HandleKey(Key k)
     case KeyRight: {
         int idx = FocusedRowIndex();
 
-        /* Deterministic 2x4 grid paging for Up/Down */
+        /* Deterministic 2x8 grid paging for Up/Down */
+        const int cols = (int)EVO_PROVIDER_COLS;
         if (idx >= 0 && k == KeyDown) {
             const int n = (int)m_model.rows.size();
             /* Top row over a SHORT bottom row (6 cards, focus on column 3):
              * nothing sits directly below, so take the last card rather than
              * swallowing the press. */
-            if (idx < 4 && idx + 4 >= n && n > 4) {
+            if (idx < cols && idx + cols >= n && n > cols) {
                 FocusPublishedRow(n - 1);
                 m_dirty = true;
                 UpdateSelectedPreview();
                 return true;
             }
-            /* If on the bottom row (slot >= 4 or slot + 4 exceeds visible cards), press Down flips page */
-            if (idx >= 4 || idx + 4 >= (int)m_model.rows.size()) {
+            /* If on the bottom row (slot >= cols or slot + cols exceeds visible cards), press Down flips page */
+            if (idx >= cols || idx + cols >= (int)m_model.rows.size()) {
                 if (m_row_offset + EVO_PROVIDER_PAGE_SIZE < m_all_rows.size()) {
-                    int target_col = idx % 4;
+                    int target_col = idx % cols;
                     SetPageOffset(m_row_offset + EVO_PROVIDER_PAGE_SIZE, target_col);
                     return true;
                 }
                 /* At the bottom of what is loaded: the provider may have more. */
-                FetchMoreAndAdvance(idx % 4);
+                FetchMoreAndAdvance(idx % cols);
                 return true;
             }
         } else if (idx >= 0 && k == KeyUp) {
-            /* If on the top row (slot < 4), press Up flips to previous page bottom row */
-            if (idx < 4) {
+            /* If on the top row (slot < cols), press Up flips to previous page bottom row */
+            if (idx < cols) {
                 if (m_row_offset >= EVO_PROVIDER_PAGE_SIZE) {
-                    int target_col = idx + 4;
+                    int target_col = idx + cols;
                     SetPageOffset(m_row_offset - EVO_PROVIDER_PAGE_SIZE, target_col);
                     return true;
                 }
@@ -1714,6 +1719,7 @@ void EvoRmlProviderHost::Tick()
     /* Adopt whatever finished decoding, and ask for the next batch. */
     if (ShelvesActive()) {
         PushShelfArt();
+        PushShelfBackdrop();
         ApplyPendingActivation();
         return;
     }
@@ -1801,6 +1807,10 @@ bool EvoRmlProviderHost::RenderKit(int width, int height)
         p.options_hint = "Add & manage addons";
     else if (m_provider_id == "emby" || m_provider_id == "jellyfin" || m_provider_id == "nuvio")
         p.options_hint = "Edit server";
+    else if (m_provider_id == "iptv")
+        p.options_hint = "Playlist & guide";
+    else if (m_provider_id == "xtream")
+        p.options_hint = "Account";
     else
         p.options_hint = "";
     p.breadcrumb = m_model.breadcrumb.c_str();
@@ -2311,11 +2321,12 @@ void evo_rmlui_provider_reload(void)
  */
 
 static const size_t kShelfCards = 24;      /* posters per shelf before "See all" */
-static const int    kMaxShelves = 12;
+static const int    kMaxShelves = 24;      /* real shelves; the rest of the folders gather in "More" */
 
 bool EvoRmlProviderHost::ShelfCapable() const
 {
-    return m_provider && m_model_name == "mediaserver" && m_provider->item_action;
+    /* Every provider with a catalog: one layout, only the rows differ. */
+    return m_provider && m_provider->list_catalog && (m_provider->caps & EVO_PROVIDER_CAP_CATALOG);
 }
 
 bool EvoRmlProviderHost::ShelvesActive() const
@@ -2338,14 +2349,93 @@ int EvoRmlProviderHost::NextShelf(int from, int dir) const
     return -1;
 }
 
+/*
+ * The root reply. Returns false when it is not a list of rows to turn into
+ * shelves (no folders, or mostly channels), so the caller shows the plain level.
+ * Plex's root is its servers: each is opened first, and the libraries inside
+ * become the shelves.
+ */
+bool EvoRmlProviderHost::BeginShelves(const evo_provider_item_t* items, int count)
+{
+    int folders = 0;
+    for (int i = 0; i < count; ++i) if (items[i].is_folder) ++folders;
+    if (folders == 0 || folders < count - folders) return false;
+
+    if (m_provider_id == "plex" && !std::strncmp(items[0].id, "srv:", 4)) {
+        m_expand_servers.clear();
+        m_expand_items.clear();
+        for (int i = 0; i < count; ++i)
+            if (items[i].is_folder && !std::strncmp(items[i].id, "srv:", 4)) m_expand_servers.push_back(items[i].id);
+        m_expand_gen = ++m_shelf_gen;
+        m_model.loading = true;
+        ExpandNextServer();
+        return true;
+    }
+    BuildShelves(items, count);
+    return true;
+}
+
+void EvoRmlProviderHost::ExpandNextServer()
+{
+    struct Ctx { EvoRmlProviderHost* host; unsigned gen; };
+    while (!m_expand_servers.empty()) {
+        const std::string id = m_expand_servers.front();
+        m_expand_servers.erase(m_expand_servers.begin());
+        Ctx* c = new Ctx{this, m_expand_gen};
+        if (m_provider->list_catalog(id.c_str(), 0, &EvoRmlProviderHost::ExpandCallback, c) == 0) return;
+        delete c;
+    }
+    FinishExpand();
+}
+
+void EvoRmlProviderHost::ExpandCallback(int ok, const evo_provider_item_t* items, int count, int, void* ud)
+{
+    struct Ctx { EvoRmlProviderHost* host; unsigned gen; };
+    Ctx* c = static_cast<Ctx*>(ud);
+    EvoRmlProviderHost* self = c->host;
+    const unsigned gen = c->gen;
+    delete c;
+    if (!self->IsOpen() || gen != self->m_expand_gen) return;
+    if (ok)
+        for (int i = 0; i < count; ++i)
+            if (items[i].is_folder) self->m_expand_items.push_back(items[i]);
+    self->ExpandNextServer();
+}
+
+void EvoRmlProviderHost::FinishExpand()
+{
+    m_model.loading = false;
+    if (m_expand_items.empty()) {
+        m_shelves.clear();
+        m_shelves_on = false;
+        m_model.empty = true;
+        if (m_model_handle) { m_model_handle.DirtyVariable("loading"); m_model_handle.DirtyVariable("empty"); }
+        SetStatus("No libraries found", false);
+        m_dirty = true;
+        return;
+    }
+    std::vector<evo_provider_item_t> libs;
+    libs.swap(m_expand_items);
+    BuildShelves(libs.data(), (int)libs.size());
+}
+
 void EvoRmlProviderHost::BuildShelves(const evo_provider_item_t* items, int count)
 {
     std::vector<EvoShelf> fresh;
-    for (int i = 0; i < count && (int)fresh.size() < kMaxShelves; ++i) {
+    std::vector<int> spill;                             /* folders past the cap */
+    for (int i = 0; i < count; ++i) {
         if (!items[i].is_folder) continue;
+        if ((int)fresh.size() >= kMaxShelves) { spill.push_back(i); continue; }
         EvoShelf s;
         s.parent = items[i].id;
         s.title = display_text(items[i].title);
+        /* Two rows with one name (a catalog for movies and one for series): add what tells them apart. */
+        int same = 0;
+        for (int j = 0; j < count; ++j)
+            if (items[j].is_folder && !std::strcmp(items[j].title, items[i].title)) ++same;
+        const char* dot = std::strrchr(items[i].subtitle, '\xC2');
+        if (same > 1 && dot && dot[1] == '\xB7' && dot[2] == ' ')
+            s.title += Rml::String(" - ") + display_text(dot + 3);
         /* The same shelf as before keeps its posters and place until the new ones land. */
         for (const EvoShelf& o : m_shelves) {
             if (o.parent == s.parent) {
@@ -2357,13 +2447,25 @@ void EvoRmlProviderHost::BuildShelves(const evo_provider_item_t* items, int coun
         }
         fresh.push_back(std::move(s));
     }
+    if (!spill.empty()) {
+        /* One closing shelf of the remaining folders, so every one stays reachable. */
+        std::vector<evo_provider_item_t> more;
+        for (int i : spill) more.push_back(items[i]);
+        EvoShelf s;
+        s.title = "More";
+        s.fresh = true;
+        for (const EvoShelf& o : m_shelves) if (o.parent.empty()) { s.col = o.col; s.first = o.first; }
+        AddShelfCards(s, more.data(), (int)more.size(), 0);
+        fresh.push_back(std::move(s));
+    }
     const std::string focused = (m_shelf_row >= 0 && m_shelf_row < (int)m_shelves.size())
                               ? m_shelves[m_shelf_row].parent : std::string();
     m_shelves.swap(fresh);
     m_shelves_on = true;
+    m_shelf_moved = !focused.empty();      /* coming back keeps the place; a fresh home follows the first row to load */
     m_shelf_row = 0;
     for (int i = 0; i < (int)m_shelves.size(); ++i)
-        if (m_shelves[i].parent == focused) m_shelf_row = i;
+        if (!focused.empty() && m_shelves[i].parent == focused) m_shelf_row = i;
     if (m_shelf_row < (int)m_shelves.size() && m_shelves[m_shelf_row].cards.empty()) {
         int n = NextShelf(m_shelf_row, +1);
         if (n < 0) n = NextShelf(m_shelf_row, -1);
@@ -2383,7 +2485,7 @@ void EvoRmlProviderHost::LoadNextShelf()
     struct Ctx { EvoRmlProviderHost* host; unsigned gen; int index; };
     for (int i = 0; i < (int)m_shelves.size(); ++i) {
         EvoShelf& s = m_shelves[i];
-        if (s.fresh) continue;
+        if (s.fresh || s.parent.empty()) continue;
         Ctx* c = new Ctx{this, m_shelf_gen, i};
         m_model.loading = true;
         if (m_provider->list_catalog(s.parent.c_str(), 0, &EvoRmlProviderHost::ShelfCallback, c) == 0)
@@ -2394,6 +2496,10 @@ void EvoRmlProviderHost::LoadNextShelf()
     }
     m_model.loading = false;
     if (m_model_handle) m_model_handle.DirtyVariable("loading");
+    if (!m_shelves.empty() && ShelvesWithCards() == 0) {
+        m_model.empty = true;
+        if (m_model_handle) m_model_handle.DirtyVariable("empty");
+    }
     m_dirty = true;
 }
 
@@ -2411,6 +2517,10 @@ void EvoRmlProviderHost::ShelfCallback(int ok, const evo_provider_item_t* items,
     EvoShelf& s = self->m_shelves[index];
     s.fresh = true;
     if (ok) self->AddShelfCards(s, items, count, has_more);
+    if (!self->m_shelf_moved) {
+        const int first = self->NextShelf(-1, +1);
+        if (first >= 0) self->m_shelf_row = first;
+    }
     if (self->m_shelf_row >= 0 && self->m_shelf_row < (int)self->m_shelves.size() &&
         self->m_shelves[self->m_shelf_row].cards.empty()) {
         int n = self->NextShelf(self->m_shelf_row, +1);
@@ -2433,8 +2543,12 @@ void EvoRmlProviderHost::AddShelfCards(EvoShelf& s, const evo_provider_item_t* i
         c.subtitle = display_text(it.subtitle);
         c.overview = display_text(it.overview);
         c.art_url = it.art_url;
+        c.backdrop_url = it.backdrop_url;
+        c.logo_url = it.logo_url;
         c.is_folder = it.is_folder != 0;
         c.is_live = it.is_live != 0;
+        c.now = display_text(it.now_title);
+        c.next = display_text(it.next_title);
         c.played = it.played != 0;
         c.favorite = it.favorite != 0;
         c.resume_sec = it.resume_pos_sec > 0 ? (long long)it.resume_pos_sec : 0;
@@ -2452,7 +2566,7 @@ void EvoRmlProviderHost::AddShelfCards(EvoShelf& s, const evo_provider_item_t* i
         s.cards.push_back(std::move(c));
     }
     /* A library, or a row with more behind it, ends in "See all". */
-    if (!s.cards.empty() && (has_more || count > (int)kShelfCards || s.parent.compare(0, 4, "lib:") == 0)) {
+    if (!s.cards.empty() && !s.parent.empty() && (has_more || count > (int)kShelfCards || s.parent.compare(0, 4, "lib:") == 0)) {
         EvoShelfCard all;
         all.id = Rml::String(s.parent.c_str());
         all.title = s.title;
@@ -2473,13 +2587,16 @@ const EvoProviderRow* EvoRmlProviderHost::ShelfFocusedRow() const
     if (s.col < 0 || s.col >= (int)s.cards.size()) return nullptr;
     const EvoShelfCard& c = s.cards[s.col];
     EvoProviderRow& r = m_shelf_focus_row;
-    r = EvoProviderRow();
-    r.id = c.id;
-    r.title = c.title;
-    r.subtitle = c.subtitle;
-    r.overview = c.overview;
+    /* Callers hold the c_str() of id and title across the next call (the Triangle menu
+     * reads the id, then the title), so a string is only touched when the card changed. */
+    if (r.id != c.id) r.id = c.id;
+    if (r.title != c.title) r.title = c.title;
+    if (r.subtitle != c.subtitle) r.subtitle = c.subtitle;
+    if (r.overview != c.overview) r.overview = c.overview;
     r.is_folder = c.is_folder;
     r.is_live = c.is_live;
+    if (r.now != c.now) r.now = c.now;
+    if (r.next != c.next) r.next = c.next;
     r.played = c.played;
     r.favorite = c.favorite;
     r.progress = c.progress;
@@ -2501,6 +2618,7 @@ bool EvoRmlProviderHost::ShelfKey(Key k)
 {
     if (m_shelf_row < 0 || m_shelf_row >= (int)m_shelves.size()) return k != KeyBack;
     EvoShelf& s = m_shelves[m_shelf_row];
+    if (k != KeyBack && k != KeySearch) m_shelf_moved = true;
     switch (k) {
     case KeyUp: {
         const int n = NextShelf(m_shelf_row, -1);
@@ -2570,10 +2688,57 @@ void EvoRmlProviderHost::PushShelfArt()
     if (changed) m_dirty = true;
 }
 
+/*
+ * The wide image (and title logo) behind the shelves, for the focused card. It
+ * is asked for only after the cursor has rested ~0.45 s on a card, so flicking
+ * along a row does not queue a download per card; the last one that finished
+ * stays on screen until the next lands, so the background never blinks off.
+ */
+void EvoRmlProviderHost::PushShelfBackdrop()
+{
+    using namespace std::chrono;
+    const long long now = duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+    const EvoShelfCard* c = nullptr;
+    if (m_shelf_row >= 0 && m_shelf_row < (int)m_shelves.size()) {
+        const EvoShelf& s = m_shelves[m_shelf_row];
+        if (s.col >= 0 && s.col < (int)s.cards.size()) c = &s.cards[s.col];
+    }
+    const std::string id = c ? std::string(c->id.c_str()) + "|" + std::to_string(m_shelf_row) : std::string();
+    if (id != m_bd_id) {
+        m_bd_id = id;
+        m_bd_since_ms = now;
+        m_bd_url = c ? c->backdrop_url : std::string();
+        m_logo_url = c ? c->logo_url : std::string();
+        m_bd_key.clear();
+        m_logo_key.clear();
+        if (m_bd_url.empty()) m_bd_art.clear();
+        if (m_logo_url.empty()) m_logo_art.clear();
+        return;
+    }
+    if (now - m_bd_since_ms < 450) return;
+    auto step = [&](const std::string& url, std::string& key, Rml::String& art) {
+        if (url.empty()) return;
+        if (!key.empty()) {
+            if (evo_provider_art_ready(key.c_str()) && art != Rml::String(key.c_str())) {
+                art = Rml::String(key.c_str());
+                m_dirty = true;
+            }
+            return;
+        }
+        char k[128];
+        const int rc = evo_provider_art_request(m_provider_id.c_str(), url.c_str(), k, sizeof k);
+        if (rc < 0) return;                    /* full or refused: no background for this one */
+        key = k;
+        if (rc == 1) { art = Rml::String(k); m_dirty = true; }
+    };
+    step(m_bd_url, m_bd_key, m_bd_art);
+    step(m_logo_url, m_logo_key, m_logo_art);
+}
+
 void EvoRmlProviderHost::FillShelfParams(evo_hui_provider_params_t& p, EvoRenderBridge* r)
 {
     p.shelves_active = 1;
-    p.item_menu = m_provider && m_provider->item_action ? 1 : 0;
+    p.item_menu = m_provider && (m_provider->item_action || m_provider->panel) ? 1 : 0;
     p.shelf_total = ShelvesWithCards();
     p.empty = 0;
 
@@ -2608,16 +2773,28 @@ void EvoRmlProviderHost::FillShelfParams(evo_hui_provider_params_t& p, EvoRender
             d.played = c.played;
             d.progress = c.progress;
             d.see_all = c.see_all;
-            d.now = "";
-            d.next = "";
+            d.is_live = c.is_live;
+            d.now = c.now.c_str();
+            d.next = c.next.c_str();
         }
     }
+
+    if (!m_bd_art.empty())
+        p.backdrop = r->MemoryTexturePixels(m_bd_art, &p.backdrop_w, &p.backdrop_h);
+    p.backdrop_key = m_bd_art.c_str();
+    if (!m_logo_art.empty())
+        p.logo = r->MemoryTexturePixels(m_logo_art, &p.logo_w, &p.logo_h);
+    p.logo_key = m_logo_art.c_str();
 
     /* The focused card, for the title line. */
     static std::string t, sub, resume;
     if (const EvoProviderRow* f = ShelfFocusedRow()) {
         t = f->title.c_str();
         sub = f->subtitle.c_str();
+        if (f->is_live && !f->now.empty()) {
+            sub = std::string("Now: ") + f->now.c_str();
+            if (!f->next.empty()) sub += std::string("   Next: ") + f->next.c_str();
+        }
         resume = f->resume_sec > 0 ? std::string("Resume from ") + format_duration(f->resume_sec).c_str() : std::string();
         p.has_selected = 1;
         p.selected_title = t.c_str();

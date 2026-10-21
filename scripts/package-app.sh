@@ -689,8 +689,11 @@ if (( FFPFSC )); then
     if MKPFS="$("${SCRIPTS_DIR}/setup-pfs-tool.sh")"; then
         IMG="${APP_OUT}/${TITLE_ID}.ffpfsc"
         rm -f -- "${IMG}"
+        # zlib, not MkPFS's default ISA-L: with ISA-L's streams the console
+        # showed one 64 KB block as the block before it (strings turned into
+        # OpenSSL names, Recent empty), depending on the build's content.
         "${MKPFS}" pack folder --no-adjust-output-file-extension \
-            --version PS5 --verify "${APPDIR}" "${IMG}" \
+            --version PS5 --verify --compression-backend zlib "${APPDIR}" "${IMG}" \
             && ok "ffpfsc: ${IMG#"${REPO_ROOT}/"}  ($(stat -c %s "${IMG}") bytes)" \
             || warn "MkPFS pack failed - the folder output above is still usable"
     else

@@ -103,8 +103,9 @@ struct EvoPanelRow {
 
 /* One poster on a shelf (the media-server home). */
 struct EvoShelfCard {
-    Rml::String id, title, subtitle, overview, art, initial;
+    Rml::String id, title, subtitle, overview, art, initial, now, next;
     std::string art_url, art_key;
+    std::string backdrop_url, logo_url;
     bool is_folder = false, is_live = false, played = false, favorite = false, see_all = false;
     int  progress = 0;
     long long resume_sec = 0;
@@ -191,7 +192,8 @@ struct EvoProviderModel {
  * Deterministic paging replaces unstable infinite-scroll virtualization.
  * Zero scroll jumping, zero DCB overflows, instant 60 FPS rendering.
  */
-constexpr size_t EVO_PROVIDER_PAGE_SIZE = 8;
+constexpr size_t EVO_PROVIDER_COLS = 8;                /* a folder level: 8 cards wide, as the kit draws it */
+constexpr size_t EVO_PROVIDER_PAGE_SIZE = 16;          /* two rows */
 constexpr size_t EVO_PROVIDER_ROW_WINDOW = 8;
 constexpr size_t EVO_PROVIDER_ROW_WINDOW_MAX = 8;
 constexpr size_t EVO_PROVIDER_ROW_WINDOW_STEP = 8;
@@ -421,7 +423,11 @@ private:
 
     /* ---- shelves (evo_rmlui_provider_shelves.cpp) ---- */
     bool ShelfCapable() const;
+    bool BeginShelves(const evo_provider_item_t* items, int count);
     void BuildShelves(const evo_provider_item_t* items, int count);
+    void ExpandNextServer();
+    void FinishExpand();
+    static void ExpandCallback(int ok, const evo_provider_item_t* items, int count, int has_more, void* ud);
     void LoadNextShelf();
     void AddShelfCards(EvoShelf& s, const evo_provider_item_t* items, int count, int has_more);
     bool ShelfKey(Key k);
@@ -429,6 +435,7 @@ private:
     int  ShelvesWithCards() const;
     void SyncShelfFocus();
     void PushShelfArt();
+    void PushShelfBackdrop();
     void FillShelfParams(evo_hui_provider_params_t& p, EvoRenderBridge* r);
     const EvoProviderRow* ShelfFocusedRow() const;
     static void ShelfCallback(int ok, const evo_provider_item_t* items, int count, int has_more, void* ud);
@@ -438,6 +445,16 @@ private:
     bool m_shelf_wait_root = false;     /* the next root reply defines the shelves */
     int  m_shelf_row = 0;               /* focused shelf (index into m_shelves) */
     unsigned m_shelf_gen = 0;
+    bool m_shelf_moved = false;         /* the user has moved the cursor on this home */
+    /* The focused card's wide image and logo: asked for once the cursor has rested. */
+    std::string m_bd_id;                 /* card the two below belong to */
+    std::string m_bd_url, m_bd_key;
+    std::string m_logo_url, m_logo_key;
+    Rml::String m_bd_art, m_logo_art;    /* ready textures, kept until the next one lands */
+    long long m_bd_since_ms = 0;
+    std::vector<std::string> m_expand_servers;       /* Plex: servers still to open for their libraries */
+    std::vector<evo_provider_item_t> m_expand_items;
+    unsigned m_expand_gen = 0;
     mutable EvoProviderRow m_shelf_focus_row;
 };
 

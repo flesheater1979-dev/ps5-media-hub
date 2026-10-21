@@ -203,13 +203,13 @@ static void fill_provider_fixture(evo_hui_provider_params_t& p, std::vector<uint
     p.page_info = "PAGE 1 OF 3";
     p.has_multiple_pages = 1;
     p.count = 22;
-    p.row_count = 8;
-    for (int i = 0; i < 8; ++i)
+    p.row_count = 16;
+    for (int i = 0; i < 16; ++i)
     {
-        p.rows[i].title = kTitles[i];
-        p.rows[i].subtitle = kSubs[i];
-        p.rows[i].initial = kInit[i];
-        p.rows[i].art_key = kTitles[i];
+        p.rows[i].title = kTitles[i % 8];
+        p.rows[i].subtitle = kSubs[i % 8];
+        p.rows[i].initial = kInit[i % 8];
+        p.rows[i].art_key = kTitles[i % 8];
         if (i < 5 && i != 4)
         {
             p.rows[i].art = art.data();
@@ -249,17 +249,17 @@ static void fill_channels_fixture(evo_hui_provider_params_t& p, std::vector<uint
                                           "Documentaries", "CNN International", "Al Jazeera", "France 24"};
     static const char* const kNow[8] = {"The One Show", "Premier League: Arsenal v Chelsea", "SportsCenter", "", "", "Quest Means Business", "", "Journal"};
     static const char* const kNext[8] = {"EastEnders", "Super Sunday", "", "", "", "Newsroom", "", ""};
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < 16; ++i)
     {
-        p.rows[i].title = kNames[i];
+        p.rows[i].title = kNames[i % 8];
         p.rows[i].subtitle = i == 4 ? "12 channels" : "Live";
         p.rows[i].initial = "C";
         p.rows[i].is_folder = i == 4;
         p.rows[i].is_live = i != 4;
         p.rows[i].played = 0;
         p.rows[i].progress = 0;
-        p.rows[i].now = kNow[i];
-        p.rows[i].next = kNext[i];
+        p.rows[i].now = kNow[i % 8];
+        p.rows[i].next = kNext[i % 8];
         p.rows[i].art = (i == 0 || i == 2) ? art.data() : nullptr;
     }
     p.focus = 1;
@@ -357,4 +357,100 @@ static void fill_shelves_fixture(evo_hui_provider_params_t& p, std::vector<uint3
     p.selected_title = "Street Fighter";
     p.selected_subtitle = "2026  -  7.1/10  -  R  -  Action";
     p.selected_resume = "Resume from 41:20";
+}
+
+/* The same shelves screen for the other providers: only the rows differ.
+ * kind 0 Stremio (posters), 1 Plex (posters), 2 IPTV (channels + a poster row),
+ * 3 Xtream (category cards). */
+static void fill_provider_shelves_fixture(evo_hui_provider_params_t& p, std::vector<uint32_t>& art, int kind,
+                                          int focus_shelf, int focus_card)
+{
+    fill_shelves_fixture(p, art, focus_shelf, focus_card);
+    static const char* const kNames[4] = {"Stremio", "Plex", "IPTV", "Xtream Codes"};
+    p.provider_name = kNames[kind];
+    p.breadcrumb = kNames[kind];
+    p.variant = kind == 2 ? EVO_HUI_PROVIDER_LIVETV : kind == 3 ? EVO_HUI_PROVIDER_XTREAM : EVO_HUI_PROVIDER_MEDIASERVER;
+    p.item_menu = kind < 2 ? 1 : 0;
+    p.options_hint = kind == 2 ? "Playlist & guide" : kind == 3 ? "Account" : kind == 0 ? "Add & manage addons" : "Edit server";
+    if (kind == 0)
+    {
+        /* a wide image behind the shelves, and the title's logo top right */
+        static std::vector<uint32_t> wide(320 * 180), logo(240 * 60);
+        for (int y = 0; y < 180; ++y)
+            for (int x = 0; x < 320; ++x)
+                wide[y * 320 + x] = 0xff000000u | (uint32_t(60 + y / 2) << 16) | (uint32_t(40 + x / 4) << 8) | 0x30u;
+        for (int y = 0; y < 60; ++y)
+            for (int x = 0; x < 240; ++x)
+                logo[y * 240 + x] = (x > 8 && x < 232 && y > 14 && y < 46) ? 0xffffffffu : 0x00000000u;
+        p.backdrop = wide.data();
+        p.backdrop_w = 320;
+        p.backdrop_h = 180;
+        p.backdrop_key = "fixture-backdrop";
+        p.logo = logo.data();
+        p.logo_w = 240;
+        p.logo_h = 60;
+        p.logo_key = "fixture-logo";
+        static const char* const kS[4] = {"Popular - Movies", "Popular - Series", "Trending", "Cinemeta - Top"};
+        for (int s = 0; s < 4; ++s)
+            p.shelves[s].title = kS[s];
+    }
+    else if (kind == 1)
+    {
+        static const char* const kS[4] = {"Movies", "TV Shows", "Anime", "Documentaries"};
+        for (int s = 0; s < 4; ++s)
+            p.shelves[s].title = kS[s];
+    }
+    else if (kind == 2)
+    {
+        static const char* const kS[4] = {"FAVORITES", "SPORTS", "NEWS", "MOVIES"};
+        static const char* const kC[10] = {"ESPN", "Sky Sports", "BBC One", "CNN", "Eurosport",
+                                           "Fox News", "HBO", "Discovery", "Nat Geo", "See all"};
+        static const char* const kNow[10] = {"SportsCenter", "Premier League", "The News at Ten", "Situation Room",
+                                             "Tour de France", "The Five", "Dune", "Gold Rush", "Wild Africa", ""};
+        for (int s = 0; s < 4; ++s)
+        {
+            evo_hui_shelf_t& sh = p.shelves[s];
+            sh.title = kS[s];
+            const bool channels = s < 3;               /* the last shelf is a poster row: side by side */
+            for (int i = 0; channels && i < 10; ++i)
+            {
+                evo_hui_provider_row_t& c = sh.cards[i];
+                c.title = kC[(i + s) % 9];
+                c.subtitle = "";
+                c.is_live = i != 9;
+                c.now = i != 9 ? kNow[(i + s) % 9] : "";
+                c.progress = 0;
+                c.played = 0;
+                c.art = i % 3 == 2 ? nullptr : art.data();
+                c.art_w = 200;
+                c.art_h = 300;
+            }
+        }
+        p.selected_title = "ESPN";
+        p.selected_subtitle = "Now: SportsCenter   Next: NFL Live";
+        p.selected_resume = "";
+    }
+    else
+    {
+        static const char* const kS[3] = {"LIVE TV", "MOVIES", "SERIES"};
+        for (int s = 0; s < 3; ++s)
+        {
+            evo_hui_shelf_t& sh = p.shelves[s];
+            sh.title = kS[s];
+            for (int i = 0; i < 10; ++i)
+            {
+                evo_hui_provider_row_t& c = sh.cards[i];
+                c.is_folder = i != 9;
+                c.art = nullptr;
+                c.subtitle = "";
+                c.progress = 0;
+                c.played = 0;
+            }
+        }
+        p.shelf_count = 3;
+        p.shelf_total = 3;
+        p.selected_title = "Sports";
+        p.selected_subtitle = "Category";
+        p.selected_resume = "";
+    }
 }

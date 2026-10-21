@@ -580,7 +580,7 @@ typedef struct {
  * data model and drawn by the kit. Focus stays with the host (RmlUi's own
  * navigation); `focus` is the local row it reports, -1 for none.
  */
-#define EVO_HUI_PROVIDER_ROWS 8
+#define EVO_HUI_PROVIDER_ROWS 16
 typedef struct {
     const char*     title;
     const char*     subtitle;
@@ -704,6 +704,13 @@ typedef struct {
     int         shelf_total;       /* with cards, all */
     int         shelf_focus_abs;   /* abs_index of the focused shelf */
     int         item_menu;         /* Triangle opens the item menu */
+    /* The focused card's wide image and title logo (BGRA pixels), behind the shelves. */
+    const uint32_t* backdrop;
+    int             backdrop_w, backdrop_h;
+    const char*     backdrop_key;
+    const uint32_t* logo;
+    int             logo_w, logo_h;
+    const char*     logo_key;
     evo_hui_shelf_t shelves[EVO_HUI_SHELVES];
 } evo_hui_provider_params_t;
 

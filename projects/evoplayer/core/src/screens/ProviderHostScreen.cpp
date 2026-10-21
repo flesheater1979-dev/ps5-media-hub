@@ -1458,6 +1458,11 @@ bool ProviderHostScreen::handleInput(uint32_t pressed, uint32_t held, uint32_t r
             openItemMenu(ip);
             return true;
         }
+        /* No server actions, but facts to show (Stremio addons, Nuvio): titles only. */
+        if (ip && !ip->item_action && ip->panel && fid && (!std::strncmp(fid, "m:", 2) || !std::strncmp(fid, "s:", 2))) {
+            openItemMenu(ip);
+            return true;
+        }
         if (toggleFocusedFavorite()) return true;
     }
 
@@ -1887,18 +1892,20 @@ void ProviderHostScreen::openItemMenu(const evo_provider_t* p)
 
     PanelBuild pb;
     PanelBuild::Row r;
-    r.id = "item:played";
-    r.title = m_itemPlayed ? "Mark as unwatched" : "Mark as watched";
-    r.detail = std::string("On ") + p->name;
-    r.icon = "/assets/icons/icon_recent_files.png";
-    pb.rows.push_back(r);
+    if (p->item_action) {
+        r.id = "item:played";
+        r.title = m_itemPlayed ? "Mark as unwatched" : "Mark as watched";
+        r.detail = std::string("On ") + p->name;
+        r.icon = "/assets/icons/icon_recent_files.png";
+        pb.rows.push_back(r);
 
-    r = PanelBuild::Row();
-    r.id = "item:fav";
-    r.title = m_itemFav ? "Remove from favourites" : "Add to favourites";
-    r.detail = std::string("On ") + p->name;
-    r.icon = "/assets/icons/icon_favorites.png";
-    pb.rows.push_back(r);
+        r = PanelBuild::Row();
+        r.id = "item:fav";
+        r.title = m_itemFav ? "Remove from favourites" : "Add to favourites";
+        r.detail = std::string("On ") + p->name;
+        r.icon = "/assets/icons/icon_favorites.png";
+        pb.rows.push_back(r);
+    }
 
     if (p->panel) {
         r = PanelBuild::Row();
@@ -1927,12 +1934,14 @@ void ProviderHostScreen::openItemMenu(const evo_provider_t* p)
         }
     }
 
-    r = PanelBuild::Row();
-    r.id = "item:transcode";
-    r.title = "Server transcoding";
-    r.detail = "Flip between only-when-needed and always";
-    r.icon = "/assets/icons/icon_activity.png";
-    pb.rows.push_back(r);
+    if (p->item_action) {
+        r = PanelBuild::Row();
+        r.id = "item:transcode";
+        r.title = "Server transcoding";
+        r.detail = "Flip between only-when-needed and always";
+        r.icon = "/assets/icons/icon_activity.png";
+        pb.rows.push_back(r);
+    }
 
     if (!evo_rmlui_provider_get_focused_is_folder()) {
         r = PanelBuild::Row();

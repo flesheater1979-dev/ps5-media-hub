@@ -328,10 +328,10 @@ and EVO supplies playback rather than presentation.
 | **#90** | The seam itself. FFmpeg network on; `evo_net` hardened; `evo_provider_t` + registry + resolver chain; IPTV provider; runtime UI bundle format, fetch, cache and limits; a per-provider Rml context with **RmlUi data binding and native focus** (both first uses in this codebase); remote artwork through the `evo:mem/` registry; `evo_stream_io_open()` revived as the single open path; playback source identity (fixes #9); `EVO_ENABLE_PROVIDERS`; the shared rail slot wired to `ProviderHostScreen` | code complete, **host-verified**, hw-verify-pending |
 | ~~#9~~ | Fixed by #90 scope 15 — the OSD reads the provider's title, and no token-bearing URL is persisted to Recent or Favorites | closed by #90 |
 | Emby screens | Emby setup + browse as an Emby-authored bundle, and the `EVO_ENABLE_PROVIDERS` flip. The logic seam is already proven against Emby with its UI off | open, follows #90 |
-| Jellyfin | `provider_emby.c` with a different auth header and id | open |
+| Jellyfin | Shipped with Emby (`addon_emby.c`): sign-in, shelves home, details and cast, watched and favourites, transcoding fallback, skip intro; see #140 / #141 | done (hw-verified on Jellyfin) |
 | Torbox | resolver only — `CAP_RESOLVE`, no catalog | open |
 | Real-Debrid | resolver only | open |
-| Stremio / Nuvio v3 | `/manifest.json` + `/stream/…`; an `infoHash` is the `needs_resolver` case the chain exists for | open |
+| Stremio / Nuvio v3 | Native screens on the shared shelves home, with Details & cast (#142); an `infoHash` is the `needs_resolver` case the chain exists for | done |
 | Full XMLTV EPG grid | #90 ships now-and-next only | open |
 
 **#90's remaining work is hardware.** The host renderer proves the bundle

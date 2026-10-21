@@ -149,4 +149,5 @@ const evo_provider_t evo_provider_nuvio = {
     .web_ui_path   = "/",
     .web_ui_hook   = "nuvio",
     .ui_embedded   = "mediaserver",
+    .panel         = evo_nuvio_panel,
 };

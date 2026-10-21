@@ -515,8 +515,8 @@ div, span, img {
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
-    gap: 16dp;
-    width: 1180dp;
+    gap: 10dp;
+    width: 900dp;
     height: 760dp;
     padding: 6dp;
     overflow: hidden;
@@ -541,7 +541,7 @@ div, span, img {
 
 /* Two rows of 360dp cards need 748dp; with the notice the grid has 690. */
 .tv-browser-notice .tv-card {
-    height: 330dp;
+    height: 150dp;
 }
 
 /* ---- the channel card -------------------------------------------------- */
@@ -549,8 +549,9 @@ div, span, img {
 .tv-card {
     tab-index: auto;
     nav: auto;
-    width: 278dp;
-    height: 360dp;
+    /* Navigation only: the kit draws the cards (176x264, 8 across, like a shelf). */
+    width: 100dp;
+    height: 150dp;
     background-color: #101a2cbf;
     border-width: 1.5dp;
     border-color: #5a7db44d;
