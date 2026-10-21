@@ -1,13 +1,18 @@
 /*
- * provider_nuvio.c — Nuvio as a web-UI provider.
+ * provider_nuvio.c — Nuvio, browsed natively, with its web app as an extra.
  *
  * Nuvio's TV web app (NuvioTVSmart, the Tizen/webOS build) is a Stremio-addon
  * client: catalogs from addons such as Cinemeta, streams from addons such as
- * Torrentio or AIOStreams, resolved through TorBox / Real-Debrid. EVO opens it
- * in the system browser beside the rail like Emby and Jellyfin; evo_webui.c's
- * "nuvio" hook profile catches its player (<video id="videoPlayer"> inside
- * #player) and hands the stream to EVO's player. So debrid services arrive
- * through Nuvio's addons, with no debrid code in EVO.
+ * Torrentio or AIOStreams, resolved through TorBox / Real-Debrid. So debrid
+ * services arrive through Nuvio's addons, with no debrid code in EVO.
+ *
+ * Like Jellyfin, it is browsed in EVO's own screens (rml/mediaserver.rml): the
+ * catalog, search and streams run on the Stremio addon engine in
+ * provider_stremio.c, over the addons installed in the Nuvio web app, with the
+ * requests on FFmpeg's HTTP client. The web app itself stays as the "web
+ * version" (Triangle in the chooser): that is where addons are added and
+ * removed, and evo_webui.c's "nuvio" hook profile hands its player's stream to
+ * EVO's player.
  *
  * The source string is the site's address: a self-hosted build
  * (http://<host>:<port>, e.g. the nuvio-test container) or the hosted app
@@ -17,6 +22,7 @@
 #include <string.h>
 
 #include "evo_provider.h"
+#include "provider_stremio.h"
 #include "evo_data_path.h"
 
 #define NUVIO_CONF         "nuvio.conf"
@@ -111,18 +117,36 @@ static const char *nv_web_ui_url(void)
     return nv_bundled() ? NUVIO_BUNDLE_URL : "";
 }
 
+/* evo_webui.c saves each site's page storage as webui/<host>_<port>.json, and
+ * the built-in page's as webui/local_<loopback port>.json. */
+#define NUVIO_LOCAL_PORT 8686
+
+const char *evo_nuvio_store_file(void)
+{
+    static char leaf[200];
+    if (g_host[0]) snprintf(leaf, sizeof leaf, "webui/%s_%d.json", g_host, g_port);
+    else           snprintf(leaf, sizeof leaf, "webui/local_%d.json", NUVIO_LOCAL_PORT);
+    return leaf;
+}
+
 const evo_provider_t evo_provider_nuvio = {
     .id            = "nuvio",
     .name          = "Nuvio",
     .icon          = "icon_emby.png",
-    .caps          = EVO_PROVIDER_CAP_CONFIG | EVO_PROVIDER_CAP_WEBUI,
+    .caps          = EVO_PROVIDER_CAP_CATALOG | EVO_PROVIDER_CAP_SEARCH |
+                     EVO_PROVIDER_CAP_RESOLVE | EVO_PROVIDER_CAP_CONFIG |
+                     EVO_PROVIDER_CAP_WEBUI | EVO_PROVIDER_CAP_PICK,
     .api_version   = EVO_PROVIDER_API_VERSION,
     .init          = nv_init,
     .shutdown      = nv_shutdown,
     .is_configured = nv_is_configured,
+    .list_catalog  = evo_nuvio_list_catalog,
+    .search        = evo_nuvio_search,
+    .resolve       = evo_nuvio_resolve,
     .get_source    = nv_get_source,
     .set_source    = nv_set_source,
     .web_ui_url    = nv_web_ui_url,
     .web_ui_path   = "/",
     .web_ui_hook   = "nuvio",
+    .ui_embedded   = "mediaserver",
 };

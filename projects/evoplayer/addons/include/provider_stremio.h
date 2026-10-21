@@ -6,6 +6,8 @@
 #ifndef PROVIDER_STREMIO_H
 #define PROVIDER_STREMIO_H
 
+#include "evo_provider.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -17,6 +19,18 @@ const char *evo_stremio_addon_url(int i);
 const char *evo_stremio_addon_name(int i);
 /* Drops entry i, shifts the rest down and saves. 0 ok, -1 bad index. */
 int         evo_stremio_addon_remove(int i);
+
+/*
+ * Nuvio's native screens run on the same addon engine, over the addons the
+ * Nuvio web app has installed (provider_stremio.c reads them from its saved
+ * page storage). provider_nuvio.c's vtable calls these.
+ */
+int evo_nuvio_list_catalog(const char *parent_id, int page, evo_provider_items_cb cb, void *ud);
+int evo_nuvio_search(const char *query, int page, evo_provider_items_cb cb, void *ud);
+int evo_nuvio_resolve(const char *item_id, evo_provider_resolve_cb cb, void *ud);
+/* In provider_nuvio.c: the page-storage file of the Nuvio site in use,
+ * relative to the data root ("webui/<host>_<port>.json"). */
+const char *evo_nuvio_store_file(void);
 
 #ifdef __cplusplus
 }

@@ -127,6 +127,22 @@ EVO never draws a bespoke C++ screen for a provider.
    EVO for pasting, as a follow-up.
 5. The Nuvio web provider stays as an optional extra.
 
+## Nuvio, native (2026-10-21, hardware-verified)
+
+Nuvio is now browsed like Jellyfin: EVO's own screens, with the Nuvio web app
+as the "web version" (Triangle / OPTIONS in the chooser). It runs on the same
+addon engine as `addons` (`provider_stremio.c`, a second instance), over the
+addons installed in the Nuvio web app. Those come from Nuvio's saved page
+storage (`/data/evoplayer/webui/<host>_<port>.json`, or `local_8686.json` for
+the built-in page): `installedAddonUrls` and `installedAddonEnabledStates`,
+per profile (`activeProfileId`, else profile `1`). Nothing saved yet means
+Cinemeta, as in Nuvio. The list is re-read each time the root opens, so addons
+added in the web version show up on return. Every Nuvio request goes through
+FFmpeg's HTTP client (`evo_net_request_async_avio`), like Jellyfin's.
+
+Adding and removing addons stays in the web version; EVO's Addons provider
+keeps its own list.
+
 ## Testing (all on the console, no browser involved)
 
 - Screens are EVO's own: `evo-remote.sh key` + `key l3` screenshots.

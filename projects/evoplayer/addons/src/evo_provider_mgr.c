@@ -50,7 +50,7 @@ static const evo_provider_t *const PROVIDERS[] = {
     &evo_provider_jellyfin,
     &evo_provider_plex,     /* native screens; the web UI as an extra */
     &evo_provider_stremio,      /* Stremio addons, native (provider_stremio.c) */
-    &evo_provider_nuvio,        /* web UI only - Stremio addons, debrid */
+    &evo_provider_nuvio,        /* native over its addons; the web app as an extra */
 };
 
 #define PROVIDER_COUNT ((int)(sizeof(PROVIDERS) / sizeof(PROVIDERS[0])))

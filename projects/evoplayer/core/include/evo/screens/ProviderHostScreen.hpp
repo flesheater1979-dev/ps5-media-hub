@@ -197,8 +197,8 @@ private:
     static void OnSignInPass(const char* text, void* ud);
     static void OnSignInDone(int ok, const char* msg, void* ud);
 
-    /* Emby/Jellyfin: browsed natively, with the site in the browser as an
-     * extra. Nuvio: web only. */
+    /* Emby/Jellyfin/Plex/Nuvio: browsed natively, with the site in the
+     * browser as an extra. */
     static bool isNativeWeb(const ::evo_provider* p);
 };
 

@@ -36,6 +36,7 @@
 #include "cJSON.h"
 #include "evo_data_path.h"
 #include "evo_provider_log.h"
+#include "evo_error.h"
 
 #define AD_CONF      "addons.json"
 #define AD_MAX       12
@@ -63,8 +64,29 @@ typedef struct {
     char prefixes[384];                          /* ",tt,kitsu:," - "" = any */
 } addon_t;
 
-static addon_t g_ad[AD_MAX];
-static int     g_nad;
+/*
+ * One addon engine, two providers: "addons" (EVO's own list, addons.json) and
+ * "nuvio" (the list the Nuvio web app keeps in its page storage). S is the
+ * instance in use: every vtable entry sets it, and every request carries its
+ * instance so its callback can set it again.
+ */
+typedef struct ad_set {
+    const char *tag;             /* log prefix */
+    int  avio;                   /* requests on FFmpeg's HTTP client */
+    addon_t ad[AD_MAX];
+    int  nad;
+    /* How many rows the open catalog already has, for Stremio's skip= paging. */
+    char cat_key[256];
+    int  cat_loaded;
+    /* The last series meta fetched: the seasons level and every episodes
+     * level under it read the same document. */
+    char meta_key[256];
+    cJSON *meta;
+} ad_set_t;
+
+static ad_set_t g_addons = { .tag = "addons", .avio = 0 };
+static ad_set_t g_nuvio  = { .tag = "nuvio",  .avio = 1 };
+static ad_set_t *S = &g_addons;
 
 /* ------------------------------------------------------------------------- */
 /* Config                                                                    */
@@ -86,7 +108,7 @@ static int ad_save(void)
     cJSON *root = cJSON_CreateObject();
     cJSON *arr = cJSON_CreateArray();
     cJSON_AddItemToObject(root, "addons", arr);
-    for (int i = 0; i < g_nad; ++i) cJSON_AddItemToArray(arr, cJSON_CreateString(g_ad[i].url));
+    for (int i = 0; i < S->nad; ++i) cJSON_AddItemToArray(arr, cJSON_CreateString(S->ad[i].url));
     char *txt = cJSON_Print(root);
     cJSON_Delete(root);
     if (!txt) return -1;
@@ -100,8 +122,9 @@ static int ad_save(void)
 
 static int ad_init(void)
 {
-    g_nad = 0;
-    memset(g_ad, 0, sizeof g_ad);
+    S = &g_addons;
+    S->nad = 0;
+    memset(S->ad, 0, sizeof S->ad);
     FILE *f = fopen(evo_data_path(AD_CONF), "r");
     if (!f) return 0;                    /* none added yet - not an error */
     static char buf[16384];
@@ -110,19 +133,19 @@ static int ad_init(void)
     buf[n] = '\0';
     cJSON *root = cJSON_Parse(buf);
     cJSON *arr = root ? cJSON_GetObjectItem(root, "addons") : NULL;
-    for (int i = 0; arr && i < cJSON_GetArraySize(arr) && g_nad < AD_MAX; ++i) {
+    for (int i = 0; arr && i < cJSON_GetArraySize(arr) && S->nad < AD_MAX; ++i) {
         cJSON *u = cJSON_GetArrayItem(arr, i);
         if (!u || !cJSON_IsString(u) || !u->valuestring[0]) continue;
-        snprintf(g_ad[g_nad].url, AD_URL, "%s", u->valuestring);
-        ad_set_base(&g_ad[g_nad]);
-        g_nad++;
+        snprintf(S->ad[S->nad].url, AD_URL, "%s", u->valuestring);
+        ad_set_base(&S->ad[S->nad]);
+        S->nad++;
     }
     if (root) cJSON_Delete(root);
     return 0;
 }
 
 static void ad_shutdown(void) { }
-static int  ad_is_configured(void) { return g_nad > 0; }
+static int  ad_is_configured(void) { return g_addons.nad > 0; }
 
 /* The editor starts empty: the value typed is an addon to ADD, not a source
  * to replace (see ad_set_source). */
@@ -142,9 +165,10 @@ static int ad_set_source(const char *value)
     size_t n = strlen(s);
     while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t' || s[n - 1] == '\r' || s[n - 1] == '\n')) s[--n] = '\0';
 
+    S = &g_addons;
     if (!*s) {
-        g_nad = 0;
-        memset(g_ad, 0, sizeof g_ad);
+        S->nad = 0;
+        memset(S->ad, 0, sizeof S->ad);
         return ad_save();
     }
     char url[AD_URL];
@@ -165,29 +189,31 @@ static int ad_set_source(const char *value)
         while (n > 0 && url[n - 1] == '/') url[--n] = '\0';
         strncat(url, "/manifest.json", sizeof url - strlen(url) - 1);
     }
-    for (int i = 0; i < g_nad; ++i)
-        if (!strcmp(g_ad[i].url, url)) return 0;
-    if (g_nad >= AD_MAX) return -1;
-    memset(&g_ad[g_nad], 0, sizeof g_ad[g_nad]);
-    snprintf(g_ad[g_nad].url, AD_URL, "%s", url);
-    ad_set_base(&g_ad[g_nad]);
-    g_nad++;
+    for (int i = 0; i < S->nad; ++i)
+        if (!strcmp(S->ad[i].url, url)) return 0;
+    if (S->nad >= AD_MAX) return -1;
+    memset(&S->ad[S->nad], 0, sizeof S->ad[S->nad]);
+    snprintf(S->ad[S->nad].url, AD_URL, "%s", url);
+    ad_set_base(&S->ad[S->nad]);
+    S->nad++;
     return ad_save();
 }
 
-int evo_stremio_addon_count(void) { return g_nad; }
+int evo_stremio_addon_count(void) { return g_addons.nad; }
 
 const char *evo_stremio_addon_url(int i)
 {
-    return (i >= 0 && i < g_nad) ? g_ad[i].url : "";
+    S = &g_addons;
+    return (i >= 0 && i < S->nad) ? S->ad[i].url : "";
 }
 
 const char *evo_stremio_addon_name(int i)
 {
-    if (i < 0 || i >= g_nad) return "";
-    if (g_ad[i].name[0]) return g_ad[i].name;
+    S = &g_addons;
+    if (i < 0 || i >= S->nad) return "";
+    if (S->ad[i].name[0]) return S->ad[i].name;
     static char label[AD_URL];
-    const char *u = g_ad[i].url;
+    const char *u = S->ad[i].url;
     const char *scheme = strstr(u, "://");
     snprintf(label, sizeof label, "%s", scheme ? scheme + 3 : u);
     size_t n = strlen(label), t = strlen("/manifest.json");
@@ -197,9 +223,10 @@ const char *evo_stremio_addon_name(int i)
 
 int evo_stremio_addon_remove(int i)
 {
-    if (i < 0 || i >= g_nad) return -1;
-    for (int k = i; k + 1 < g_nad; ++k) g_ad[k] = g_ad[k + 1];
-    memset(&g_ad[--g_nad], 0, sizeof g_ad[0]);
+    S = &g_addons;
+    if (i < 0 || i >= S->nad) return -1;
+    for (int k = i; k + 1 < S->nad; ++k) S->ad[k] = S->ad[k + 1];
+    memset(&S->ad[--S->nad], 0, sizeof S->ad[0]);
     return ad_save();
 }
 
@@ -322,12 +349,12 @@ static const char *jstr(cJSON *o, const char *k)
 static void emit_root(evo_provider_items_cb cb, void *ud)
 {
     int max = 1;
-    for (int i = 0; i < g_nad; ++i) max += g_ad[i].ncats + 1;
+    for (int i = 0; i < S->nad; ++i) max += S->ad[i].ncats + 1;
     evo_provider_item_t *items = (evo_provider_item_t *)calloc((size_t)max, sizeof *items);
     if (!items) { if (cb) cb(0, NULL, 0, 0, ud); return; }
     int k = 0;
-    for (int i = 0; i < g_nad; ++i) {
-        addon_t *a = &g_ad[i];
+    for (int i = 0; i < S->nad; ++i) {
+        addon_t *a = &S->ad[i];
         if (a->loaded < 0) {
             evo_provider_item_clear(&items[k]);
             snprintf(items[k].id, sizeof items[k].id, "x:%d", i);
@@ -378,6 +405,7 @@ static void map_meta(int a, cJSON *m, evo_provider_item_t *it)
 /* ------------------------------------------------------------------------- */
 
 typedef struct {
+    ad_set_t *set;
     int  remaining;
     evo_provider_items_cb cb;
     void *ud;
@@ -388,6 +416,8 @@ typedef struct {
     evo_provider_resolve_cb rcb;
     evo_stream_choice_t choices[AD_CHOICES];
     int  nchoices;
+    int  asked;                  /* stream requests sent */
+    int  torrents;               /* infoHash-only streams skipped */
 } fan_t;
 
 typedef struct { fan_t *fan; int addon; } fan_req_t;
@@ -403,14 +433,15 @@ static void on_manifest(int ok, int status, const char *body, size_t len, void *
 {
     (void)len;
     fan_req_t *r = (fan_req_t *)ud;
-    addon_t *a = &g_ad[r->addon];
+    S = r->fan->set;
+    addon_t *a = &S->ad[r->addon];
     cJSON *m = (ok && status == 200 && body) ? cJSON_Parse(body) : NULL;
     if (m && cJSON_IsObject(m)) {
         parse_manifest(a, m);
         a->loaded = 1;
     } else {
         a->loaded = -1;
-        PROV_LOG("addons: manifest %s failed ok=%d http=%d", a->url, ok, status);
+        PROV_LOG("%s: manifest %s failed ok=%d http=%d", S->tag, a->url, ok, status);
     }
     if (m) cJSON_Delete(m);
     fan_done_root(r->fan);
@@ -420,23 +451,29 @@ static void on_manifest(int ok, int status, const char *body, size_t len, void *
 static int ad_get(const char *url, evo_net_cb cb, void *ud)
 {
     const char *h[1] = { "Accept: application/json" };
+    if (S->avio)    /* FFmpeg's HTTP client, as the Jellyfin requests use */
+        return evo_net_request_async_avio("GET", url, NULL, h, 1, cb, ud);
     return evo_net_request_async("GET", url, NULL, h, 1, cb, ud);
 }
 
+static void nv_load_addons(void);
+
 static int list_root(evo_provider_items_cb cb, void *ud)
 {
+    if (S == &g_nuvio) nv_load_addons();     /* changed in the web version since? */
     fan_t *f = (fan_t *)calloc(1, sizeof *f);
     if (!f) return -2;
+    f->set = S;
     f->cb = cb; f->ud = ud;
     f->remaining = 1;                    /* held until every request is out */
-    for (int i = 0; i < g_nad; ++i) {
-        if (g_ad[i].loaded != 0) continue;
+    for (int i = 0; i < S->nad; ++i) {
+        if (S->ad[i].loaded != 0) continue;
         fan_req_t *r = (fan_req_t *)calloc(1, sizeof *r);
         if (!r) continue;
         r->fan = f; r->addon = i;
         f->remaining++;
-        if (ad_get(g_ad[i].url, on_manifest, r) != 0) {
-            g_ad[i].loaded = -1;
+        if (ad_get(S->ad[i].url, on_manifest, r) != 0) {
+            S->ad[i].loaded = -1;
             f->remaining--;
             free(r);
         }
@@ -450,20 +487,19 @@ static int list_root(evo_provider_items_cb cb, void *ud)
 /* ------------------------------------------------------------------------- */
 
 typedef struct {
+    ad_set_t *set;
     int a;
     int skip;
     evo_provider_items_cb cb;
     void *ud;
 } cat_ctx_t;
 
-/* How many rows the open catalog already has, for Stremio's skip= paging. */
-static char g_cat_key[256];
-static int  g_cat_loaded;
 
 static void on_catalog(int ok, int status, const char *body, size_t len, void *ud)
 {
     (void)len;
     cat_ctx_t *x = (cat_ctx_t *)ud;
+    S = x->set;
     cJSON *root = (ok && status == 200 && body) ? cJSON_Parse(body) : NULL;
     cJSON *arr = root ? cJSON_GetObjectItem(root, "metas") : NULL;
     if (!arr || !cJSON_IsArray(arr)) {
@@ -482,7 +518,7 @@ static void on_catalog(int ok, int status, const char *body, size_t len, void *u
         if (!m || !jstr(m, "id")[0]) continue;
         map_meta(x->a, m, &items[k++]);
     }
-    g_cat_loaded = x->skip + n;
+    S->cat_loaded = x->skip + n;
     /* Addons page in fixed sizes they do not announce (Cinemeta: 100); a page
      * of 20+ may have a next one, and an empty next page ends it. */
     if (x->cb) x->cb(1, items, k, n >= 20, x->ud);
@@ -494,18 +530,19 @@ static void on_catalog(int ok, int status, const char *body, size_t len, void *u
 static int list_catalog_page(int a, const char *type, const char *cat, const char *key,
                              int page, evo_provider_items_cb cb, void *ud)
 {
-    if (page == 0 || strcmp(g_cat_key, key)) {
-        snprintf(g_cat_key, sizeof g_cat_key, "%s", key);
-        g_cat_loaded = 0;
+    if (page == 0 || strcmp(S->cat_key, key)) {
+        snprintf(S->cat_key, sizeof S->cat_key, "%s", key);
+        S->cat_loaded = 0;
     }
     char url[EVO_PROVIDER_MAX_URL];
-    if (page > 0 && g_cat_loaded > 0)
-        snprintf(url, sizeof url, "%s/catalog/%s/%s/skip=%d.json", g_ad[a].base, type, cat, g_cat_loaded);
+    if (page > 0 && S->cat_loaded > 0)
+        snprintf(url, sizeof url, "%s/catalog/%s/%s/skip=%d.json", S->ad[a].base, type, cat, S->cat_loaded);
     else
-        snprintf(url, sizeof url, "%s/catalog/%s/%s.json", g_ad[a].base, type, cat);
+        snprintf(url, sizeof url, "%s/catalog/%s/%s.json", S->ad[a].base, type, cat);
     cat_ctx_t *x = (cat_ctx_t *)calloc(1, sizeof *x);
     if (!x) return -2;
-    x->a = a; x->skip = page > 0 ? g_cat_loaded : 0; x->cb = cb; x->ud = ud;
+    x->set = S;
+    x->a = a; x->skip = page > 0 ? S->cat_loaded : 0; x->cb = cb; x->ud = ud;
     int rc = ad_get(url, on_catalog, x);
     if (rc != 0) free(x);
     return rc;
@@ -515,19 +552,15 @@ static int list_catalog_page(int a, const char *type, const char *cat, const cha
 /* Series: meta -> seasons -> episodes                                       */
 /* ------------------------------------------------------------------------- */
 
-/* The last series meta fetched: the seasons level and every episodes level
- * under it read the same document. */
-static char   g_meta_key[256];
-static cJSON *g_meta;
 
 static int find_meta_addon(int pref, const char *type, const char *id)
 {
-    if (pref >= 0 && pref < g_nad && g_ad[pref].has_meta &&
-        list_has(g_ad[pref].meta_types, type) && prefix_ok(&g_ad[pref], id))
+    if (pref >= 0 && pref < S->nad && S->ad[pref].has_meta &&
+        list_has(S->ad[pref].meta_types, type) && prefix_ok(&S->ad[pref], id))
         return pref;
-    for (int i = 0; i < g_nad; ++i)
-        if (g_ad[i].loaded == 1 && g_ad[i].has_meta && list_has(g_ad[i].meta_types, type) &&
-            prefix_ok(&g_ad[i], id))
+    for (int i = 0; i < S->nad; ++i)
+        if (S->ad[i].loaded == 1 && S->ad[i].has_meta && list_has(S->ad[i].meta_types, type) &&
+            prefix_ok(&S->ad[i], id))
             return i;
     return -1;
 }
@@ -535,7 +568,7 @@ static int find_meta_addon(int pref, const char *type, const char *id)
 static void emit_seasons(int a, const char *type, const char *id,
                          evo_provider_items_cb cb, void *ud)
 {
-    cJSON *meta = cJSON_GetObjectItem(g_meta, "meta");
+    cJSON *meta = cJSON_GetObjectItem(S->meta, "meta");
     cJSON *videos = meta ? cJSON_GetObjectItem(meta, "videos") : NULL;
     int seasons[128], counts[128], ns = 0;
     for (int i = 0; videos && i < cJSON_GetArraySize(videos); ++i) {
@@ -578,7 +611,7 @@ static void emit_seasons(int a, const char *type, const char *id,
 static void emit_episodes(int a, const char *type, int season,
                           evo_provider_items_cb cb, void *ud)
 {
-    cJSON *meta = cJSON_GetObjectItem(g_meta, "meta");
+    cJSON *meta = cJSON_GetObjectItem(S->meta, "meta");
     cJSON *videos = meta ? cJSON_GetObjectItem(meta, "videos") : NULL;
     int n = videos ? cJSON_GetArraySize(videos) : 0;
     evo_provider_item_t *items = (evo_provider_item_t *)calloc((size_t)n + 1, sizeof *items);
@@ -617,6 +650,7 @@ static void emit_episodes(int a, const char *type, int season,
 }
 
 typedef struct {
+    ad_set_t *set;
     int a;
     int season;                  /* -1: list seasons */
     char type[24];
@@ -629,17 +663,18 @@ static void on_meta(int ok, int status, const char *body, size_t len, void *ud)
 {
     (void)len;
     meta_ctx_t *x = (meta_ctx_t *)ud;
+    S = x->set;
     cJSON *root = (ok && status == 200 && body) ? cJSON_Parse(body) : NULL;
     if (!root || !cJSON_GetObjectItem(root, "meta")) {
-        PROV_LOG("addons: meta %s/%s failed ok=%d http=%d", x->type, x->id, ok, status);
+        PROV_LOG("%s: meta %s/%s failed ok=%d http=%d", S->tag, x->type, x->id, ok, status);
         if (x->cb) x->cb(0, NULL, 0, 0, x->ud);
         if (root) cJSON_Delete(root);
         free(x);
         return;
     }
-    if (g_meta) cJSON_Delete(g_meta);
-    g_meta = root;
-    snprintf(g_meta_key, sizeof g_meta_key, "%s:%s", x->type, x->id);
+    if (S->meta) cJSON_Delete(S->meta);
+    S->meta = root;
+    snprintf(S->meta_key, sizeof S->meta_key, "%s:%s", x->type, x->id);
     if (x->season < 0) emit_seasons(x->a, x->type, x->id, x->cb, x->ud);
     else               emit_episodes(x->a, x->type, x->season, x->cb, x->ud);
     free(x);
@@ -650,7 +685,7 @@ static int list_series(int a, const char *type, const char *id, int season,
 {
     char key[256];
     snprintf(key, sizeof key, "%s:%s", type, id);
-    if (g_meta && !strcmp(g_meta_key, key)) {
+    if (S->meta && !strcmp(S->meta_key, key)) {
         if (season < 0) emit_seasons(a, type, id, cb, ud);
         else            emit_episodes(a, type, season, cb, ud);
         return 0;
@@ -659,11 +694,12 @@ static int list_series(int a, const char *type, const char *id, int season,
     if (m < 0) return -1;
     meta_ctx_t *x = (meta_ctx_t *)calloc(1, sizeof *x);
     if (!x) return -2;
+    x->set = S;
     x->a = a; x->season = season; x->cb = cb; x->ud = ud;
     snprintf(x->type, sizeof x->type, "%s", type);
     snprintf(x->id, sizeof x->id, "%s", id);
     char url[EVO_PROVIDER_MAX_URL];
-    snprintf(url, sizeof url, "%s/meta/%s/%s.json", g_ad[m].base, type, id);
+    snprintf(url, sizeof url, "%s/meta/%s/%s.json", S->ad[m].base, type, id);
     int rc = ad_get(url, on_meta, x);
     if (rc != 0) free(x);
     return rc;
@@ -678,7 +714,7 @@ static int split3(const char *s, int *a, char *type, size_t tcap, const char **r
 {
     char *end;
     long v = strtol(s, &end, 10);
-    if (end == s || *end != ':' || v < 0 || v >= g_nad) return -1;
+    if (end == s || *end != ':' || v < 0 || v >= S->nad) return -1;
     *a = (int)v;
     const char *t = end + 1, *c = strchr(t, ':');
     if (!c || (size_t)(c - t) >= tcap) return -1;
@@ -687,7 +723,7 @@ static int split3(const char *s, int *a, char *type, size_t tcap, const char **r
     return 0;
 }
 
-static int ad_list_catalog(const char *parent_id, int page,
+static int st_list_catalog(const char *parent_id, int page,
                            evo_provider_items_cb cb, void *ud)
 {
     if (!parent_id || !*parent_id) {
@@ -737,6 +773,7 @@ static void on_search(int ok, int status, const char *body, size_t len, void *ud
 {
     (void)len;
     fan_req_t *r = (fan_req_t *)ud;
+    S = r->fan->set;
     fan_t *f = r->fan;
     cJSON *root = (ok && status == 200 && body) ? cJSON_Parse(body) : NULL;
     cJSON *arr = root ? cJSON_GetObjectItem(root, "metas") : NULL;
@@ -756,25 +793,26 @@ static void on_search(int ok, int status, const char *body, size_t len, void *ud
     free(r);
 }
 
-static int ad_search(const char *query, int page, evo_provider_items_cb cb, void *ud)
+static int st_search(const char *query, int page, evo_provider_items_cb cb, void *ud)
 {
     if (!query || !*query || page > 0) return -1;
     char esc[256];
     if (evo_provider_url_escape(query, esc, sizeof esc) < 0) return -1;
     fan_t *f = (fan_t *)calloc(1, sizeof *f);
     if (!f) return -2;
+    f->set = S;
     f->cb = cb; f->ud = ud;
     f->cap = EVO_PROVIDER_PAGE_MAX;
     f->items = (evo_provider_item_t *)calloc((size_t)f->cap, sizeof *f->items);
     if (!f->items) { free(f); return -2; }
     f->remaining = 1;
-    for (int i = 0; i < g_nad; ++i) {
-        for (int c = 0; g_ad[i].loaded == 1 && c < g_ad[i].ncats; ++c) {
-            ad_cat_t *ct = &g_ad[i].cats[c];
+    for (int i = 0; i < S->nad; ++i) {
+        for (int c = 0; S->ad[i].loaded == 1 && c < S->ad[i].ncats; ++c) {
+            ad_cat_t *ct = &S->ad[i].cats[c];
             if (!ct->searchable) continue;
             char url[EVO_PROVIDER_MAX_URL];
             snprintf(url, sizeof url, "%s/catalog/%s/%s/search=%s.json",
-                     g_ad[i].base, ct->type, ct->id, esc);
+                     S->ad[i].base, ct->type, ct->id, esc);
             fan_req_t *r = (fan_req_t *)calloc(1, sizeof *r);
             if (!r) continue;
             r->fan = f; r->addon = i;
@@ -793,6 +831,15 @@ static int ad_search(const char *query, int page, evo_provider_items_cb cb, void
 static void fan_done_streams(fan_t *f)
 {
     if (--f->remaining > 0) return;
+    /* Nothing to play: say why, for the screen in place of its generic text.
+     * Catalog addons (Cinemeta) and subtitle addons serve no streams. */
+    const char *where = f->set == &g_nuvio ? "in Nuvio's web version" : "in OPTIONS";
+    if (f->nchoices == 0 && f->asked == 0)
+        evo_error_set("None of your addons gives streams. Add a stream addon "
+                      "(Torrentio, AIOStreams...) %s", where);
+    else if (f->nchoices == 0 && f->torrents > 0)
+        evo_error_set("Only torrent links were found. Set up a debrid service "
+                      "(TorBox, Real-Debrid) in the stream addon");
     if (f->rcb) f->rcb(f->nchoices > 0, f->choices, f->nchoices, f->ud);
     free(f);
 }
@@ -807,18 +854,22 @@ static void on_streams(int ok, int status, const char *body, size_t len, void *u
 {
     (void)len;
     fan_req_t *r = (fan_req_t *)ud;
+    S = r->fan->set;
     fan_t *f = r->fan;
     cJSON *root = (ok && status == 200 && body) ? cJSON_Parse(body) : NULL;
     cJSON *arr = root ? cJSON_GetObjectItem(root, "streams") : NULL;
     for (int i = 0; arr && i < cJSON_GetArraySize(arr) && f->nchoices < AD_CHOICES; ++i) {
         cJSON *s = cJSON_GetArrayItem(arr, i);
         const char *url = jstr(s, "url");
-        if (strncmp(url, "http://", 7) && strncmp(url, "https://", 8)) continue;
+        if (strncmp(url, "http://", 7) && strncmp(url, "https://", 8)) {
+            if (jstr(s, "infoHash")[0]) f->torrents++;
+            continue;
+        }
         evo_stream_choice_t *c = &f->choices[f->nchoices++];
         evo_provider_stream_choice_clear(c);
         snprintf(c->url, sizeof c->url, "%s", url);
         char name[48], title[64];
-        first_line(jstr(s, "name")[0] ? jstr(s, "name") : g_ad[r->addon].name, name, sizeof name);
+        first_line(jstr(s, "name")[0] ? jstr(s, "name") : S->ad[r->addon].name, name, sizeof name);
         first_line(jstr(s, "title")[0] ? jstr(s, "title") : jstr(s, "description"), title, sizeof title);
         if (title[0]) snprintf(c->label, sizeof c->label, "%s - %s", name, title);
         else          snprintf(c->label, sizeof c->label, "%s", name);
@@ -836,13 +887,13 @@ static void on_streams(int ok, int status, const char *body, size_t len, void *u
         }
     }
     if (!ok || status != 200)
-        PROV_LOG("addons: streams from %s failed ok=%d http=%d", g_ad[r->addon].name, ok, status);
+        PROV_LOG("%s: streams from %s failed ok=%d http=%d", S->tag, S->ad[r->addon].name, ok, status);
     if (root) cJSON_Delete(root);
     fan_done_streams(f);
     free(r);
 }
 
-static int ad_resolve(const char *item_id, evo_provider_resolve_cb cb, void *ud)
+static int st_resolve(const char *item_id, evo_provider_resolve_cb cb, void *ud)
 {
     if (!item_id || (strncmp(item_id, "m:", 2) && strncmp(item_id, "e:", 2))) return -1;
     int a;
@@ -851,10 +902,11 @@ static int ad_resolve(const char *item_id, evo_provider_resolve_cb cb, void *ud)
     if (split3(item_id + 2, &a, type, sizeof type, &id) != 0) return -1;
     fan_t *f = (fan_t *)calloc(1, sizeof *f);
     if (!f) return -2;
+    f->set = S;
     f->rcb = cb; f->ud = ud;
     f->remaining = 1;
-    for (int i = 0; i < g_nad; ++i) {
-        addon_t *ad = &g_ad[i];
+    for (int i = 0; i < S->nad; ++i) {
+        addon_t *ad = &S->ad[i];
         if (ad->loaded != 1 || !ad->has_stream || !list_has(ad->stream_types, type) || !prefix_ok(ad, id))
             continue;
         char url[EVO_PROVIDER_MAX_URL];
@@ -863,10 +915,173 @@ static int ad_resolve(const char *item_id, evo_provider_resolve_cb cb, void *ud)
         if (!r) continue;
         r->fan = f; r->addon = i;
         f->remaining++;
+        f->asked++;
         if (ad_get(url, on_streams, r) != 0) { f->remaining--; free(r); }
     }
     fan_done_streams(f);
     return 0;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Nuvio: the addons the Nuvio web app has installed                         */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Nuvio keeps its addon list in the page's localStorage, which EVO saves for
+ * it (evo_webui.c, one JSON object of key -> string per site). The value is
+ * Nuvio's per-profile envelope:
+ *
+ *   installedAddonUrls          {"profiles":{"<pid>":["https://addon", ...]}}
+ *   installedAddonEnabledStates {"profiles":{"<pid>":{"https://addon":false}}}
+ *   activeProfileId             "<pid>"
+ *
+ * The URLs are addon bases (no /manifest.json). With nothing saved yet, Nuvio
+ * starts on Cinemeta, and so does this.
+ */
+#define NV_DEFAULT_ADDON "https://v3-cinemeta.strem.io"
+
+static char *nv_read_file(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    size_t cap = 65536, used = 0;
+    char *buf = (char *)malloc(cap);
+    while (buf) {
+        if (used + 1 >= cap) {
+            if (cap >= (8u << 20)) break;
+            char *g = (char *)realloc(buf, cap * 2);
+            if (!g) { free(buf); buf = NULL; break; }
+            buf = g;
+            cap *= 2;
+        }
+        size_t n = fread(buf + used, 1, cap - used - 1, f);
+        if (n == 0) break;
+        used += n;
+    }
+    fclose(f);
+    if (buf) buf[used] = '\0';
+    return buf;
+}
+
+/* A profile-scoped value: the active profile's, else the primary ("1"), else
+ * the first. Older saves held the bare value with no envelope. */
+static cJSON *nv_profile_value(cJSON *env, const char *pid)
+{
+    cJSON *profiles = cJSON_GetObjectItem(env, "profiles");
+    if (!profiles) return env;
+    cJSON *v = cJSON_GetObjectItem(profiles, pid);
+    if (!v) v = cJSON_GetObjectItem(profiles, "1");
+    if (!v) v = profiles->child;
+    return v;
+}
+
+static void nv_load_addons(void)
+{
+    static char urls[AD_MAX][AD_URL];
+    int n = 0;
+
+    char *txt = nv_read_file(evo_data_path(evo_nuvio_store_file()));
+    cJSON *store = txt ? cJSON_Parse(txt) : NULL;
+    free(txt);
+    char pid[32];
+    snprintf(pid, sizeof pid, "%s", jstr(store, "activeProfileId"));
+    {   /* saved as a JSON string ("\"2\"") or bare */
+        char *p = pid;
+        while (*p == '"') p++;
+        memmove(pid, p, strlen(p) + 1);
+        size_t l = strlen(pid);
+        while (l > 0 && pid[l - 1] == '"') pid[--l] = '\0';
+        if (!pid[0]) snprintf(pid, sizeof pid, "1");
+    }
+    const char *raw = jstr(store, "installedAddonUrls");
+    cJSON *env = raw[0] ? cJSON_Parse(raw) : NULL;
+    raw = jstr(store, "installedAddonEnabledStates");
+    cJSON *en_env = raw[0] ? cJSON_Parse(raw) : NULL;
+    cJSON *list = env ? nv_profile_value(env, pid) : NULL;
+    cJSON *enabled = en_env ? nv_profile_value(en_env, pid) : NULL;
+
+    for (int i = 0; list && cJSON_IsArray(list) && i < cJSON_GetArraySize(list) && n < AD_MAX; ++i) {
+        cJSON *u = cJSON_GetArrayItem(list, i);
+        if (!u || !cJSON_IsString(u) || strncmp(u->valuestring, "http", 4)) continue;
+        if (cJSON_IsFalse(cJSON_GetObjectItem(enabled, u->valuestring))) continue;
+        char *out = urls[n];
+        snprintf(out, AD_URL, "%s", u->valuestring);
+        size_t l = strlen(out);
+        while (l > 0 && out[l - 1] == '/') out[--l] = '\0';
+        if (l < 14 || strcmp(out + l - 14, "/manifest.json"))
+            strncat(out, "/manifest.json", AD_URL - l - 1);
+        n++;
+    }
+    if (!list || !cJSON_IsArray(list))
+        snprintf(urls[n++], AD_URL, "%s/manifest.json", NV_DEFAULT_ADDON);
+    if (env) cJSON_Delete(env);
+    if (en_env) cJSON_Delete(en_env);
+    if (store) cJSON_Delete(store);
+
+    /* Unchanged: keep the loaded manifests. */
+    int same = n == S->nad;
+    for (int i = 0; same && i < n; ++i) same = !strcmp(S->ad[i].url, urls[i]);
+    if (same) return;
+
+    static addon_t prev[AD_MAX];
+    const int nprev = S->nad;
+    memcpy(prev, S->ad, sizeof prev);
+    memset(S->ad, 0, sizeof S->ad);
+    S->nad = 0;
+    for (int i = 0; i < n; ++i) {
+        addon_t *a = &S->ad[S->nad++];
+        int j = 0;
+        while (j < nprev && strcmp(prev[j].url, urls[i])) j++;
+        if (j < nprev) { *a = prev[j]; continue; }
+        snprintf(a->url, AD_URL, "%s", urls[i]);
+        ad_set_base(a);
+    }
+    /* Row ids carry addon indexes, which may have moved. */
+    S->cat_key[0] = '\0';
+    S->meta_key[0] = '\0';
+    if (S->meta) { cJSON_Delete(S->meta); S->meta = NULL; }
+    PROV_LOG("nuvio: %d addon%s from %s", S->nad, S->nad == 1 ? "" : "s", evo_nuvio_store_file());
+}
+
+int evo_nuvio_list_catalog(const char *parent_id, int page, evo_provider_items_cb cb, void *ud)
+{
+    S = &g_nuvio;
+    return st_list_catalog(parent_id, page, cb, ud);
+}
+
+int evo_nuvio_search(const char *query, int page, evo_provider_items_cb cb, void *ud)
+{
+    S = &g_nuvio;
+    if (S->nad == 0) nv_load_addons();
+    return st_search(query, page, cb, ud);
+}
+
+int evo_nuvio_resolve(const char *item_id, evo_provider_resolve_cb cb, void *ud)
+{
+    S = &g_nuvio;
+    return st_resolve(item_id, cb, ud);
+}
+
+/* ------------------------------------------------------------------------- */
+/* The Stremio Addons provider                                               */
+/* ------------------------------------------------------------------------- */
+
+static int ad_list_catalog(const char *parent_id, int page, evo_provider_items_cb cb, void *ud)
+{
+    S = &g_addons;
+    return st_list_catalog(parent_id, page, cb, ud);
+}
+
+static int ad_search(const char *query, int page, evo_provider_items_cb cb, void *ud)
+{
+    S = &g_addons;
+    return st_search(query, page, cb, ud);
+}
+
+static int ad_resolve(const char *item_id, evo_provider_resolve_cb cb, void *ud)
+{
+    S = &g_addons;
+    return st_resolve(item_id, cb, ud);
 }
 
 const evo_provider_t evo_provider_stremio = {
