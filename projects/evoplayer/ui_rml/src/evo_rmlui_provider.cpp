@@ -871,7 +871,7 @@ static Rml::String display_text(const char* in)
     return Rml::String(out.c_str());
 }
 
-extern "C" void evo_plex_home_art_capture(const char*, const char*, const char*);
+extern "C" void evo_home_art_capture(const char*, const char*, const char*, const char*);
 
 void EvoRmlProviderHost::ApplyItems(const evo_provider_item_t* items, int count,
                                     int has_more)
@@ -916,11 +916,14 @@ void EvoRmlProviderHost::ApplyItems(const evo_provider_item_t* items, int count,
          * arrive. A bundle that wants something behind the gap paints a
          * background colour on the element, which is why this is "" and not a
          * placeholder image the provider did not choose. */
-        if (m_provider_id == "plex" && !s.is_folder && !s.is_live &&
-            std::strncmp(s.id, "video:", 6) == 0) {
-            evo_plex_home_art_capture(s.id, s.art_url, s.backdrop_url);
+        /* Home shows what was played, so keep the art of anything started or part-watched
+         * (Plex keeps every video it has browsed, as it always did). */
+        if (!s.is_folder && !s.is_live &&
+            (s.resume_pos_sec > 0 || s.played || (m_provider_id == "plex" && !std::strncmp(s.id, "video:", 6)))) {
+            evo_home_art_capture(m_provider_id.c_str(), s.id, s.art_url, s.backdrop_url);
         }
         m_all_rows.push_back(std::move(r));
+        evo_provider_art_set_fallback(s.art_url, s.art_alt_url);
         m_art_urls.emplace_back(s.art_url);
         m_art_keys.emplace_back();
     }
@@ -1688,7 +1691,21 @@ void EvoRmlProviderHost::ApplyPendingActivation()
         return;
     }
 
-    /* Playable: hand it to the player through the mailbox. */
+    /* Playable: keep its art for Home (it is about to be in the history), then hand it to the player. */
+    {
+        const EvoShelfCard* sc = nullptr;
+        if (ShelvesActive() && m_shelf_row >= 0 && m_shelf_row < (int)m_shelves.size()) {
+            const EvoShelf& sh = m_shelves[m_shelf_row];
+            if (sh.col >= 0 && sh.col < (int)sh.cards.size() && sh.cards[sh.col].id == hit->id)
+                sc = &sh.cards[sh.col];
+        }
+        if (sc) evo_home_art_capture(m_provider_id.c_str(), hit->id.c_str(), sc->art_url.c_str(), sc->backdrop_url.c_str());
+        else {
+            const size_t a = m_row_offset + hit->index;
+            if (a < m_art_urls.size())
+                evo_home_art_capture(m_provider_id.c_str(), hit->id.c_str(), m_art_urls[a].c_str(), "");
+        }
+    }
     memset(&g_selection, 0, sizeof g_selection);
     snprintf(g_selection.provider_id, sizeof g_selection.provider_id,
              "%s", m_provider_id.c_str());
@@ -1720,10 +1737,12 @@ void EvoRmlProviderHost::Tick()
     if (ShelvesActive()) {
         PushShelfArt();
         PushShelfBackdrop();
+        PushPanelArt();
         ApplyPendingActivation();
         return;
     }
     PushArtRequests();
+    PushPanelArt();
     UpdateSelectedPreview();
     ApplyPendingActivation();
 }
@@ -1898,6 +1917,10 @@ bool EvoRmlProviderHost::RenderKit(int width, int height)
             o.chevron = pr.chevron;
             o.badge_live = pr.badge_live;
             o.focused = pr.focused;
+            o.initial = pr.initial.c_str();
+            o.art_key = pr.art_key.c_str();
+            if (!pr.art_key.empty() && evo_provider_art_ready(pr.art_key.c_str()))
+                o.art = r->MemoryTexturePixels(Rml::String(pr.art_key.c_str()), &o.art_w, &o.art_h);
         }
     }
 
@@ -2169,6 +2192,8 @@ void evo_rmlui_provider_show_panel(const evo_panel_t *p)
         row.badge = S(r.badge); row.icon = S(r.icon);
         row.radio = r.radio != 0; row.on = r.on != 0; row.warn = r.warn != 0;
         row.chevron = r.chevron != 0; row.badge_live = r.badge_live != 0;
+        row.art_url = r.art_url ? r.art_url : "";
+        row.initial = r.initial ? r.initial : "";
         page.panel_rows.push_back(row);
     }
     EvoRmlProviderHost::Instance().ShowPanel(page, p->focus);
@@ -2546,6 +2571,9 @@ void EvoRmlProviderHost::AddShelfCards(EvoShelf& s, const evo_provider_item_t* i
         c.cert = it.cert;
         c.facts = it.facts;
         c.art_url = it.art_url;
+        evo_provider_art_set_fallback(it.art_url, it.art_alt_url);
+        if (!it.is_folder && !it.is_live && (it.resume_pos_sec > 0 || it.played))
+            evo_home_art_capture(m_provider_id.c_str(), it.id, it.art_url, it.backdrop_url);
         c.backdrop_url = it.backdrop_url;
         c.logo_url = it.logo_url;
         c.is_folder = it.is_folder != 0;
@@ -2658,6 +2686,24 @@ bool EvoRmlProviderHost::ShelfKey(Key k)
     }
     m_dirty = true;
     return true;
+}
+
+/* The headshots of an open details panel, through the same art queue as the posters. */
+void EvoRmlProviderHost::PushPanelArt()
+{
+    if (!m_model.panel_open) return;
+    for (EvoPanelRow& r : m_model.panel_rows) {
+        if (r.art_url.empty()) continue;
+        if (!r.art_key.empty()) continue;
+        char key[128];
+        const int rc = evo_provider_art_request(m_provider_id.c_str(), r.art_url.c_str(), key, sizeof key);
+        if (rc == -2) return;                  /* queue full: ask again next tick */
+        if (rc < 0) { r.art_url.clear(); continue; }   /* refused: the letter stays */
+        r.art_key = key;
+        m_dirty = true;
+    }
+    for (const EvoPanelRow& r : m_model.panel_rows)     /* a headshot that has just landed */
+        if (!r.art_key.empty() && evo_provider_art_ready(r.art_key.c_str())) { m_dirty = true; break; }
 }
 
 void EvoRmlProviderHost::PushShelfArt()

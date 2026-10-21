@@ -247,6 +247,11 @@ void ProviderGridScreen::set(const evo_hui_provider_params_t &p)
         row.detail = str(r.detail);
         row.badge = str(r.badge);
         row.icon = icon_path(str(r.icon));
+        row.initial = str(r.initial);
+        row.art_key = str(r.art_key);
+        row.art = r.art;
+        row.art_w = r.art_w;
+        row.art_h = r.art_h;
         row.radio = r.radio != 0;
         row.on = r.on != 0;
         row.warn = r.warn != 0;
@@ -678,6 +683,7 @@ void ProviderGridScreen::draw_panel(DrawList &list, const Context &ctx) const
             list.rounded_rect(row, 18, pal.surface);
         }
         const float lx = row.x + 20;
+        bool lead = true;
         if (r.radio)
         {
             list.ring(lx + 14, row.cy(), 12, 2.5f, r.on ? pal.accent : kWhite.with_alpha(0.35f));
@@ -686,12 +692,26 @@ void ProviderGridScreen::draw_panel(DrawList &list, const Context &ctx) const
         }
         else
         {
-            list.rounded_rect({lx, row.cy() - 22, 44, 44}, 12, kWhite.with_alpha(0.08f));
+            /* a headshot, an icon, a letter in a circle - or nothing, never an empty box */
+            const Rect sq{lx, row.cy() - 22, 44, 44};
+            const std::uint32_t head = r.art ? ctx.textures.pixels(r.art, r.art_w, r.art_h, hash_of(r.art_key)) : 0;
             const std::uint32_t icon = r.icon.empty() ? 0 : ctx.textures.icon(r.icon);
-            if (icon)
+            if (head)
+                list.image(head, sq, cover_uv(r.art_w, r.art_h, sq.w, sq.h), kWhite, 22);
+            else if (icon)
+            {
+                list.rounded_rect(sq, 12, kWhite.with_alpha(0.08f));
                 list.image(icon, {lx + 10, row.cy() - 12, 24, 24}, ::hui::gfx::kFullUv, kWhite);
+            }
+            else if (!r.initial.empty())
+            {
+                list.circle(sq.cx(), sq.cy(), 22, pal.accent.with_alpha(0.28f));
+                ui::text(list, fonts.display, r.initial, sq.cx(), sq.cy() + 8, 22, kWhite, Align::center);
+            }
+            else
+                lead = false;
         }
-        const float tx = lx + 62;
+        const float tx = lx + (lead ? 62 : 6);
         float right = row.x + row.w - 20;
         if (r.chevron)
         {

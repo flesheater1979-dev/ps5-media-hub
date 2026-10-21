@@ -40,7 +40,9 @@ class ProviderGridScreen
     };
     struct PanelRow
     {
-        std::string title, detail, badge, icon;
+        std::string title, detail, badge, icon, initial, art_key;
+        const std::uint32_t *art = nullptr;
+        int art_w = 0, art_h = 0;
         bool radio = false, on = false, warn = false, chevron = false, badge_live = false, focused = false;
     };
 

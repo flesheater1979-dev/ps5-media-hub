@@ -19,7 +19,7 @@
 
 #include <algorithm>
 
-extern "C" const uint32_t* evo_plex_home_art_get(const char*, int, int*, int*);
+extern "C" const uint32_t* evo_home_art_get(const char*, int, int*, int*);
 extern "C" void evo_provider_art_poll(void);
 
 namespace evo {
@@ -314,9 +314,9 @@ void LaunchScreen::render(uint32_t* framebuffer, int width, int height) {
         if (r.duration > 1.0) {
             params.hero_progress = static_cast<int>((r.last_pos / r.duration) * 1000.0);
         }
-        if (std::strncmp(r.path, "evo://plex/", 11) == 0) {
+        if (std::strncmp(r.path, "evo://", 6) == 0) {
             int aw = 0, ah = 0;
-            params.hero_art = evo_plex_home_art_get(r.path, 1, &aw, &ah);
+            params.hero_art = evo_home_art_get(r.path, 1, &aw, &ah);
             params.hero_art_w = aw;
             params.hero_art_h = ah;
         } else if (coverService) {
@@ -360,6 +360,17 @@ void LaunchScreen::render(uint32_t* framebuffer, int width, int height) {
         params.recent[i].title = r.title[0] ? r.title : r.path;
         params.recent[i].detail = (std::strncmp(r.path, "evo://", 6) == 0) ? "Provider media" : "Recent File";
         params.recent[i].icon_path = "../icons/icon_recent_files.png";
+        if (std::strncmp(r.path, "evo://", 6) == 0) {      /* no poster: the service's own mark, not a clock */
+            static const struct { const char* prefix; const char* icon; } kBrands[] = {
+                { "evo://jellyfin/", "../icons/brand_jellyfin.png" }, { "evo://emby/", "../icons/brand_emby.png" },
+                { "evo://plex/", "../icons/brand_plex.png" },         { "evo://nuvio/", "../icons/brand_nuvio.png" },
+                { "evo://stremio/", "../icons/brand_stremio.png" },   { "evo://addons/", "../icons/brand_stremio.png" },
+                { "evo://iptv/", "../icons/icon_tv.png" },
+                { "evo://xtream/", "../icons/icon_tv.png" },
+            };
+            for (const auto& b : kBrands)
+                if (std::strncmp(r.path, b.prefix, std::strlen(b.prefix)) == 0) params.recent[i].icon_path = b.icon;
+        }
         if (r.duration > 1.0) {
             params.recent[i].progress = static_cast<int>((r.last_pos / r.duration) * 1000.0);
         } else {
@@ -367,9 +378,9 @@ void LaunchScreen::render(uint32_t* framebuffer, int width, int height) {
         }
 
         const uint32_t* art = nullptr;
-        if (std::strncmp(r.path, "evo://plex/", 11) == 0) {
+        if (std::strncmp(r.path, "evo://", 6) == 0) {
             int aw = 0, ah = 0;
-            art = evo_plex_home_art_get(r.path, 0, &aw, &ah);
+            art = evo_home_art_get(r.path, 0, &aw, &ah);
             params.recent[i].art_w = aw;
             params.recent[i].art_h = ah;
         } else if (coverService) {
@@ -383,7 +394,7 @@ void LaunchScreen::render(uint32_t* framebuffer, int width, int height) {
         if (art) {
             params.recent[i].art = art;
         }
-        if (std::strncmp(r.path, "evo://plex/", 11) != 0) {
+        if (std::strncmp(r.path, "evo://", 6) != 0) {
             params.recent[i].art_w = ICoverArtService::PosterWidth;
             params.recent[i].art_h = ICoverArtService::PosterHeight;
         }

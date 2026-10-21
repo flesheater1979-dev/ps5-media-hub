@@ -186,6 +186,7 @@ typedef struct evo_provider_item {
     char    art_url[EVO_PROVIDER_MAX_ART_URL];    /* poster / channel logo */
     char    backdrop_url[EVO_PROVIDER_MAX_ART_URL];   /* wide image behind the shelves */
     char    logo_url[EVO_PROVIDER_MAX_ART_URL];       /* title logo (transparent PNG) */
+    char    art_alt_url[EVO_PROVIDER_MAX_ART_URL];    /* tried once if art_url fails (404, not an image) */
     char    rating[12];         /* "7.8": the Details block on the shelves; empty = no pill */
     char    cert[16];           /* "PG-13" */
     char    facts[96];          /* "2025 · 2h 04m · Drama, Romance"; empty = use subtitle */
@@ -247,6 +248,7 @@ typedef struct evo_provider_row {
     char id[64];
     char title[96];
     char detail[160];
+    char art_url[EVO_PROVIDER_MAX_ART_URL];   /* a headshot, "" = none */
 } evo_provider_row_t;
 typedef void (*evo_provider_rows_cb)(int ok, const evo_provider_row_t *rows, int count, void *ud);
 

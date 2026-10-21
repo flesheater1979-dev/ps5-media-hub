@@ -630,6 +630,10 @@ typedef struct {
     int         chevron;
     int         badge_live;
     int         focused;
+    const uint32_t* art;       /* a headshot (BGRA), or NULL */
+    int             art_w, art_h;
+    const char*     art_key;
+    const char*     initial;   /* drawn in a circle when there is no picture */
 } evo_hui_panel_row_t;
 
 /* variant */

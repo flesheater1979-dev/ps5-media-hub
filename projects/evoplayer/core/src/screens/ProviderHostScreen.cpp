@@ -1662,7 +1662,7 @@ static std::string ageText(long long s)
 
 /* Owns the strings behind an evo_panel_t until it has been handed over. */
 struct PanelBuild {
-    struct Row { std::string id, title, detail, badge, icon; int radio = 0, on = 0, warn = 0, chevron = 0, live = 0; };
+    struct Row { std::string id, title, detail, badge, icon, art_url, initial; int radio = 0, on = 0, warn = 0, chevron = 0, live = 0; };
     std::vector<Row> rows;
     void show(const char* crumb, const char* eyebrow, const std::string& title,
               const std::string& sub, const char* note_b, const char* note,
@@ -1671,7 +1671,9 @@ struct PanelBuild {
         std::vector<evo_panel_row_t> r;
         for (const Row& x : rows)
             r.push_back({ x.id.c_str(), x.title.c_str(), x.detail.c_str(), x.badge.c_str(),
-                          x.icon.c_str(), x.radio, x.on, x.warn, x.chevron, x.live });
+                          x.icon.c_str(), x.radio, x.on, x.warn, x.chevron, x.live,
+                          x.art_url.empty() ? nullptr : x.art_url.c_str(),
+                          x.initial.empty() ? nullptr : x.initial.c_str() });
         evo_panel_t p = { crumb, eyebrow, title.c_str(), sub.c_str(), note_b, note,
                           accept, back, r.data(), (int)r.size(), focus };
         evo_rmlui_provider_show_panel(&p);
@@ -1867,6 +1869,23 @@ void ProviderHostScreen::openRowsPanel(const evo_provider_t* p, const char* item
             r.title = rows[i].title;
             r.detail = rows[i].detail;
             r.chevron = std::strncmp(rows[i].id, "panel:", 6) == 0 ? 1 : 0;
+            if (c->kind == "details") {
+                /* the facts get an icon; every other row is a person: a headshot, or a letter */
+                static const struct { const char* title; const char* icon; } kIcons[] = {
+                    { "Rating", "/assets/icons/icon_favorites.png" },
+                    { "Genres", "/assets/icons/icon_palette.png" },
+                    { "Director", "/assets/icons/icon_armchair.png" },
+                    { "Studio", "/assets/icons/icon_tv.png" },
+                    { "Tagline", "/assets/icons/icon_type.png" },
+                };
+                for (const auto& k : kIcons)
+                    if (r.title == k.title) r.icon = k.icon;
+                if (r.icon.empty()) {
+                    r.art_url = rows[i].art_url;
+                    const unsigned char ch = (unsigned char)r.title[0];
+                    if (std::isalnum(ch) && ch < 0x80) r.initial = std::string(1, (char)std::toupper(ch));
+                }
+            }
             pb.rows.push_back(r);
         }
         const bool info = c->kind == "details";

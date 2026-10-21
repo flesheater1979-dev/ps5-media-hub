@@ -93,6 +93,7 @@ struct EvoPanelRow {
     Rml::String detail;
     Rml::String badge;      /* "" = none */
     Rml::String icon;       /* used when !radio */
+    std::string art_url, art_key, initial;   /* headshot, its art key, the letter when there is none */
     bool radio = false;     /* a pick-one row: radio instead of an icon */
     bool on = false;        /* radio selected */
     bool warn = false;      /* detail in amber */
@@ -437,6 +438,7 @@ private:
     int  ShelvesWithCards() const;
     void SyncShelfFocus();
     void PushShelfArt();
+    void PushPanelArt();
     void PushShelfBackdrop();
     void FillShelfParams(evo_hui_provider_params_t& p, EvoRenderBridge* r);
     const EvoProviderRow* ShelfFocusedRow() const;
@@ -513,6 +515,8 @@ void evo_rmlui_provider_show_setup(void);
 typedef struct evo_panel_row {
     const char *id, *title, *detail, *badge, *icon;
     int radio, on, warn, chevron, badge_live;
+    const char *art_url;                /* a headshot to fetch, or NULL */
+    const char *initial;                /* the letter to draw when there is no picture, or NULL */
 } evo_panel_row_t;
 
 typedef struct evo_panel {

@@ -460,8 +460,10 @@ static void map_meta(int a, cJSON *m, evo_provider_item_t *it)
     }
     const char *poster = jstr(m, "poster");
     if (!strncmp(poster, "http", 4)) snprintf(it->art_url, sizeof it->art_url, "%s", poster);
-    if (!strncmp(jstr(m, "background"), "http", 4))
+    if (!strncmp(jstr(m, "background"), "http", 4)) {
         snprintf(it->backdrop_url, sizeof it->backdrop_url, "%s", jstr(m, "background"));
+        if (it->art_url[0]) snprintf(it->art_alt_url, sizeof it->art_alt_url, "%s", jstr(m, "background"));
+    }
     if (!strncmp(jstr(m, "logo"), "http", 4))
         snprintf(it->logo_url, sizeof it->logo_url, "%s", jstr(m, "logo"));
     it->is_folder = series;
@@ -846,6 +848,7 @@ static void prow(evo_provider_row_t *rows, int *n, int max, const char *title, c
 {
     if (*n >= max || !detail || !detail[0]) return;
     evo_provider_row_t *r = &rows[(*n)++];
+    memset(r, 0, sizeof *r);
     r->id[0] = '\0';
     snprintf(r->title, sizeof r->title, "%s", title);
     snprintf(r->detail, sizeof r->detail, "%s", detail);
@@ -900,6 +903,10 @@ static void build_details(cJSON *meta, evo_provider_row_t *rows, int *n, int max
         const char *name = cJSON_IsString(e) ? e->valuestring : jstr(e, "name");
         if (!name[0]) continue;
         prow(rows, n, max, name, "Cast");
+        if (cJSON_IsObject(e) && *n > 0) {          /* TMDB-style addons: a full photo URL */
+            const char *ph = jstr(e, "photo")[0] ? jstr(e, "photo") : (jstr(e, "image")[0] ? jstr(e, "image") : jstr(e, "profile"));
+            if (!strncmp(ph, "http", 4)) snprintf(rows[*n - 1].art_url, sizeof rows[*n - 1].art_url, "%s", ph);
+        }
         ++cast;
     }
     cJSON *links = cJSON_GetObjectItem(meta, "links");

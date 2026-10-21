@@ -45,6 +45,7 @@
 
 #include <RmlUi/Core.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -342,7 +343,40 @@ struct FetchCtx {
     /* The cache path without an extension. on_art() appends the one it sniffs
      * from the bytes, because the type is not known before they arrive. */
     std::string base;
+    std::string provider, url;
+    bool alt_tried = false;
 };
+
+/* url -> the picture to use when it fails (see evo_provider_art_set_fallback). */
+std::unordered_map<std::string, std::string>& Fallbacks()
+{
+    static std::unordered_map<std::string, std::string> m;
+    return m;
+}
+
+/* The URL for the log: no query string, so a token never reaches evo.log. */
+std::string log_url(const std::string& u)
+{
+    return u.substr(0, u.find_first_of("?#"));
+}
+
+void on_art(int success, int status, const char* body, size_t len, void* ud);
+
+/* Start the download of ctx->url. False when the net queue refused it. */
+bool start_fetch(FetchCtx* ctx)
+{
+    char plex_auth[1200] = {0};
+    const char* headers[1];
+    int header_count = 0;
+    if (ctx->provider == "plex" &&
+        evo_plex_art_auth_header(ctx->url.c_str(), plex_auth, sizeof plex_auth)) {
+        headers[0] = plex_auth;
+        header_count = 1;
+    }
+    ART_LOG("art REQUEST provider=%s plex_auth=%d key=%s", ctx->provider.c_str(), header_count, ctx->key.c_str());
+    return evo_net_request_async_image("GET", ctx->url.c_str(), nullptr, header_count ? headers : nullptr,
+                                       header_count, on_art, ctx) == 0;
+}
 
 void on_art(int success, int status, const char* body, size_t len, void* ud)
 {
@@ -357,8 +391,17 @@ void on_art(int success, int status, const char* body, size_t len, void* ud)
         /* Remember the failure so the same broken URL is not retried on every
          * page turn - a poster wall of 404s would otherwise be 500 requests
          * per navigation. */
-        ART_LOG("art FETCH fail status=%d ok=%d len=%zu key=%s",
-                status, success, len, ctx->key.c_str());
+        ART_LOG("art FETCH fail status=%d ok=%d len=%zu provider=%s url=%s key=%s",
+                status, success, len, ctx->provider.c_str(), log_url(ctx->url).c_str(), ctx->key.c_str());
+        /* The server may list an image it cannot send: try the one other picture the item has. */
+        if (!ctx->alt_tried) {
+            auto fb = Fallbacks().find(ctx->url);
+            if (fb != Fallbacks().end() && !fb->second.empty()) {
+                ctx->alt_tried = true;
+                ctx->url = fb->second;
+                if (start_fetch(ctx)) { s.in_flight++; return; }
+            }
+        }
         it->second.failed = true;
         delete ctx;
         return;
@@ -370,10 +413,11 @@ void on_art(int success, int status, const char* body, size_t len, void* ud)
      * created by anything else, so this fopen used to fail every time. */
     const char* ext = sniff_ext(body, len);
     if (!ext) {
-        ART_LOG("art FORMAT unsupported magic=%02x%02x%02x%02x len=%zu key=%s",
+        ART_LOG("art FORMAT unsupported magic=%02x%02x%02x%02x len=%zu provider=%s url=%s key=%s",
                 (unsigned char)body[0], (unsigned char)(len > 1 ? body[1] : 0),
                 (unsigned char)(len > 2 ? body[2] : 0),
-                (unsigned char)(len > 3 ? body[3] : 0), len, ctx->key.c_str());
+                (unsigned char)(len > 3 ? body[3] : 0), len, ctx->provider.c_str(), log_url(ctx->url).c_str(),
+                ctx->key.c_str());
         it->second.failed = true;
         delete ctx;
         return;
@@ -475,31 +519,22 @@ extern "C" int evo_provider_art_request(const char* provider_id, const char* url
         return -2;
     }
 
-    FetchCtx* ctx = new FetchCtx{key, base};
-    char plex_auth[1200] = {0};
-    const char *headers[1];
-    int header_count = 0;
-
-    if (provider_id && strcmp(provider_id, "plex") == 0 &&
-        evo_plex_art_auth_header(url, plex_auth, sizeof plex_auth)) {
-        headers[0] = plex_auth;
-        header_count = 1;
-    }
-
-    ART_LOG("art REQUEST provider=%s plex_auth=%d key=%s",
-            provider_id ? provider_id : "",
-            header_count, key.c_str());
-
-    if (evo_net_request_async_image(
-            "GET", url, nullptr,
-            header_count ? headers : nullptr,
-            header_count, on_art, ctx) != 0) {
+    FetchCtx* ctx = new FetchCtx{key, base, provider_id ? provider_id : "", url};
+    if (!start_fetch(ctx)) {
         delete ctx;
         s.by_key.erase(key);
         return -1;
     }
     s.in_flight++;
     return 0;
+}
+
+extern "C" void evo_provider_art_set_fallback(const char* url, const char* alt)
+{
+    if (!url || !*url || !alt || !*alt || !strcmp(url, alt)) return;
+    auto& m = Fallbacks();
+    if (m.size() > 4096) m.clear();          /* a browsing session never needs the old ones */
+    m[url] = alt;
 }
 
 extern "C" int evo_provider_art_ready(const char* key)
@@ -564,22 +599,26 @@ extern "C" void evo_provider_art_poll(void)
     EvoRmlApp::Instance().MarkFrameDirty();
 }
 
-/* Plex Home artwork: separate metadata index; never modify evo_recent.txt.
- * Decoded buffers are retained for the process lifetime so both Home renderers
- * can safely use their pointers after the launch-params call returns. */
+/* Home artwork for provider items: a separate metadata index, keyed by the history key
+ * ("evo://<provider>/<item id>"); never modifies evo_recent.txt. Decoded buffers are
+ * retained for the process lifetime so both Home renderers can safely use their pointers
+ * after the launch-params call returns. */
 namespace {
-struct PlexHomeItem {
-    std::string id, poster, backdrop;
+struct HomeItem {
+    std::string key, provider, poster, backdrop;
     std::vector<uint32_t> poster_px, backdrop_px;
     int pw = 0, ph = 0, bw = 0, bh = 0;
+    bool logged_missing = false;
 };
-std::vector<PlexHomeItem>& plex_home_items() {
-    static std::vector<PlexHomeItem> v;
+constexpr size_t kHomeMax = 256;
+std::vector<HomeItem>& home_items() {
+    static std::vector<HomeItem> v;
     return v;
 }
-bool& plex_home_loaded() { static bool b = false; return b; }
-const char* plex_home_index() { return evo_data_path("evo_plex_home_art.tsv"); }
-bool plex_safe_url(const char* url) {
+bool& home_loaded() { static bool b = false; return b; }
+const char* home_index() { return evo_data_path("evo_home_art.tsv"); }
+const char* plex_old_index() { return evo_data_path("evo_plex_home_art.tsv"); }
+bool home_safe_url(const char* url) {
     if (!url || (strncmp(url,"http://",7) != 0 && strncmp(url,"https://",8) != 0)) return false;
     const size_t n = strlen(url);
     if (n > 1500 || n < 10 || strchr(url, '\n') || strchr(url, '\r') || strchr(url, '\t')) return false;
@@ -587,52 +626,72 @@ bool plex_safe_url(const char* url) {
     std::string u(url);
     for (char& c : u) c = (char)tolower((unsigned char)c);
     return u.find("token=") == std::string::npos &&
-           u.find("x-plex-token") == std::string::npos;
+           u.find("x-plex-token") == std::string::npos &&
+           u.find("api_key=") == std::string::npos;
 }
-void plex_home_load() {
-    if (plex_home_loaded()) return;
-    plex_home_loaded() = true;
-    FILE* f = fopen(plex_home_index(), "rb");
+/* "evo://jellyfin/i:123" -> "jellyfin" */
+std::string home_provider_of(const std::string& key) {
+    if (key.compare(0, 6, "evo://") != 0) return std::string();
+    const size_t e = key.find('/', 6);
+    return e == std::string::npos ? std::string() : key.substr(6, e - 6);
+}
+/* One line: key, poster, backdrop. `plex_old`: the first file this feature wrote, whose
+ * keys are bare Plex ids ("video:...") - they get the "evo://plex/" prefix. */
+void home_read(const char* path, bool plex_old) {
+    FILE* f = fopen(path, "rb");
     if (!f) return;
     char line[4096];
-    while (plex_home_items().size() < 128 && fgets(line, sizeof line, f)) {
+    while (home_items().size() < kHomeMax && fgets(line, sizeof line, f)) {
         char* a = strchr(line, '\t'); if (!a) continue; *a++ = 0;
         char* b = strchr(a, '\t'); if (!b) continue; *b++ = 0;
         b[strcspn(b, "\r\n")] = 0;
-        if (strncmp(line, "video:", 6) || strlen(line) > 255) continue;
-        PlexHomeItem item; item.id = line;
-        if (plex_safe_url(a)) item.poster = a;
-        if (plex_safe_url(b)) item.backdrop = b;
-        if (!item.poster.empty() || !item.backdrop.empty())
-            plex_home_items().push_back(std::move(item));
+        std::string key = line;
+        if (plex_old) {
+            if (key.compare(0, 6, "video:") != 0) continue;
+            key = "evo://plex/" + key;
+        }
+        if (key.size() > 300 || home_provider_of(key).empty()) continue;
+        HomeItem item; item.key = key; item.provider = home_provider_of(key);
+        if (home_safe_url(a)) item.poster = a;
+        if (home_safe_url(b)) item.backdrop = b;
+        if (item.poster.empty() && item.backdrop.empty()) continue;
+        bool dup = false;
+        for (const auto& o : home_items()) dup = dup || o.key == item.key;
+        if (!dup) home_items().push_back(std::move(item));
     }
     fclose(f);
 }
-void plex_home_save() {
-    std::string tmp = std::string(plex_home_index()) + ".tmp";
+void home_load() {
+    if (home_loaded()) return;
+    home_loaded() = true;
+    home_read(home_index(), false);
+    home_read(plex_old_index(), true);
+}
+void home_save() {
+    std::string tmp = std::string(home_index()) + ".tmp";
     FILE* f = fopen(tmp.c_str(), "wb");
     if (!f) return;
     bool ok = true;
-    for (const auto& item : plex_home_items()) {
-        if (fprintf(f, "%s\t%s\t%s\n", item.id.c_str(),
+    for (const auto& item : home_items()) {
+        if (fprintf(f, "%s\t%s\t%s\n", item.key.c_str(),
                     item.poster.c_str(), item.backdrop.c_str()) < 0) ok = false;
     }
     if (fclose(f) != 0) ok = false;
-    if (ok) rename(tmp.c_str(), plex_home_index());
+    if (ok) rename(tmp.c_str(), home_index());
     else remove(tmp.c_str());
 }
-const uint32_t* plex_home_decode(const std::string& url,
-                                  std::vector<uint32_t>& px, int& w, int& h) {
+const uint32_t* home_decode(const std::string& provider, const std::string& url,
+                            std::vector<uint32_t>& px, int& w, int& h) {
     if (url.empty()) return nullptr;
     if (!px.empty()) return px.data();
     char key[128];
-    int rc = evo_provider_art_request("plex", url.c_str(), key, sizeof key);
+    int rc = evo_provider_art_request(provider.c_str(), url.c_str(), key, sizeof key);
     if (rc < 0) return nullptr;
     if (rc != 1) return nullptr;
     /* Use the same on-disk cache as the provider browser. */
     std::string rel = "art/" + url_hash(url.c_str());
     char base[512];
-    if (evo_bundle_path("plex", rel.c_str(), base, sizeof base) != 0) return nullptr;
+    if (evo_bundle_path(provider.c_str(), rel.c_str(), base, sizeof base) != 0) return nullptr;
     for (const char* ext : kArtExts) {
         std::string path = std::string(base) + ext;
         FILE* f = fopen(path.c_str(), "rb");
@@ -644,49 +703,56 @@ const uint32_t* plex_home_decode(const std::string& url,
 }
 } // namespace
 
-extern "C" void evo_plex_home_art_capture(const char* id, const char* poster,
-                                            const char* backdrop) {
-    if (!id || strncmp(id, "video:", 6) || strlen(id) > 255) return;
-    plex_home_load();
-    const std::string p = plex_safe_url(poster) ? poster : "";
-    const std::string b = plex_safe_url(backdrop) ? backdrop : "";
+extern "C" void evo_home_art_capture(const char* provider, const char* item_id, const char* poster,
+                                     const char* backdrop) {
+    if (!provider || !*provider || !item_id || !*item_id) return;
+    const std::string key = std::string("evo://") + provider + "/" + item_id;
+    if (key.size() > 300) return;
+    home_load();
+    const std::string p = home_safe_url(poster) ? poster : "";
+    const std::string b = home_safe_url(backdrop) ? backdrop : "";
     if (p.empty() && b.empty()) return;
-    auto& v = plex_home_items();
+    auto& v = home_items();
     for (auto& item : v) {
-        if (item.id != id) continue;
+        if (item.key != key) continue;
         if (item.poster == p && item.backdrop == b) return;
         item.poster = p; item.backdrop = b;
         item.poster_px.clear(); item.backdrop_px.clear();
         item.pw = item.ph = item.bw = item.bh = 0;
-        plex_home_save(); return;
+        item.logged_missing = false;
+        home_save(); return;
     }
-    if (v.size() >= 128) v.erase(v.begin());
-    PlexHomeItem item; item.id = id; item.poster = p; item.backdrop = b;
+    if (v.size() >= kHomeMax) v.erase(v.begin());
+    HomeItem item; item.key = key; item.provider = provider; item.poster = p; item.backdrop = b;
     v.push_back(std::move(item));
-    plex_home_save();
+    home_save();
 }
 
-extern "C" const uint32_t* evo_plex_home_art_get(const char* history_key,
-                                                   int hero, int* w, int* h) {
+extern "C" const uint32_t* evo_home_art_get(const char* history_key, int hero, int* w, int* h) {
     if (w) *w = 0;
     if (h) *h = 0;
-    if (!history_key || strncmp(history_key, "evo://plex/", 11)) return nullptr;
-    plex_home_load();
-    const char* id = history_key + 11;
-    for (auto& item : plex_home_items()) {
-        if (item.id != id) continue;
+    if (!history_key || strncmp(history_key, "evo://", 6)) return nullptr;
+    home_load();
+    for (auto& item : home_items()) {
+        if (item.key != history_key) continue;
         const uint32_t* pixels = nullptr;
         int aw = 0, ah = 0;
         if (hero && !item.backdrop.empty()) {
-            pixels = plex_home_decode(item.backdrop, item.backdrop_px, item.bw, item.bh);
+            pixels = home_decode(item.provider, item.backdrop, item.backdrop_px, item.bw, item.bh);
             aw = item.bw; ah = item.bh;
         }
         if (!pixels) {
-            pixels = plex_home_decode(item.poster, item.poster_px, item.pw, item.ph);
+            pixels = home_decode(item.provider, item.poster, item.poster_px, item.pw, item.ph);
             aw = item.pw; ah = item.ph;
         }
         if (pixels) { if (w) *w = aw; if (h) *h = ah; }
         return pixels;
+    }
+    /* Nothing was ever saved for it (played before art was kept): say so once. */
+    static std::vector<std::string> told;
+    if (told.size() < 64 && std::find(told.begin(), told.end(), history_key) == told.end()) {
+        told.emplace_back(history_key);
+        ART_LOG("home art: no poster for %s", history_key);
     }
     return nullptr;
 }

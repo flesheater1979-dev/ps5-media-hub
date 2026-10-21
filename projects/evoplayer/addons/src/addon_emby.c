@@ -628,6 +628,17 @@ static void map_item(ms_client_t *c, cJSON *o, int ctx, evo_provider_item_t *it)
         if (bid)
             snprintf(it->backdrop_url, sizeof it->backdrop_url,
                      "%s/Items/%s/Images/Backdrop?maxWidth=1280&quality=70&format=jpg", base, bid);
+        /* If the poster is not there: an episode's own still, else the backdrop, else the thumb. */
+        const int is_episode = !strcmp(type, "Episode");
+        if (is_episode && jstr(o, "SeriesId")[0] && tags && cJSON_GetObjectItem(tags, "Primary"))
+            snprintf(it->art_alt_url, sizeof it->art_alt_url,
+                     "%s/Items/%s/Images/Primary?maxWidth=640&quality=70&format=jpg", base, id);
+        else if (bid)
+            snprintf(it->art_alt_url, sizeof it->art_alt_url,
+                     "%s/Items/%s/Images/Backdrop?maxWidth=640&quality=70&format=jpg", base, bid);
+        else if (tags && cJSON_GetObjectItem(tags, "Thumb"))
+            snprintf(it->art_alt_url, sizeof it->art_alt_url,
+                     "%s/Items/%s/Images/Thumb?maxWidth=640&quality=70&format=jpg", base, id);
         if (tags && cJSON_GetObjectItem(tags, "Logo"))
             snprintf(it->logo_url, sizeof it->logo_url,
                      "%s/Items/%s/Images/Logo?maxWidth=480", base, id);
@@ -988,13 +999,14 @@ int ms_item_action(ms_client_t *c, const char *item_id, const char *action,
 /* ------------------------------------------------------------------------- */
 
 typedef void (*ms_request_fn_t)(int ok, int status, const char *body, size_t len, void *ud);
-typedef struct { evo_provider_rows_cb cb; void *ud; } rows_ctx_t;
+typedef struct { evo_provider_rows_cb cb; void *ud; char base[200]; } rows_ctx_t;
 
 static void row_add(evo_provider_row_t *rows, int *n, int max, const char *id,
                     const char *title, const char *detail)
 {
     if (*n >= max) return;
     evo_provider_row_t *r = &rows[(*n)++];
+    memset(r, 0, sizeof *r);
     snprintf(r->id, sizeof r->id, "%s", id);
     snprintf(r->title, sizeof r->title, "%s", title);
     snprintf(r->detail, sizeof r->detail, "%s", detail);
@@ -1053,6 +1065,9 @@ static void on_details(int ok, int status, const char *body, size_t len, void *u
             cJSON *p = cJSON_GetArrayItem(ppl, i);
             if (strcmp(jstr(p, "Type"), "Actor")) continue;
             row_add(rows, &n, 16, "", jstr(p, "Name"), jstr(p, "Role")[0] ? jstr(p, "Role") : "Cast");
+            if (jstr(p, "PrimaryImageTag")[0] && jstr(p, "Id")[0] && n > 0)
+                snprintf(rows[n - 1].art_url, sizeof rows[n - 1].art_url,
+                         "%s/Items/%s/Images/Primary?maxHeight=120&quality=80&format=jpg", x->base, jstr(p, "Id"));
             ++cast;
         }
     }
@@ -1099,6 +1114,7 @@ int ms_panel(ms_client_t *c, const char *item_id, const char *kind, evo_provider
     rows_ctx_t *x = (rows_ctx_t *)calloc(1, sizeof *x);
     if (!x) return -2;
     x->cb = cb; x->ud = ud;
+    ms_base(c, x->base, sizeof x->base);
     char path[400];
     ms_request_fn_t fn = NULL;
     if (!strcmp(kind, "details")) {

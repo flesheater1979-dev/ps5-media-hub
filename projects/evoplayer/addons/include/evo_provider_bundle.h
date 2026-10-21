@@ -257,6 +257,10 @@ int evo_bundle_clear(const char *provider_id);
 int  evo_provider_art_request(const char *provider_id, const char *url,
                               char *out_key, size_t out_sz);
 
+/* When a fetch of `url` fails, fetch `alt` instead, once, under the same key. The
+ * card keeps its slot; only the letter tile is left when both fail. */
+void evo_provider_art_set_fallback(const char *url, const char *alt);
+
 /* 1 when `key` is registered and drawable. */
 int  evo_provider_art_ready(const char *key);
 
