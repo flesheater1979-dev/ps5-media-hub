@@ -123,8 +123,12 @@ int ms_load(ms_client_t *c)
         else if (!strncmp(line, "device_id=", 10))  snprintf(g->device_id, sizeof g->device_id, "%s", v);
     }
     fclose(f);
+    const bool had_id = g->device_id[0] != 0;
     ms_make_device_id(g);
     g->is_connected = g->token[0] && g->user_id[0];
+    /* An id made now is lost on the next start unless it is written: a server
+     * would see a new device every launch. Only for a server that is set up. */
+    if (!had_id && g->host[0]) ms_save(c);
     return 0;
 }
 
