@@ -287,12 +287,14 @@ void ProviderGridScreen::update(float dt)
     {
         /* Ease the shelves toward the focus (vertical) and each row toward its own window (horizontal). */
         const float k = 1.0f - std::exp(-dt * 14.0f);
+        /* Two rows fit on screen: never scroll so far that the last row sits alone at the top. */
+        const float want = static_cast<float>(std::min(shelf_focus_abs_, std::max(0, shelf_total_ - 2)));
         if (!scroll_snapped_)
         {
-            scroll_y_ = static_cast<float>(shelf_focus_abs_);
+            scroll_y_ = want;
             scroll_snapped_ = true;
         }
-        scroll_y_ += (static_cast<float>(shelf_focus_abs_) - scroll_y_) * k;
+        scroll_y_ += (want - scroll_y_) * k;
         for (const Shelf &s : shelves_)
         {
             if (s.abs_index < 0 || s.abs_index >= 32)
@@ -694,6 +696,17 @@ void ProviderGridScreen::draw_shelves(DrawList &list, const Context &ctx) const
             list.pop_opacity();
         }
         list.pop_opacity();
+    }
+
+    /* the scroll hint: a slim track on the right edge, its thumb on the rows now in view */
+    if (shelf_total_ > 2)
+    {
+        const float top = kShelfTop, h = 780.0f, x = 1884.0f;
+        const float n = static_cast<float>(shelf_total_);
+        const float th = std::max(48.0f, h * 2.0f / n);
+        const float ty = top + (h - th) * scroll_y_ / std::max(1.0f, n - 2.0f);
+        list.rounded_rect({x, top, 6.0f, h}, 3, kWhite.with_alpha(0.10f));
+        list.rounded_rect({x, ty, 6.0f, th}, 3, kWhite.with_alpha(0.55f));
     }
 
     /* the focus ring, over whatever it sits on */
