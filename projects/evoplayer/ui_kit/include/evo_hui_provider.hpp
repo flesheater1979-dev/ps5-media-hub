@@ -11,6 +11,7 @@
 
 #include "core/tween.hpp"
 #include "gfx/draw_list.hpp"
+#include "ui/components/skeleton.hpp"
 #include "ui/fonts.hpp"
 #include "ui/motion.hpp"
 
@@ -70,6 +71,8 @@ class ProviderGridScreen
     int variant_ = 0;
     std::string name_, icon_, options_hint_, crumb_, status_, query_, page_info_;
     bool loading_ = false, tuning_ = false, has_error_ = false, empty_ = false, multi_page_ = false;
+    mutable hui::ui::Skeleton skel_[6]; /* placeholder cards while a first load runs (#157) */
+    mutable float skel_time_ = 0.0f;
     bool folder_level_ = false, in_folder_ = false;
     int count_ = 0;
     std::vector<Row> rows_;

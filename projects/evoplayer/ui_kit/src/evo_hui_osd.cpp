@@ -217,6 +217,18 @@ void OsdScreen::update(float dt)
     }
     progress_.target = pct;
     progress_.update(dt, 14.0f);
+
+    /* The kit's ProgressBar draws the track and fill; the spring above stays
+     * the one source of motion so the thumb and the fill never disagree. */
+    bar_.style.height = 8.0f;
+    bar_.style.radius_source = ui::RadiusSource::pill;
+    bar_.style.track = ui::TrackStyle::flat;
+    bar_.style.placement = ui::LabelPlacement::none;
+    bar_.style.percent = false;
+    bar_.style.finish_flash = false;
+    bar_.set_bounds({kMargin, 920, 1920 - 2 * kMargin, 8});
+    bar_.set_value(std::max(progress_.value, 8.0f / (1920 - 2 * kMargin)), true);
+    bar_.update(dt);
 }
 
 bool OsdScreen::can_draw(const ui::Fonts &fonts) const
@@ -281,8 +293,10 @@ void OsdScreen::draw_bottom(DrawList &list, const Context &ctx) const
     else
     {
         const float f = progress_.value;
-        list.rounded_rect(track, 4, kWhite.with_alpha(0.22f));
-        list.rounded_rect({track.x, track.y, std::max(8.0f, track.w * f), track.h}, 4, p.accent);
+        bar_.style.color = p.accent;
+        bar_.style.theme.surface_high = kWhite.with_alpha(0.22f);
+        ui::Canvas canvas{list, fonts, 0, time_};
+        bar_.draw(canvas);
         const float tx = track.x + track.w * f;
         list.glow({tx - 9, track.cy() - 9, 18, 18}, 9, 10, p.accent.with_alpha(0.5f));
         list.circle(tx, track.cy(), 9, kWhite);

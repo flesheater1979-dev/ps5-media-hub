@@ -12,6 +12,7 @@
 #include "evo_features.h"
 
 #include "ui/glyphs.hpp"
+#include "ui/components/component.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -185,6 +186,20 @@ void TextureCache::tick()
 }
 
 /* ----------------------------------------------------------------- palette */
+
+ui::Theme Palette::kit_theme() const
+{
+    ui::Theme t = ui::default_theme();
+    t.surface = surface;
+    t.surface_high = Color::rgb(0xffffff, 0.16f);
+    t.text = text;
+    t.text_muted = text_muted;
+    t.primary = Color::rgb(0xffffff);
+    t.on_primary = Color::rgb(0x0b0d16);
+    t.accent = accent;
+    t.outline = border;
+    return t;
+}
 
 Palette Palette::from(const evo_rmlui_theme_t &t)
 {

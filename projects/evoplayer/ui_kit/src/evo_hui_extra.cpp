@@ -20,20 +20,6 @@ namespace ui = ::hui::ui;
 
 namespace
 {
-/* The kit's default theme in EVO's colours: a white focus plate with dark ink. */
-ui::Theme key_theme(const Palette &p)
-{
-    ui::Theme t = ui::default_theme();
-    t.surface = p.surface;
-    t.surface_high = p.surface;
-    t.text = p.text;
-    t.text_muted = p.text_muted;
-    t.primary = Color::rgb(0xffffff);
-    t.on_primary = Color::rgb(0x0b0d16);
-    t.accent = p.accent;
-    t.outline = p.border;
-    return t;
-}
 
 const Color kWhite = Color::rgb(0xffffff);
 const Color kInk = Color::rgb(0x0b0d16);
@@ -374,7 +360,7 @@ void KeyboardOverlay::draw(DrawList &list, const Context &ctx) const
 
     {
         ui::Keyboard &keys = const_cast<ui::Keyboard &>(keys_);
-        keys.style.theme = key_theme(p);
+        keys.style.theme = p.kit_theme();
         keys.style.panel = false;
         keys.style.surfaces = false;
         keys.set_bounds({kx, ky, 960.0f, 288.0f});

@@ -15,6 +15,7 @@
 #define EVO_HUI_OSD_HPP
 
 #include "evo_hui_screens.hpp"
+#include "ui/components/progress.hpp"
 
 namespace evo::kit
 {
@@ -57,6 +58,7 @@ class OsdScreen
     hui::tween::Spring loading_;
     hui::tween::Spring scrub_;
     hui::tween::Spring progress_;
+    mutable hui::ui::ProgressBar bar_; /* the seek track and fill (#157) */
     bool progress_snapped_ = false;
 };
 

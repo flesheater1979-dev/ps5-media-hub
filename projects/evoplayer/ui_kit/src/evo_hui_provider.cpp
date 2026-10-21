@@ -849,6 +849,25 @@ void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
     {
         draw_setup(list, ctx);
     }
+    else if (empty_ && loading_)
+    {
+        /* Nothing to show yet: the kit's skeleton cards hold the place. */
+        const float dt = std::clamp(ctx.time - skel_time_, 0.0f, 0.1f);
+        skel_time_ = ctx.time;
+        const float cw = 250.0f, gap = 24.0f;
+        ui::Canvas canvas{list, fonts, 0, ctx.time};
+        for (int i = 0; i < 6; ++i)
+        {
+            ui::Skeleton &s = skel_[i];
+            s.style.theme = pal.kit_theme();
+            s.style.kind = ui::SkeletonKind::card;
+            s.style.lines = 2;
+            s.style.picture = 0.72f;
+            s.set_bounds({kGridX + i * (cw + gap), 300.0f, cw, 380.0f});
+            s.update(dt);
+            s.draw(canvas);
+        }
+    }
     else if (empty_ && !loading_)
     {
         const float cx = (kGridX + kDetail.x + kDetail.w) * 0.5f;

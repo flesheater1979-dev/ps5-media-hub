@@ -19,6 +19,7 @@
 #include "gfx/draw_list.hpp"
 #include "ui/fonts.hpp"
 #include "ui/motion.hpp"
+#include "ui/theme.hpp"
 
 #include <cstdint>
 #include <map>
@@ -89,6 +90,9 @@ struct Palette
     hui::gfx::Color text_faint = hui::gfx::Color::rgb(0xffffff, 0.58f);
 
     static Palette from(const evo_rmlui_theme_t &theme);
+
+    /* The kit components' theme in EVO's colours (#157). */
+    hui::ui::Theme kit_theme() const;
 };
 
 struct Context

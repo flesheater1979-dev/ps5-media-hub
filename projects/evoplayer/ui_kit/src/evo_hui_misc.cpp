@@ -1,6 +1,8 @@
 #include "evo_hui_misc.hpp"
 
 #include "ui/glyphs.hpp"
+#include "ui/components/progress.hpp"
+#include "ui/widgets.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -109,31 +111,38 @@ void DialogOverlay::draw(DrawList &list, const Context &ctx) const
 
     if (progress_pct_ >= 0)
     {
-        const Rect bar{card.x + 40, cy + 10, w - 80, 6};
-        list.rounded_rect(bar, 3, kWhite.with_alpha(0.16f));
-        list.rounded_rect({bar.x, bar.y, std::max(6.0f, bar.w * (float)progress_pct_), bar.h}, 3, p.accent);
+        ui::ProgressBar bar;
+        bar.style.theme = p.kit_theme();
+        bar.style.height = 6.0f;
+        bar.style.radius_source = ui::RadiusSource::pill;
+        bar.style.track = ui::TrackStyle::flat;
+        bar.style.placement = ui::LabelPlacement::none;
+        bar.style.percent = false;
+        bar.style.finish_flash = false;
+        bar.set_bounds({card.x + 40, cy + 10, w - 80, 6});
+        bar.set_value(std::max(0.02f, static_cast<float>(progress_pct_)), true);
+        ui::Canvas canvas{list, fonts, 0, ctx.time};
+        bar.draw(canvas);
         cy += 30.0f;
     }
 
     if (!actions_.empty())
     {
+        ui::Theme theme = p.kit_theme();
+        theme.primary = p.accent;
+        theme.on_primary = kWhite;
+        theme.secondary = kWhite.with_alpha(0.1f);
+        theme.on_secondary = kWhite;
+        theme.radius = 100.0f;
+        ui::Painter paint(list, fonts, theme);
         float aw = (w - 80 - (actions_.size() - 1) * 20.0f) / actions_.size();
         for (std::size_t i = 0; i < actions_.size(); ++i)
         {
             Rect btn{card.x + 40 + i * (aw + 20), card.y + card.h - 80, aw, 48};
-            bool focused = (int)i == focused_action_;
-            if (focused)
-            {
-                list.rounded_rect(btn, 24, kWhite);
-            }
-            else
-            {
-                list.rounded_rect(btn, 24, kWhite.with_alpha(0.1f));
-                if (actions_[i].is_primary)
-                    list.bordered_rect(btn, 24, Color::rgb(0,0), 2.0f, p.accent);
-            }
-            Color txt = focused ? kInk : kWhite;
-            ui::text(list, fonts.semibold, fit(fonts.semibold, actions_[i].label, 18, aw - 20), btn.cx(), btn.cy() + 7, 18, txt, Align::center);
+            ui::Look look;
+            look.focus = (int)i == focused_action_ ? 1.0f : 0.0f;
+            paint.button(btn, fit(fonts.semibold, actions_[i].label, 18, aw - 20),
+                         actions_[i].is_primary ? ui::ButtonKind::primary : ui::ButtonKind::secondary, look);
         }
     }
 

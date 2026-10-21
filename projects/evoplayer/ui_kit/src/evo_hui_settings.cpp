@@ -2,6 +2,7 @@
  * evo_hui_settings.cpp - the settings screen on ps5-homebrew-ui. See the header.
  */
 #include "evo_hui_settings.hpp"
+#include "ui/widgets.hpp"
 
 #include "ui/glyphs.hpp"
 
@@ -221,13 +222,9 @@ void SettingsScreen::draw_row(DrawList &list, const Context &ctx, const RowData 
     {
         float on = toggles_[index].value;
         Rect pill{right - 64, r.cy() - 17, 64, 34};
-        list.rounded_rect(pill, 17, kWhite.with_alpha(0.16f));
-        if (on > 0.01f)
-        {
-            list.rounded_rect({pill.x, pill.y, 34 + 30 * on, 34}, 17, p.accent);
-        }
-        float knob_x = pill.x + 17 + 30 * on;
-        list.circle(knob_x, pill.cy(), 13, kWhite);
+        const ui::Theme theme = p.kit_theme();
+        ui::Painter paint(list, fonts, theme);
+        paint.toggle(pill, on, {});
     }
     else if (row.kind == EVO_RMLUI_ROW_VALUE && !row.badge.empty())
     {
