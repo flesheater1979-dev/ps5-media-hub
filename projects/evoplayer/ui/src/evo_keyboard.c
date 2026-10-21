@@ -12,13 +12,14 @@
 #include "evo_boot_log.h"       /* #34: every native-IME step lands in evo.log */
 #include "evo_boot_trace.h"     /* evo_bt: the pre-unjail probe also goes to klog */
 #include "evo_rmlui_bridge.h"   /* #81: the modal is an RmlUi document now */
+#include "qrcodegen.h"          /* the phone-link QR code */
 #if defined(EVO_APP_MODULE) && (defined(EVO_TARGET_PS5) || defined(__FreeBSD__))
 #include <unistd.h>             /* the phone link: this console's own address */
 #include <sys/socket.h>
 #include <netinet/in.h>
 #endif
 
-#define KB_MAX_BUF 256
+#define KB_MAX_BUF 520   /* 512 chars: the phone page and a long playlist URL */
 
 /*
  * #34: the native PS5 IME is back on the app module.
@@ -287,6 +288,7 @@ typedef struct {
     int             is_open;
     int             is_native_active;
     int             phone;       /* the phone page can answer this prompt */
+    int             secret;      /* a password: never echoed to the phone page */
     char            prompt[128]; /* the title without the phone-link hint */
     char            title[128];
     char            buffer[KB_MAX_BUF];
@@ -302,6 +304,15 @@ typedef struct {
 
 static evo_keyboard_state_t g_kb;
 
+/* The phone link as a QR code: encoded once when a phone prompt opens, drawn
+ * over the framebuffer by evo_screen_keyboard(). Version 5 at most (a plain
+ * http://ip:port/input link is version 2-3). */
+#define KB_QR_MAX_VER 5
+static uint8_t g_qr[qrcodegen_BUFFER_LEN_FOR_VERSION(KB_QR_MAX_VER)];
+static int     g_qr_ok;
+static uint8_t g_qr_mod[(4 * KB_QR_MAX_VER + 17) * (4 * KB_QR_MAX_VER + 17)];
+static int     g_qr_n;
+
 /*
  * Remote text entry. The dev remote polls /mnt/usb0/evo_cmd on its own thread,
  * so it parks the request here and evo_keyboard_update() (frame loop) applies
@@ -309,6 +320,8 @@ static evo_keyboard_state_t g_kb;
  */
 static volatile int g_pending_text;
 static volatile int g_pending_submit;
+static volatile unsigned g_pending_seq;   /* prompt the parked request was meant for; 0 = any */
+static volatile unsigned g_kb_seq;        /* bumps on every open, so a late phone POST cannot hit the next prompt */
 static char         g_pending_buf[KB_MAX_BUF];
 
 static void submit_text(void);
@@ -317,6 +330,7 @@ int evo_keyboard_queue_text(const char *text)
 {
     if (!g_kb.is_open || g_kb.is_native_active)
         return 0;
+    g_pending_seq = 0;
     snprintf(g_pending_buf, sizeof g_pending_buf, "%s", text ? text : "");
     g_pending_text = 1;
     return 1;
@@ -328,6 +342,33 @@ int evo_keyboard_queue_submit(void)
         return 0;
     g_pending_submit = 1;
     return 1;
+}
+
+int evo_keyboard_phone_state(evo_keyboard_phone_state_t *st)
+{
+    if (!st || !g_kb.is_open || !g_kb.phone || g_kb.is_native_active) return 0;
+    st->seq = g_kb_seq;
+    st->max_len = g_kb.max_len;
+    st->secret = g_kb.secret;
+    snprintf(st->prompt, sizeof st->prompt, "%s", g_kb.prompt);
+    snprintf(st->text, sizeof st->text, "%s", g_kb.secret ? "" : g_kb.buffer);
+    return 1;
+}
+
+int evo_keyboard_phone_submit(unsigned seq, const char *text, int submit)
+{
+    if (!g_kb.is_open || !g_kb.phone || g_kb.is_native_active || seq != g_kb_seq)
+        return 0;
+    snprintf(g_pending_buf, sizeof g_pending_buf, "%s", text ? text : "");
+    g_pending_seq = seq;
+    g_pending_text = 1;
+    if (submit) g_pending_submit = 1;
+    return 1;
+}
+
+void evo_keyboard_mark_secret(void)
+{
+    if (g_kb.is_open) g_kb.secret = 1;
 }
 
 /*
@@ -391,6 +432,8 @@ static void kb_open(const char *title, const char *initial_value, int max_len,
                     evo_keyboard_cb on_submit, void *userdata, int phone)
 {
     memset(&g_kb, 0, sizeof(g_kb));
+    g_kb_seq++;
+    g_qr_ok = 0;
     g_kb.is_open = 1;
     if (title) strncpy(g_kb.title, title, sizeof(g_kb.title) - 1);
     else strncpy(g_kb.title, "ENTER TEXT", sizeof(g_kb.title) - 1);
@@ -398,13 +441,26 @@ static void kb_open(const char *title, const char *initial_value, int max_len,
 
     /* The system IME is a separate dialog: it can neither show the phone link
      * nor take text from the phone, so a phone prompt always uses EVO's own. */
-    if (phone) {
+    (void)phone;   /* every prompt gets the phone link when the console has an address */
+    {
         char ip[32];
         phone_local_ip(ip, sizeof ip);
         if (ip[0]) {
             g_kb.phone = 1;
             snprintf(g_kb.title, sizeof g_kb.title, "%.48s - phone: %s:%d",
                      g_kb.prompt, ip, EVO_LOG_SERVER_PORT);
+            char url[64];
+            uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(KB_QR_MAX_VER)];
+            snprintf(url, sizeof url, "http://%s:%d/input", ip, EVO_LOG_SERVER_PORT);
+            g_qr_ok = qrcodegen_encodeText(url, tmp, g_qr, qrcodegen_Ecc_LOW,
+                                           qrcodegen_VERSION_MIN, KB_QR_MAX_VER,
+                                           qrcodegen_Mask_AUTO, true);
+            if (g_qr_ok) {
+                g_qr_n = qrcodegen_getSize(g_qr);
+                for (int y = 0; y < g_qr_n; y++)
+                    for (int x = 0; x < g_qr_n; x++)
+                        g_qr_mod[y * g_qr_n + x] = qrcodegen_getModule(g_qr, x, y) ? 1 : 0;
+            }
         }
     }
 
@@ -422,7 +478,7 @@ static void kb_open(const char *title, const char *initial_value, int max_len,
     g_kb.userdata = userdata;
 
 #if defined(EVO_TARGET_PS5) || defined(__FreeBSD__)
-    if (g_kb_type == EVO_KEYBOARD_TYPE_NATIVE && !g_native_ime_broken && !phone) {
+    if (g_kb_type == EVO_KEYBOARD_TYPE_NATIVE && !g_native_ime_broken && !g_kb.phone) {
         int cd_rc = init_native_ime_subsystem();
         if (cd_rc != 0) {
             /* No CommonDialog, no IME. Don't try again this session. */
@@ -541,6 +597,10 @@ const char *evo_keyboard_get_text(void)
 void evo_keyboard_update(void)
 {
     /* Apply anything the dev remote parked, on the frame loop's thread. */
+    if (g_pending_seq && g_pending_seq != g_kb_seq) {   /* meant for a prompt that is gone */
+        g_pending_text = 0;
+        g_pending_submit = 0;
+    }
     if (g_pending_text) {
         g_pending_text = 0;
         if (g_kb.is_open && !g_kb.is_native_active) {
@@ -795,6 +855,23 @@ int evo_keyboard_handle_input(uint32_t pressed)
  * unchanged. Closes #34 (the native IME path stays only as an opt-in for
  * non-app builds; the app module defaults to virtual).
  */
+/* White card with a 4-module quiet zone, in the right margin beside the panel
+ * (the panel spans x 260..1660). 0xAABBGGRR: opaque white / opaque black. */
+static void draw_phone_qr(uint32_t *fb)
+{
+    const int n = qrcodegen_getSize(g_qr);
+    const int px = 6, quiet = 4;
+    const int side = (n + 2 * quiet) * px;
+    const int x0 = 1680, y0 = 140;
+    for (int y = 0; y < side; y++)
+        for (int x = 0; x < side; x++) {
+            const int mx = x / px - quiet, my = y / px - quiet;
+            const int dark = mx >= 0 && my >= 0 && mx < n && my < n &&
+                             qrcodegen_getModule(g_qr, mx, my);
+            fb[(y0 + y) * 1920 + x0 + x] = dark ? 0xFF000000u : 0xFFFFFFFFu;
+        }
+}
+
 void evo_screen_keyboard(uint32_t *fb)
 {
     evo_keyboard_params_t p;
@@ -822,11 +899,16 @@ void evo_screen_keyboard(uint32_t *fb)
     p.max_len   = g_kb.max_len;
     p.focus_row = g_kb.row;
     p.focus_col = g_kb.col;
+    if (g_kb.phone && g_qr_ok) {
+        p.qr_size    = g_qr_n;
+        p.qr_modules = g_qr_mod;
+    }
 
     g_kb.blink_timer = (g_kb.blink_timer + 1) % 60;
     p.show_caret = (g_kb.blink_timer < 36);
 
     evo_rmlui_update_keyboard(&p);
     evo_rmlui_render_keyboard(fb, 1920, 1080);
+    if (g_kb.phone && g_qr_ok) draw_phone_qr(fb);
 }
 

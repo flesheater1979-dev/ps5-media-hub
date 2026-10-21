@@ -239,6 +239,8 @@ void KeyboardOverlay::set(const evo_keyboard_params_t &p)
     focus_col_ = p.focus_col;
     show_caret_ = p.show_caret != 0;
     cursor_ = p.cursor;
+    qr_size_ = (p.qr_modules && p.qr_size > 0) ? p.qr_size : 0;
+    qr_.assign(p.qr_modules, p.qr_modules + (size_t)qr_size_ * qr_size_);
 }
 
 void KeyboardOverlay::enter()
@@ -347,6 +349,24 @@ void KeyboardOverlay::draw(DrawList &list, const Context &ctx) const
             }
             ui::text(list, fonts.semibold, action_labels_[i], kx + i * aw + aw * 0.5f, ay + 34.0f, 18, txt, Align::center);
         }
+    }
+
+    // phone link: a white card with the QR code, right of the keyboard
+    if (qr_size_ > 0) {
+        const float px = 6.0f, quiet = 4.0f;
+        const float side = (qr_size_ + 2 * quiet) * px;
+        Rect qcard{card.x + card.w + 30.0f, card.y, side, side};
+        list.rounded_rect(qcard, 12, kWhite);
+        for (int y = 0; y < qr_size_; ++y) {
+            for (int x = 0; x < qr_size_;) {
+                if (!qr_[(size_t)y * qr_size_ + x]) { ++x; continue; }
+                int run = x;
+                while (run < qr_size_ && qr_[(size_t)y * qr_size_ + run]) ++run;
+                list.rounded_rect({qcard.x + (quiet + x) * px, qcard.y + (quiet + y) * px, (run - x) * px, px}, 0, kInk);
+                x = run;
+            }
+        }
+        ui::text(list, fonts.semibold, "SCAN TO TYPE", qcard.cx(), qcard.y + side + 30.0f, 14, p.text_muted, Align::center, 2.0f);
     }
 
     list.pop_opacity();

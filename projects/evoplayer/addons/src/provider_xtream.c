@@ -1024,6 +1024,18 @@ typedef struct {
     char query[64];
 } search_ctx_t;
 
+/* libc's strcasestr is a null import in the app module (SIGSEGV at addr 0). */
+static const char *xt_strcasestr(const char *h, const char *n)
+{
+    if (!*n) return h;
+    for (; *h; ++h) {
+        const char *a = h, *b = n;
+        while (*a && *b && tolower((unsigned char)*a) == tolower((unsigned char)*b)) { ++a; ++b; }
+        if (!*b) return h;
+    }
+    return NULL;
+}
+
 static void on_search_resp(int success, int status, const char *body, size_t len, void *ud)
 {
     (void)len;
@@ -1061,7 +1073,7 @@ static void on_search_resp(int success, int status, const char *body, size_t len
         if (!name || !name->valuestring) continue;
 
         /* Case-insensitive search match */
-        if (!strcasestr(name->valuestring, ctx->query)) continue;
+        if (!xt_strcasestr(name->valuestring, ctx->query)) continue;
 
         cJSON *sid = cJSON_GetObjectItem(obj, "stream_id");
         cJSON *icon = cJSON_GetObjectItem(obj, "stream_icon");

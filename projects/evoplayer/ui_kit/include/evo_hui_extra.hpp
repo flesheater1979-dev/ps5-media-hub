@@ -81,6 +81,8 @@ class KeyboardOverlay
     int focus_col_ = 0;
     bool show_caret_ = false;
     int cursor_ = 0;
+    int qr_size_ = 0;
+    std::vector<unsigned char> qr_;
 
     hui::tween::Spring enter_scale_;
     hui::tween::Spring enter_fade_;

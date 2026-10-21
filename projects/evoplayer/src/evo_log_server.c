@@ -14,7 +14,7 @@
  *                      playback (evo_stats.c) - tools/evo-dash.py graphs it
  *   GET /input         the phone page: type or paste text for the console's
  *                      open keyboard (evo_keyboard_open_phone) and send it
- *   GET /input/state   {"open":0|1,"title":"..."} for that page
+ *   GET /input/state   {"open","seq","title","text","max","secret"} for that page
  *   POST /input        the text as the body; needs the X-EVO-Input header
  *
  * Case-insensitive paths and trailing slashes are accepted for /input, /input/state,
@@ -115,23 +115,34 @@ static const char k_input_page[] =
 "@media(prefers-color-scheme:light){:root{--bg:#f5f5f5;--fg:#222;--dim:#666;--card:#fff;--line:#ddd;--ac:#0a66d6}}"
 "body{margin:0;font:17px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--fg)}"
 "main{max-width:560px;margin:0 auto;padding:20px 16px}h1{font-size:20px;margin:0 0 4px}"
-"#sub{color:var(--dim);margin:0 0 16px}"
+"#sub{color:var(--dim);margin:0 0 16px}#cnt{color:var(--dim);font-size:14px;text-align:right;margin:4px 0 0}"
 "textarea{width:100%;box-sizing:border-box;min-height:140px;font:16px/1.4 ui-monospace,monospace;padding:10px;"
 "border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}"
+"textarea.sec{-webkit-text-security:disc;text-security:disc;min-height:56px}"
 "button{width:100%;margin-top:12px;padding:14px;font:inherit;font-weight:600;border:0;border-radius:8px;background:var(--ac);color:#fff}"
 "button:disabled{opacity:.4}#msg{margin-top:12px;min-height:1.4em}"
 "</style><main><h1>EVO Player</h1><p id=sub>Checking...</p>"
-"<textarea id=t autocapitalize=off autocorrect=off spellcheck=false placeholder='Type or paste here'></textarea>"
-"<button id=b disabled>Send to PS5</button><p id=msg></p></main><script>"
-"var T=document.getElementById('t'),B=document.getElementById('b'),S=document.getElementById('sub'),M=document.getElementById('msg'),on=false;"
-"function poll(){fetch('/input/state').then(function(r){return r.json()}).then(function(s){"
-"on=!!s.open;B.disabled=!on;S.textContent=on?s.title:'Nothing is asking for text right now. Open a text box on the PS5 first.'"
-"}).catch(function(){on=false;B.disabled=true;S.textContent='Cannot reach the PS5'})}"
-"B.onclick=function(){B.disabled=true;M.textContent='Sending...';"
-"fetch('/input',{method:'POST',headers:{'X-EVO-Input':'1','Content-Type':'text/plain;charset=utf-8'},body:T.value.trim()})"
-".then(function(r){M.textContent=r.ok?'Sent. Check your PS5.':'The PS5 is not asking for text any more.';if(r.ok)T.value='';poll()})"
-".catch(function(){M.textContent='Could not reach the PS5.';B.disabled=false})};"
-"poll();setInterval(poll,2000);</script>";
+"<textarea id=t autocapitalize=off autocorrect=off autocomplete=off spellcheck=false placeholder='Type or paste here'></textarea>"
+"<p id=cnt></p><button id=b disabled>Send to PS5</button><p id=msg></p></main><script>"
+"var T=document.getElementById('t'),B=document.getElementById('b'),S=document.getElementById('sub'),M=document.getElementById('msg'),C=document.getElementById('cnt'),"
+"seq=-1,sec=false,dirty=false,busy=false;"
+"function cnt(){C.textContent=T.maxLength>0?T.value.length+' / '+T.maxLength:''}"
+"function poll(){if(busy)return;fetch('/input/state',{cache:'no-store'}).then(function(r){return r.json()}).then(function(s){"
+"if(!s.open){seq=-1;B.disabled=true;S.textContent='Nothing is asking for text right now. Open a text box on the PS5 first.';return}"
+"if(s.seq!==seq){var fresh=seq!==-1;seq=s.seq;dirty=false;sec=!!s.secret;T.className=sec?'sec':'';T.maxLength=s.max;T.value=s.text;"
+"if(fresh)M.textContent='New prompt on the PS5.';T.focus()}"
+"else if(!dirty&&T.value!==s.text)T.value=s.text;"
+"S.textContent=s.title;B.disabled=false;cnt()"
+"}).catch(function(){B.disabled=true;S.textContent='Cannot reach the PS5'})}"
+"T.oninput=function(){dirty=true;cnt()};"
+"B.onclick=function(){busy=true;B.disabled=true;M.textContent='Sending...';"
+"fetch('/input',{method:'POST',headers:{'X-EVO-Input':'1','X-EVO-Prompt':String(seq),'Content-Type':'text/plain;charset=utf-8'},body:sec?T.value:T.value.trim()})"
+".then(function(r){busy=false;"
+"if(r.ok){M.textContent='Sent. Check your PS5.';T.value='';dirty=false;seq=-2}"
+"else M.textContent=r.status==409?'The PS5 moved on to another prompt. Check it and send again.':'Could not send.';"
+"poll()})"
+".catch(function(){busy=false;M.textContent='Could not reach the PS5.';B.disabled=false})};"
+"poll();setInterval(poll,1000);</script>";
 
 typedef struct {
     int tail_now;
@@ -316,20 +327,35 @@ static const char *header_value(const char *req, const char *name)
     return NULL;
 }
 
-/* GET /input/state - is a phone-enabled keyboard waiting, and what it asks for. */
+/* Quote and escape for a JSON string; control characters become spaces. */
+static size_t json_esc(char *out, size_t cap, const char *in)
+{
+    size_t k = 0;
+    for (const char *p = in; *p && k + 3 < cap; ++p) {
+        unsigned char c = (unsigned char)*p;
+        if (c == '"' || c == '\\') { out[k++] = '\\'; out[k++] = (char)c; }
+        else if (c < 0x20)         out[k++] = ' ';
+        else                       out[k++] = (char)c;
+    }
+    out[k] = '\0';
+    return k;
+}
+
+/* GET /input/state - the open prompt: its id, what it asks for, and what is in the field now. */
 static void serve_input_state(int fd)
 {
-    char title[128], esc[320], body[400], head[200];
-    const int open = evo_keyboard_phone_info(title, sizeof title);
-    size_t k = 0;
-    for (const char *p = open ? title : ""; *p && k < sizeof esc - 4; ++p) {
-        unsigned char c = (unsigned char)*p;
-        if (c == '"' || c == '\\') { esc[k++] = '\\'; esc[k++] = (char)c; }
-        else if (c < 0x20)         esc[k++] = ' ';
-        else                       esc[k++] = (char)c;
+    evo_keyboard_phone_state_t st;
+    char title[320], text[1100], body[1700], head[200];
+    int n;
+    if (evo_keyboard_phone_state(&st)) {
+        json_esc(title, sizeof title, st.prompt);
+        json_esc(text, sizeof text, st.text);
+        n = snprintf(body, sizeof body,
+                     "{\"open\":1,\"seq\":%u,\"title\":\"%s\",\"text\":\"%s\",\"max\":%d,\"secret\":%d}",
+                     st.seq, title, text, st.max_len, st.secret);
+    } else {
+        n = snprintf(body, sizeof body, "{\"open\":0}");
     }
-    esc[k] = '\0';
-    int n = snprintf(body, sizeof body, "{\"open\":%d,\"title\":\"%s\"}", open, esc);
     snprintf(head, sizeof head,
              "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
              "Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n", n);
@@ -342,6 +368,10 @@ static void serve_input_state(int fd)
  * had been typed there. The custom header makes it a request a web page on
  * another site cannot send without a preflight this server never answers, so
  * only the page above (or curl -H 'X-EVO-Input: 1') can type into the console.
+ * X-EVO-Prompt names the prompt the text is for (the "seq" of /input/state); a
+ * request for a prompt that has since closed gets 409, so the user name never
+ * lands in the password box. Without the header it answers whatever is open.
+ * An empty body is valid (an empty password, "clear to reset").
  * The text itself is never logged.
  */
 static void serve_input_post(int fd, const char *head, const char *body, size_t blen, int too_big)
@@ -350,21 +380,24 @@ static void serve_input_post(int fd, const char *head, const char *body, size_t 
         send_str(fd, "HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
         return;
     }
-    if (too_big || blen == 0 || blen >= 512) {      /* 512 is the keyboard's own limit */
+    if (too_big || blen >= 512) {                   /* 512 is the keyboard's own limit */
         send_str(fd, "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
         return;
     }
-    if (!evo_keyboard_phone_info(NULL, 0)) {
-        send_str(fd, "HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\nno text prompt is open\n");
+    evo_keyboard_phone_state_t st;
+    const char *pv = header_value(head, "x-evo-prompt:");
+    if (!evo_keyboard_phone_state(&st) || (pv && (unsigned)strtoul(pv, NULL, 10) != st.seq)) {
+        send_str(fd, "HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\nthat text prompt is not open\n");
         return;
     }
     char text[512];
-    size_t n = blen < sizeof text - 1 ? blen : sizeof text - 1;
-    memcpy(text, body, n);
-    text[n] = '\0';
-    evo_keyboard_queue_text(text);
-    evo_keyboard_queue_submit();
-    evo_log("logsrv: phone input accepted (%zu chars)", n);
+    memcpy(text, body ? body : "", blen);
+    text[blen] = '\0';
+    if (!evo_keyboard_phone_submit(st.seq, text, 1)) {
+        send_str(fd, "HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\nthat text prompt is not open\n");
+        return;
+    }
+    evo_log("logsrv: phone input accepted (%zu chars)", blen);
     send_str(fd, "HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\nok\n");
 }
 

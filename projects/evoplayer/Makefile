@@ -97,7 +97,8 @@ UI_SRCS := \
     ui/src/evo_input.c \
     ui/src/evo_feedback.c \
     ui/src/evo_layout.c \
-    ui/src/evo_keyboard.c
+    ui/src/evo_keyboard.c \
+    ui/src/qrcodegen.c
 
 MEDIA_SRCS := \
     media/src/prospero_thumbnail.c \

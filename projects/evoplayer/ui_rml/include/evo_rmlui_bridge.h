@@ -739,6 +739,8 @@ typedef struct {
     int focus_col;
     int show_caret;
     int cursor;               /* caret as a byte offset into text */
+    int qr_size;              /* phone-link QR: modules per side, 0 = none */
+    const unsigned char* qr_modules;   /* qr_size * qr_size, row-major, 1 = dark */
 } evo_keyboard_params_t;
 void evo_rmlui_update_keyboard(const evo_keyboard_params_t* params);
 void evo_rmlui_render_keyboard(uint32_t* framebuffer, int width, int height);

@@ -75,6 +75,27 @@ void evo_keyboard_open_phone(const char *title,
 /* 1 and the prompt text while a phone-enabled keyboard is open, else 0. */
 int  evo_keyboard_phone_info(char *title, size_t tcap);
 
+/* What the phone page needs to mirror the open prompt. `seq` changes on every
+ * open, so a page that sees a new value knows a different prompt (the password
+ * after the user name) is now waiting. `text` is the field's current content
+ * (empty for a secret prompt). Returns 0 when no phone-enabled keyboard is open. */
+typedef struct {
+    unsigned seq;
+    int      max_len;
+    int      secret;
+    char     prompt[128];
+    char     text[520];
+} evo_keyboard_phone_state_t;
+int  evo_keyboard_phone_state(evo_keyboard_phone_state_t *st);
+
+/* Phone POST: set the field to `text` and, if `submit`, accept it. Refused (0)
+ * unless prompt `seq` is still the open one. */
+int  evo_keyboard_phone_submit(unsigned seq, const char *text, int submit);
+
+/* Call right after opening a password prompt: the phone page gets a masked box
+ * and the current text is never sent to it. */
+void evo_keyboard_mark_secret(void);
+
 /* Close the keyboard without submitting. */
 void evo_keyboard_close(void);
 
