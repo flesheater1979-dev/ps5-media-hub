@@ -490,7 +490,7 @@ extern "C" int evo_provider_art_request(const char* provider_id, const char* url
             provider_id ? provider_id : "",
             header_count, key.c_str());
 
-    if (evo_net_request_async(
+    if (evo_net_request_async_image(
             "GET", url, nullptr,
             header_count ? headers : nullptr,
             header_count, on_art, ctx) != 0) {

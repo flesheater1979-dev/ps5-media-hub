@@ -301,6 +301,7 @@ typedef struct evo_net_req {
     evo_net_cb  callback;
     void       *user_data;
     int         via_avio;       /* run on FFmpeg's HTTP client (evo_http_avio.c) */
+    int         is_image;       /* a picture: runs on the image workers, never ahead of a page */
 
     /* Result */
     int         completed;
@@ -311,7 +312,10 @@ typedef struct evo_net_req {
     size_t      response_len;
 } evo_net_req_t;
 
+#define EVO_NET_IMAGE_WORKERS 2
 static pthread_t       g_worker_thread;
+static pthread_t       g_image_threads[EVO_NET_IMAGE_WORKERS];
+static int             g_image_threads_up = 0;
 static pthread_mutex_t g_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  g_queue_cond  = PTHREAD_COND_INITIALIZER;
 static int             g_running     = 0;
@@ -1246,13 +1250,20 @@ extern int evo_avio_execute(const char *method, const char *url, const char *pos
 /* Background worker thread */
 static void *evo_net_worker(void *arg)
 {
-    (void)arg;
+    /* arg != NULL: an image worker. Posters have their own workers, so a catalog or
+     * a series page is never queued behind a row of poster downloads (#144). */
+    const int image_worker = arg != NULL;
 
     while (g_running) {
         evo_net_req_t *req = NULL;
 
         pthread_mutex_lock(&g_queue_mutex);
-        while (g_running && g_pending_count == 0) {
+        int pick = -1;
+        while (g_running) {
+            for (int i = 0; i < g_pending_count; i++) {
+                if (g_pending_queue[i]->is_image == image_worker) { pick = i; break; }
+            }
+            if (pick >= 0) break;
             pthread_cond_wait(&g_queue_cond, &g_queue_mutex);
         }
 
@@ -1261,9 +1272,9 @@ static void *evo_net_worker(void *arg)
             break;
         }
 
-        /* Dequeue first pending item */
-        req = g_pending_queue[0];
-        for (int i = 0; i < g_pending_count - 1; i++) {
+        /* Dequeue the first pending item of this worker's kind */
+        req = g_pending_queue[pick];
+        for (int i = pick; i < g_pending_count - 1; i++) {
             g_pending_queue[i] = g_pending_queue[i + 1];
         }
         g_pending_count--;
@@ -1312,6 +1323,11 @@ int evo_net_init(void)
         g_running = 0;
         return -1;
     }
+    g_image_threads_up = 0;
+    for (int i = 0; i < EVO_NET_IMAGE_WORKERS; i++) {
+        if (pthread_create(&g_image_threads[g_image_threads_up], NULL, evo_net_worker, (void *)1) == 0)
+            g_image_threads_up++;
+    }
 
     return 0;
 }
@@ -1326,6 +1342,8 @@ void evo_net_shutdown(void)
     pthread_mutex_unlock(&g_queue_mutex);
 
     pthread_join(g_worker_thread, NULL);
+    for (int i = 0; i < g_image_threads_up; i++) pthread_join(g_image_threads[i], NULL);
+    g_image_threads_up = 0;
 
     /* Free pending */
     for (int i = 0; i < g_pending_count; i++) {
@@ -1356,7 +1374,8 @@ static int request_async(const char *method,
                          int header_count,
                          evo_net_cb callback,
                          void *user_data,
-                         int via_avio)
+                         int via_avio,
+                         int is_image)
 {
     if (!method || !url || strlen(url) >= EVO_NET_MAX_URL || strlen(method) >= 16) {
         return EVO_NET_ASYNC_ERR_ARG;
@@ -1382,6 +1401,7 @@ static int request_async(const char *method,
     req->callback  = callback;
     req->user_data = user_data;
     req->via_avio  = via_avio;
+    req->is_image  = is_image ? 1 : 0;
 
     if (header_count > 0 && headers) {
         req->headers = (char **)calloc((size_t)header_count, sizeof(char *));
@@ -1409,7 +1429,7 @@ static int request_async(const char *method,
     }
 
     g_pending_queue[g_pending_count++] = req;
-    pthread_cond_signal(&g_queue_cond);
+    pthread_cond_broadcast(&g_queue_cond);   /* the right kind of worker must wake */
     pthread_mutex_unlock(&g_queue_mutex);
 
     return EVO_NET_ASYNC_OK;
@@ -1419,14 +1439,21 @@ int evo_net_request_async(const char *method, const char *url, const char *post_
                           const char **headers, int header_count,
                           evo_net_cb callback, void *user_data)
 {
-    return request_async(method, url, post_data, headers, header_count, callback, user_data, 0);
+    return request_async(method, url, post_data, headers, header_count, callback, user_data, 0, 0);
 }
 
 int evo_net_request_async_avio(const char *method, const char *url, const char *post_data,
                                const char **headers, int header_count,
                                evo_net_cb callback, void *user_data)
 {
-    return request_async(method, url, post_data, headers, header_count, callback, user_data, 1);
+    return request_async(method, url, post_data, headers, header_count, callback, user_data, 1, 0);
+}
+
+int evo_net_request_async_image(const char *method, const char *url, const char *post_data,
+                                const char **headers, int header_count,
+                                evo_net_cb callback, void *user_data)
+{
+    return request_async(method, url, post_data, headers, header_count, callback, user_data, 0, 1);
 }
 
 /* ---- Why a request failed, in words (the callback only gets success/status) ---- */
