@@ -763,6 +763,43 @@ void EvoRmlProviderHost::ItemsCallback(int ok, const evo_provider_item_t* items,
  * script, digits and ordinary punctuation are kept. Runs of spaces left behind
  * collapse to one and the ends are trimmed.
  */
+/*
+ * Styled letters LatoLatin cannot draw ("ᵁᴴᴰ ³⁸⁴⁰ᴾ", small caps, fullwidth),
+ * mapped to the plain ASCII they stand for. 0 when there is no mapping.
+ */
+static char fancy_to_ascii(unsigned cp)
+{
+    if (cp >= 0xFF01 && cp <= 0xFF5E) return (char)(cp - 0xFF01 + 0x21);   /* fullwidth */
+    if (cp >= 0x2074 && cp <= 0x2079) return (char)('4' + (cp - 0x2074));  /* ⁴..⁹ */
+    if (cp >= 0x2080 && cp <= 0x2089) return (char)('0' + (cp - 0x2080));  /* ₀..₉ */
+    switch (cp) {
+    case 0x2070: return '0';
+    case 0x2071: return 'i';
+    case 0x207F: return 'n';
+    case 0x207A: return '+';
+    case 0x207B: return '-';
+    }
+    static const struct { unsigned short cp; char c; } tbl[] = {
+        /* modifier capitals */
+        {0x1D2C,'A'},{0x1D2E,'B'},{0x1D30,'D'},{0x1D31,'E'},{0x1D33,'G'},{0x1D34,'H'},
+        {0x1D35,'I'},{0x1D36,'J'},{0x1D37,'K'},{0x1D38,'L'},{0x1D39,'M'},{0x1D3A,'N'},
+        {0x1D3C,'O'},{0x1D3E,'P'},{0x1D3F,'R'},{0x1D40,'T'},{0x1D41,'U'},{0x1D42,'W'},
+        /* modifier lowercase */
+        {0x1D43,'a'},{0x1D47,'b'},{0x1D9C,'c'},{0x1D48,'d'},{0x1D49,'e'},{0x1DA0,'f'},
+        {0x1D4D,'g'},{0x02B0,'h'},{0x02B2,'j'},{0x1D4F,'k'},{0x02E1,'l'},{0x1D50,'m'},
+        {0x1D52,'o'},{0x1D56,'p'},{0x02B3,'r'},{0x02E2,'s'},{0x1D57,'t'},{0x1D58,'u'},
+        {0x1D5B,'v'},{0x02B7,'w'},{0x02E3,'x'},{0x02B8,'y'},{0x1DBB,'z'},
+        /* small caps */
+        {0x1D00,'A'},{0x0299,'B'},{0x1D04,'C'},{0x1D05,'D'},{0x1D07,'E'},{0xA730,'F'},
+        {0x0262,'G'},{0x029C,'H'},{0x026A,'I'},{0x1D0A,'J'},{0x1D0B,'K'},{0x029F,'L'},
+        {0x1D0D,'M'},{0x0274,'N'},{0x1D0F,'O'},{0x1D18,'P'},{0x0280,'R'},{0xA731,'S'},
+        {0x1D1B,'T'},{0x1D1C,'U'},{0x1D20,'V'},{0x1D21,'W'},{0x028F,'Y'},{0x1D22,'Z'},
+    };
+    for (const auto& e : tbl)
+        if (e.cp == cp) return e.c;
+    return 0;
+}
+
 static Rml::String display_text(const char* in)
 {
     std::string out;
@@ -777,6 +814,7 @@ static Rml::String display_text(const char* in)
             cp = ((cp & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
             n = 3;
         } else if (cp >= 0xC0 && p[1]) {
+            cp = ((cp & 0x1F) << 6) | (p[1] & 0x3F);
             n = 2;
         }
         bool drop = cp >= 0x1F000 ||
@@ -788,6 +826,8 @@ static Rml::String display_text(const char* in)
             if (!out.empty() && out.back() != ' ') out.push_back(' ');
         } else if (*p == ' ') {
             if (!out.empty() && out.back() != ' ') out.push_back(' ');
+        } else if (n > 1 && fancy_to_ascii(cp)) {
+            out.push_back(fancy_to_ascii(cp));
         } else {
             out.append((const char*)p, (size_t)n);
         }
@@ -1713,8 +1753,13 @@ bool EvoRmlProviderHost::RenderKit(int width, int height)
     icon = (m_provider && m_provider->icon && m_provider->icon[0])
          ? std::string("../icons/") + m_provider->icon : std::string();
     p.provider_icon = icon.c_str();
-    /* Stremio: OPTIONS is where addons are added and removed - say so. */
-    p.options_hint = m_provider_id == "addons" ? "Add & manage addons" : "";
+    /* In-provider OPTIONS hint */
+    if (m_provider_id == "addons")
+        p.options_hint = "Add & manage addons";
+    else if (m_provider_id == "emby" || m_provider_id == "jellyfin" || m_provider_id == "nuvio")
+        p.options_hint = "Edit server";
+    else
+        p.options_hint = "";
     p.breadcrumb = m_model.breadcrumb.c_str();
     p.status = m_model.status.c_str();
     p.query = m_model.query.c_str();

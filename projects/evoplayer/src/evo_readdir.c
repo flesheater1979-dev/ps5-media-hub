@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <sys/stat.h>
@@ -46,7 +47,21 @@ evo_dir_t *evo_opendir(const char *path)
         fd = open(path, O_RDONLY);
     }
     if (fd < 0) {
-        evo_bt("evo_opendir: open('%s') failed (errno=%d)", path, errno);
+        /* The drive probe retries absent mounts (usb1..7, ext0/1) on every
+         * rescan; log each failing path once. */
+        static char seen[16][64];
+        static int  seen_n;
+        int e = errno, logged = 0;
+        for (int i = 0; i < seen_n; i++)
+            if (strncmp(seen[i], path, sizeof seen[i]) == 0) { logged = 1; break; }
+        if (!logged) {
+            if (seen_n < 16) {
+                strncpy(seen[seen_n], path, sizeof seen[0] - 1);
+                seen[seen_n++][sizeof seen[0] - 1] = 0;
+            }
+            evo_bt("evo_opendir: open('%s') failed (errno=%d)", path, e);
+        }
+        errno = e;
         return NULL;
     }
 
