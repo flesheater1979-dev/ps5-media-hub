@@ -9,6 +9,7 @@
 
 #include "core/tween.hpp"
 #include "gfx/draw_list.hpp"
+#include "ui/components/keyboard.hpp"
 #include "ui/fonts.hpp"
 #include "ui/motion.hpp"
 
@@ -68,6 +69,10 @@ class KeyboardOverlay
     bool focus(FocusInfo *out) const;
 
   private:
+    void sync_keys();
+    hui::ui::Keyboard keys_;
+    std::string layout_sig_;
+    bool keys_ready_ = false;
     bool visible_ = false;
     bool native_only_ = false;
     std::string title_;

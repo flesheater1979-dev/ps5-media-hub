@@ -20,6 +20,21 @@ namespace ui = ::hui::ui;
 
 namespace
 {
+/* The kit's default theme in EVO's colours: a white focus plate with dark ink. */
+ui::Theme key_theme(const Palette &p)
+{
+    ui::Theme t = ui::default_theme();
+    t.surface = p.surface;
+    t.surface_high = p.surface;
+    t.text = p.text;
+    t.text_muted = p.text_muted;
+    t.primary = Color::rgb(0xffffff);
+    t.on_primary = Color::rgb(0x0b0d16);
+    t.accent = p.accent;
+    t.outline = p.border;
+    return t;
+}
+
 const Color kWhite = Color::rgb(0xffffff);
 const Color kInk = Color::rgb(0x0b0d16);
 const Color kBlack = Color::rgb(0x000000);
@@ -241,6 +256,37 @@ void KeyboardOverlay::set(const evo_keyboard_params_t &p)
     cursor_ = p.cursor;
     qr_size_ = (p.qr_modules && p.qr_size > 0) ? p.qr_size : 0;
     qr_.assign(p.qr_modules, p.qr_modules + (size_t)qr_size_ * qr_size_);
+    sync_keys();
+}
+
+/* The kit's Keyboard only draws here; evo_keyboard.c owns the layout, the
+ * focus and the text. Mirror its four rows and its focus into the component. */
+void KeyboardOverlay::sync_keys()
+{
+    std::string sig;
+    for (int r = 0; r < 4; ++r) {
+        for (const std::string &k : rows_[r]) sig += k + '|';
+        sig += '/';
+    }
+    if (sig != layout_sig_) {
+        ui::KeyboardLayout layout;
+        layout.columns = 10;
+        for (int r = 0; r < 4; ++r) {
+            std::vector<ui::KeyboardKey> row;
+            for (size_t c = 0; c < rows_[r].size() && c < 10; ++c) {
+                ui::KeyboardKey key;
+                key.text = rows_[r][c];
+                row.push_back(std::move(key));
+            }
+            if (!row.empty()) layout.add_row(std::move(row));
+        }
+        keys_.set_layouts({std::move(layout)});
+        layout_sig_ = sig;
+    }
+    const bool on_keys = focus_row_ >= 0 && focus_row_ < 4;
+    keys_.set_active(on_keys);
+    if (on_keys) keys_.set_focus(focus_row_, focus_col_, !keys_ready_);
+    keys_ready_ = true;
 }
 
 void KeyboardOverlay::enter()
@@ -250,17 +296,18 @@ void KeyboardOverlay::enter()
     enter_fade_.snap(0.0f);
     enter_fade_.target = 1.0f;
     ring_snapped_ = false;
+    keys_ready_ = false;
+    keys_.enter();
 }
 
 void KeyboardOverlay::update(float dt)
 {
     enter_scale_.update(dt, 16.0f);
     enter_fade_.update(dt, 20.0f);
+    keys_.update(dt);
 
     Rect target{};
-    if (focus_row_ >= 0 && focus_row_ < 4) {
-        target = {340.0f + 140.0f + focus_col_ * 96.0f, 440.0f + 180.0f + focus_row_ * 72.0f, 96.0f, 72.0f};
-    } else if (focus_row_ == 4 && focus_col_ >= 0 && focus_col_ < (int)action_labels_.size()) {
+    if (focus_row_ == 4 && focus_col_ >= 0 && focus_col_ < (int)action_labels_.size()) {
         float aw = 960.0f / std::max(1, (int)action_labels_.size());
         target = {340.0f + 140.0f + focus_col_ * aw, 440.0f + 180.0f + 4 * 72.0f + 20.0f, aw, 56.0f};
     }
@@ -325,19 +372,19 @@ void KeyboardOverlay::draw(DrawList &list, const Context &ctx) const
     float kx = card.x + 140.0f;
     float ky = card.y + 180.0f;
 
-    if (ring_snapped_) {
-        list.rounded_rect(ring_.value(), 16, kWhite);
-    }
-
-    for (int r = 0; r < 4; ++r) {
-        for (size_t c = 0; c < rows_[r].size() && c < 10; ++c) {
-            bool focused = (focus_row_ == r && focus_col_ == (int)c);
-            Color txt = focused ? kInk : kWhite;
-            ui::text(list, fonts.regular, rows_[r][c], kx + c * 96.0f + 48.0f, ky + r * 72.0f + 48.0f, 32, txt, Align::center);
-        }
+    {
+        ui::Keyboard &keys = const_cast<ui::Keyboard &>(keys_);
+        keys.style.theme = key_theme(p);
+        keys.style.panel = false;
+        keys.style.surfaces = false;
+        keys.set_bounds({kx, ky, 960.0f, 288.0f});
+        ui::Canvas canvas{list, fonts, 0, ctx.time};
+        keys_.draw(canvas);
     }
 
     // action bar
+    if (ring_snapped_ && focus_row_ == 4)
+        list.rounded_rect(ring_.value(), 16, kWhite);
     if (!action_labels_.empty()) {
         float ay = ky + 4 * 72.0f + 20.0f;
         float aw = 960.0f / action_labels_.size();

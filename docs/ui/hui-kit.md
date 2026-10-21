@@ -43,8 +43,7 @@ Home, list (Recent / Favorites / audio tracks), file browser (with file
 operations and transfer progress), settings, player OSD (+ stats HUD, music
 view), subtitle picker, media info, about, changelog, safe-to-close, exit
 dialog and toasts. The navigation rail is drawn over every menu screen.
-Still RmlUi: Surround Studio, text reader, image viewer, virtual keyboard (being
-ported), provider screens.
+Still RmlUi: Surround Studio, text reader, image viewer, provider screens. The virtual keyboard draws its keys with the kit `Keyboard` component (EVO keeps focus and text, #157).
 
 Screens only *draw*: focus and input stay in `core/`. Each screen animates
 towards the state in its params (springs, staggered entrances) and reports its
