@@ -348,6 +348,8 @@ typedef struct evo_provider {
      */
     int  (*qc_start)(evo_provider_qc_code_cb cb, void *ud);
     int  (*qc_poll)(evo_provider_qc_cb cb, void *ud);
+    /* Optional: the user backed out of the code screen; drop the pending code. */
+    void (*qc_cancel)(void);
 
     /*
      * Optional. The embedded document family this provider renders with:

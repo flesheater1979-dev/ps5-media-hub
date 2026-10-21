@@ -87,7 +87,9 @@ static void on_pin(int ok, int status, const char *body, size_t len, void *ud) {
     start_cb = NULL;
 }
 static int plex_qc_start(evo_provider_qc_code_cb cb, void *ud) {
-    if (!cb || pending || start_cb || poll_cb) return -1;
+    /* A stale PIN (cancelled or expired) is simply replaced. */
+    if (!cb || start_cb || poll_cb) return -1;
+    pending = 0; pin_id = 0;
     start_cb = cb; start_ud = ud;
     int rc = evo_net_request_async("POST",
         "https://plex.tv/api/v2/pins?format=json", "",
@@ -124,6 +126,7 @@ static int plex_qc_poll(evo_provider_qc_cb cb, void *ud) {
     if (rc != 0) poll_cb = NULL;
     return rc;
 }
+static void plex_qc_cancel(void) { pending = 0; pin_id = 0; }
 static int plex_auth(evo_provider_auth_cb cb, void *ud) {
     if (!cb) return -1;
     cb(plex_signed_in(), plex_signed_in() ? "Plex account linked" : "Sign in using Plex link code", ud);
@@ -1544,6 +1547,7 @@ const evo_provider_t evo_provider_plex = {
     .report_progress = plex_report_progress,
     .needs_sign_in = plex_needs_sign_in,
     .qc_start = plex_qc_start, .qc_poll = plex_qc_poll,
+    .qc_cancel = plex_qc_cancel,
     .is_signed_in = plex_signed_in, .sign_out = plex_sign_out,
     .ui_embedded = "mediaserver"
 };

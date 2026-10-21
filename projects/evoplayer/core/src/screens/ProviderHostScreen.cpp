@@ -2323,6 +2323,11 @@ void ProviderHostScreen::beginSignIn()
     if (p->qc_start) {
         m_signIn = SignIn::QcStart;
         if (p->qc_start(&ProviderHostScreen::OnQcCode, this) == 0) return;
+        if (!p->sign_in) {
+            m_signIn = SignIn::None;
+            toast(p->name, "Could not reach the server");
+            return;
+        }
     }
     beginPasswordSignIn();
 }
@@ -2409,6 +2414,8 @@ bool ProviderHostScreen::signInQcInput(uint32_t pressed)
         evo_feedback(EVO_FB_CANCEL);
         m_qcCode.clear();
         m_signIn = SignIn::None;
+        const evo_provider_t* cp = evo_provider_find(m_providerId.c_str());
+        if (cp && cp->qc_cancel) cp->qc_cancel();
         evo_bt("prov_screen: quick connect for '%s' cancelled", m_providerId.c_str());
     }
     return true;
@@ -2439,7 +2446,7 @@ void ProviderHostScreen::renderQuickConnect(uint32_t* framebuffer, int width, in
                   p ? p->name : "the app");
     }
     params.empty_hint = hint;
-    params.empty_icon = "../icons/icon_emby.png";
+    params.empty_icon = provider_icon(p);
     if (m_providerId == "plex") {
     params.hint_count = 1;
     params.hints[0].glyph_path = "../icons/btn_circle.png";
@@ -2570,6 +2577,7 @@ void ProviderHostScreen::signInStep()
         std::snprintf(title, sizeof title, "Password for %s (empty if none)", m_signInUser.c_str());
         m_signIn = SignIn::Pass;
         evo_keyboard_open(title, "", 63, &ProviderHostScreen::OnSignInPass, this);
+        evo_keyboard_mark_secret();
         break;
     case SignIn::User:
     case SignIn::Pass:
