@@ -428,6 +428,8 @@ static void emit_root(evo_provider_items_cb cb, void *ud)
 }
 
 /* A meta from a catalog or search answer -> a row. */
+static void join_field(cJSON *v, char *out, size_t cap, int limit);
+
 static void map_meta(int a, cJSON *m, evo_provider_item_t *it)
 {
     evo_provider_item_clear(it);
@@ -444,6 +446,18 @@ static void map_meta(int a, cJSON *m, evo_provider_item_t *it)
     if (year[0] && rating[0]) snprintf(it->subtitle, sizeof it->subtitle, "%s · %s", year, rating);
     else snprintf(it->subtitle, sizeof it->subtitle, "%s", year[0] ? year : type_label(type));
     snprintf(it->overview, sizeof it->overview, "%s", jstr(m, "description"));
+    snprintf(it->rating, sizeof it->rating, "%s", rating);
+    {
+        char genres[64];
+        join_field(cJSON_GetObjectItem(m, "genres"), genres, sizeof genres, 3);
+        size_t b = 0;
+        it->facts[0] = '\0';
+        if (year[0]) b += (size_t)snprintf(it->facts + b, sizeof it->facts - b, "%s", year);
+        if (jstr(m, "runtime")[0])
+            b += (size_t)snprintf(it->facts + b, sizeof it->facts - b, "%s%s", b ? "  \xC2\xB7  " : "", jstr(m, "runtime"));
+        if (genres[0])
+            snprintf(it->facts + b, sizeof it->facts - b, "%s%s", b ? "  \xC2\xB7  " : "", genres);
+    }
     const char *poster = jstr(m, "poster");
     if (!strncmp(poster, "http", 4)) snprintf(it->art_url, sizeof it->art_url, "%s", poster);
     if (!strncmp(jstr(m, "background"), "http", 4))

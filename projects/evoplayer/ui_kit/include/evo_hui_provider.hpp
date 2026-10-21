@@ -77,6 +77,10 @@ class ProviderGridScreen
     int sel_progress_ = 0;
     std::string sel_title_, sel_sub_, sel_initial_, sel_overview_, sel_resume_, sel_art_key_;
     std::string sel_num_, sel_tech_, sel_now_, sel_next_, epg_status_;
+    std::string sel_rating_, sel_cert_, sel_cast_;
+    /* The shelves with a Details block (title, pills, description, cast) above the focused row. */
+    bool details_mode() const;
+    void draw_details(hui::gfx::DrawList &list, const Context &ctx) const;
     bool epg_setup_ = false;
     const std::uint32_t *sel_art_ = nullptr;
     int sel_art_w_ = 0, sel_art_h_ = 0;

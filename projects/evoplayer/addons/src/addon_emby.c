@@ -653,6 +653,25 @@ static void append_meta(cJSON *o, evo_provider_item_t *it)
         if (cJSON_IsString(v))
             n += (size_t)snprintf(meta + n, sizeof meta - n, "%s%s", i ? ", " : " · ", v->valuestring);
     }
+    /* the Details block on the shelves: the rating and the age rating as pills, the rest as one line */
+    if (rating > 0) snprintf(it->rating, sizeof it->rating, "%.1f", rating);
+    snprintf(it->cert, sizeof it->cert, "%s", off);
+    {
+        size_t b = 0;
+        it->facts[0] = '\0';
+        const int year = (int)jnum(o, "ProductionYear");
+        if (year > 0) b += (size_t)snprintf(it->facts + b, sizeof it->facts - b, "%d", year);
+        const int mins = (int)(jnum(o, "RunTimeTicks") / 600000000.0);
+        if (mins >= 60 && mins < 1000)
+            b += (size_t)snprintf(it->facts + b, sizeof it->facts - b, "%s%dh %02dm", b ? "  \xC2\xB7  " : "", mins / 60, mins % 60);
+        else if (mins > 0 && mins < 60)
+            b += (size_t)snprintf(it->facts + b, sizeof it->facts - b, "%s%dm", b ? "  \xC2\xB7  " : "", mins);
+        for (int i = 0; g && i < 3 && i < cJSON_GetArraySize(g); ++i) {
+            cJSON *v = cJSON_GetArrayItem(g, i);
+            if (cJSON_IsString(v))
+                b += (size_t)snprintf(it->facts + b, sizeof it->facts - b, "%s%s", i ? ", " : (b ? "  \xC2\xB7  " : ""), v->valuestring);
+        }
+    }
     size_t have = strlen(it->subtitle);
     if (meta[0] && have + strlen(meta) < sizeof it->subtitle)
         snprintf(it->subtitle + have, sizeof it->subtitle - have, "%s", meta);

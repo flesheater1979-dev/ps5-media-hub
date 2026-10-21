@@ -665,6 +665,9 @@ typedef struct {
     const char* selected_subtitle;
     const char* selected_initial;
     const char* selected_overview;
+    const char* selected_rating;     /* "7.8" - the Details block on the shelves */
+    const char* selected_cert;       /* "PG-13" */
+    const char* selected_cast;       /* "Margaret Qualley, Gabriel Basso, ..." */
     const char* selected_resume;
     const char* selected_art_key;
     const uint32_t* selected_art;

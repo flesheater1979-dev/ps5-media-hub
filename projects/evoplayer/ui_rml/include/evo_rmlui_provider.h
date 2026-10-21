@@ -106,6 +106,8 @@ struct EvoShelfCard {
     Rml::String id, title, subtitle, overview, art, initial, now, next;
     std::string art_url, art_key;
     std::string backdrop_url, logo_url;
+    std::string rating, cert, facts, cast;   /* the Details block; cast comes later, from the details panel */
+    int  cast_state = 0;                     /* 0 not asked, 1 asked, 2 answered */
     bool is_folder = false, is_live = false, played = false, favorite = false, see_all = false;
     int  progress = 0;
     long long resume_sec = 0;
@@ -439,6 +441,7 @@ private:
     void FillShelfParams(evo_hui_provider_params_t& p, EvoRenderBridge* r);
     const EvoProviderRow* ShelfFocusedRow() const;
     static void ShelfCallback(int ok, const evo_provider_item_t* items, int count, int has_more, void* ud);
+    static void CastCallback(int ok, const evo_provider_row_t* rows, int count, void* ud);
 
     std::vector<EvoShelf> m_shelves;
     bool m_shelves_on = false;          /* this provider shows its home as shelves */

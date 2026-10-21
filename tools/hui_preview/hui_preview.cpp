@@ -563,6 +563,16 @@ int main(int argc, char **argv)
         {"shelves", 17, [&] { clear_focus(); fill_shelves_fixture(prp, provider_art, 0, 2); }},
         {"shelves_low", 17, [&] { clear_focus(); fill_shelves_fixture(prp, provider_art, 2, 4); }},
         {"shelves_stremio", 17, [&] { clear_focus(); fill_provider_shelves_fixture(prp, provider_art, 0, 1, 2); }},
+        {"shelves_details_trending", 17, [&] {
+             clear_focus();
+             fill_provider_shelves_fixture(prp, provider_art, 0, 2, 3);
+             prp.selected_title = "Animals";
+             prp.selected_subtitle = "2025  \xC2\xB7  2h 04m  \xC2\xB7  Thriller, Mystery";
+             prp.selected_rating = "6.9";
+             prp.selected_cert = "R";
+             prp.selected_overview = "A retired detective is pulled back into a cold case when a stranger arrives with a photograph that should not exist.";
+             prp.selected_cast = "Jon Bernthal, Anya Taylor-Joy";
+         }},
         {"shelves_plex", 17, [&] { clear_focus(); fill_provider_shelves_fixture(prp, provider_art, 1, 0, 1); }},
         {"shelves_iptv", 17, [&] { clear_focus(); fill_provider_shelves_fixture(prp, provider_art, 2, 1, 0); }},
         {"shelves_iptv_low", 17, [&] { clear_focus(); fill_provider_shelves_fixture(prp, provider_art, 2, 2, 3); }},

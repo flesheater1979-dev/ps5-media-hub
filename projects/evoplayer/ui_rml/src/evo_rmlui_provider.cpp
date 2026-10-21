@@ -2542,6 +2542,9 @@ void EvoRmlProviderHost::AddShelfCards(EvoShelf& s, const evo_provider_item_t* i
         c.title = display_text(it.title);
         c.subtitle = display_text(it.subtitle);
         c.overview = display_text(it.overview);
+        c.rating = it.rating;
+        c.cert = it.cert;
+        c.facts = it.facts;
         c.art_url = it.art_url;
         c.backdrop_url = it.backdrop_url;
         c.logo_url = it.logo_url;
@@ -2733,6 +2736,49 @@ void EvoRmlProviderHost::PushShelfBackdrop()
     };
     step(m_bd_url, m_bd_key, m_bd_art);
     step(m_logo_url, m_logo_key, m_logo_art);
+
+    /* The cast is not in a catalog list: ask the provider's details panel once the cursor rests. */
+    if (c && c->cast_state == 0 && m_provider && m_provider->panel) {
+        struct Ctx { EvoRmlProviderHost* host; unsigned gen; int shelf; std::string id; };
+        EvoShelfCard& card = m_shelves[m_shelf_row].cards[m_shelves[m_shelf_row].col];
+        card.cast_state = 1;
+        Ctx* x = new Ctx{this, m_shelf_gen, m_shelf_row, std::string(card.id.c_str())};
+        if (m_provider->panel(x->id.c_str(), "details", &EvoRmlProviderHost::CastCallback, x) != 0) {
+            card.cast_state = 2;
+            delete x;
+        }
+    }
+}
+
+void EvoRmlProviderHost::CastCallback(int ok, const evo_provider_row_t* rows, int count, void* ud)
+{
+    struct Ctx { EvoRmlProviderHost* host; unsigned gen; int shelf; std::string id; };
+    Ctx* x = static_cast<Ctx*>(ud);
+    EvoRmlProviderHost* self = x->host;
+    const unsigned gen = x->gen;
+    const int shelf = x->shelf;
+    const std::string id = x->id;
+    delete x;
+    if (!self->IsOpen() || gen != self->m_shelf_gen || shelf < 0 || shelf >= (int)self->m_shelves.size()) return;
+    for (EvoShelfCard& c : self->m_shelves[shelf].cards) {
+        if (id != c.id.c_str()) continue;
+        c.cast_state = 2;
+        if (!ok) break;
+        /* The rows that are facts have these titles; every other row is a person. */
+        static const char* const kFacts[] = { "Rating", "Genres", "Studio", "Director", "Tagline" };
+        std::string cast;
+        int n = 0;
+        for (int i = 0; i < count && n < 5; ++i) {
+            bool fact = false;
+            for (const char* f : kFacts) fact = fact || !std::strcmp(rows[i].title, f);
+            if (fact || !rows[i].title[0]) continue;
+            cast += (n++ ? ", " : "");
+            cast += rows[i].title;
+        }
+        c.cast = cast;
+        self->m_dirty = true;
+        break;
+    }
 }
 
 void EvoRmlProviderHost::FillShelfParams(evo_hui_provider_params_t& p, EvoRenderBridge* r)
@@ -2800,6 +2846,13 @@ void EvoRmlProviderHost::FillShelfParams(evo_hui_provider_params_t& p, EvoRender
         p.selected_title = t.c_str();
         p.selected_subtitle = sub.c_str();
         p.selected_resume = resume.c_str();
+        /* the Details block (the kit draws it when there is a description) */
+        const EvoShelfCard& card = m_shelves[m_shelf_row].cards[m_shelves[m_shelf_row].col];
+        p.selected_overview = card.overview.c_str();
+        p.selected_rating = card.rating.c_str();
+        p.selected_cert = card.cert.c_str();
+        p.selected_cast = card.cast.c_str();
+        if (!card.facts.empty()) p.selected_subtitle = card.facts.c_str();
         p.selected_is_folder = f->is_folder;
         p.selected_played = f->played;
         p.selected_progress = f->progress;

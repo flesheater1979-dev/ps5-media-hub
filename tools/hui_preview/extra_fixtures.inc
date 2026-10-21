@@ -393,6 +393,18 @@ static void fill_provider_shelves_fixture(evo_hui_provider_params_t& p, std::vec
         static const char* const kS[4] = {"Popular - Movies", "Popular - Series", "Trending", "Cinemeta - Top"};
         for (int s = 0; s < 4; ++s)
             p.shelves[s].title = kS[s];
+        /* the Details block over the focused row */
+        p.selected_title = "Love of Your Life";
+        p.selected_subtitle = "2026  \xC2\xB7  1h 49m  \xC2\xB7  Drama, Romance";
+        p.selected_rating = "7.8";
+        p.selected_cert = "PG-13";
+        p.selected_overview =
+            "After years away, a woman returns to the small coastal town she grew up in and finds the summer she left "
+            "behind is still waiting for her, along with the one person she hoped never to see again. What starts as "
+            "a quiet visit turns into a season that changes everything.";
+        p.selected_cast = "Margaret Qualley, Gabriel Basso, Catherine Keener";
+        p.selected_resume = "";
+        p.logo = nullptr;      /* this title has no logo: its name is drawn */
     }
     else if (kind == 1)
     {

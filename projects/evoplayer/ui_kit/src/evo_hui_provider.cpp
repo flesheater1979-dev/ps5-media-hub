@@ -42,6 +42,7 @@ constexpr Rect kDetail{1288.0f, 214.0f, 536.0f, 700.0f};
 /* Shelves: rows of posters. */
 constexpr float kShelfTop = 214.0f;
 constexpr float kShelfPitch = 404.0f;
+constexpr float kDetailsShift = 330.0f;    /* the Details block above the focused shelf */
 constexpr float kPosterW = 176.0f;
 constexpr float kPosterH = 264.0f;
 constexpr float kCardStride = 198.0f;
@@ -203,6 +204,9 @@ void ProviderGridScreen::set(const evo_hui_provider_params_t &p)
     sel_sub_ = str(p.selected_subtitle);
     sel_initial_ = str(p.selected_initial);
     sel_overview_ = str(p.selected_overview);
+    sel_rating_ = str(p.selected_rating);
+    sel_cert_ = str(p.selected_cert);
+    sel_cast_ = str(p.selected_cast);
     sel_resume_ = str(p.selected_resume);
     sel_art_key_ = str(p.selected_art_key);
     sel_num_ = str(p.selected_num);
@@ -288,7 +292,7 @@ void ProviderGridScreen::update(float dt)
         /* Ease the shelves toward the focus (vertical) and each row toward its own window (horizontal). */
         const float k = 1.0f - std::exp(-dt * 14.0f);
         /* Two rows fit on screen: never scroll so far that the last row sits alone at the top. */
-        const float want = static_cast<float>(std::min(shelf_focus_abs_, std::max(0, shelf_total_ - 2)));
+        const float want = static_cast<float>(std::min(shelf_focus_abs_, std::max(0, shelf_total_ - (details_mode() ? 1 : 2))));
         if (!scroll_snapped_)
         {
             scroll_y_ = want;
@@ -335,7 +339,8 @@ void ProviderGridScreen::update(float dt)
 Rect ProviderGridScreen::shelf_card_rect(const Shelf &s, int card_index) const
 {
     const float sx = (s.abs_index >= 0 && s.abs_index < 32) ? scroll_x_[s.abs_index] : 0.0f;
-    const float y = kShelfTop + (static_cast<float>(s.abs_index) - scroll_y_) * kShelfPitch + 44.0f;
+    const float y = kShelfTop + (details_mode() ? kDetailsShift : 0.0f) +
+                    (static_cast<float>(s.abs_index) - scroll_y_) * kShelfPitch + 44.0f;
     return {kGridX + (static_cast<float>(card_index) - sx) * kCardStride, y, kPosterW, kPosterH};
 }
 
@@ -473,11 +478,75 @@ void ProviderGridScreen::draw_poster_card(DrawList &list, const Context &ctx, co
              row.is_live && !row.now.empty() ? pal.text_muted : pal.text_faint);
 }
 
+bool ProviderGridScreen::details_mode() const
+{
+    return shelves_active_ && has_selected_ && variant_ == EVO_HUI_PROVIDER_MEDIASERVER && !sel_overview_.empty();
+}
+
+/* The Details block over the focused shelf: title or logo, rating and facts as pills, the description, the cast. */
+void ProviderGridScreen::draw_details(DrawList &list, const Context &ctx) const
+{
+    const ui::Fonts &fonts = ctx.fonts;
+    const Palette &pal = ctx.palette;
+    const float x = kGridX;
+    const float w = 980.0f;
+    float y = kShelfTop;
+
+    /* the title's logo, or the title in the display font */
+    const std::uint32_t logo_tex = logo_ ? ctx.textures.pixels(logo_, logo_w_, logo_h_, hash_of(logo_key_)) : 0;
+    if (logo_tex)
+    {
+        Rect lr = contain_rect(logo_w_, logo_h_, {x, y - 6.0f, 420.0f, 84.0f});
+        list.image(logo_tex, lr, ::hui::gfx::kFullUv, kWhite);
+    }
+    else
+        ui::text(list, fonts.display, fonts.display.font->fit(sel_title_, 52, w), x, y + 52.0f, 52, kWhite);
+    y += 96.0f;
+
+    /* the pills: rating, certificate; then the plain facts (year, length, genres) */
+    float px = x;
+    auto pill = [&](const std::string &label, Color fill, Color ink)
+    {
+        const float tw = fonts.semibold.measure(label, 16, 0.6f);
+        Rect r{px, y, tw + 28.0f, 32.0f};
+        list.rounded_rect(r, 16, fill);
+        ui::text(list, fonts.semibold, label, r.cx(), r.y + 22.0f, 16, ink, Align::center, 0.6f);
+        px += r.w + 12.0f;
+    };
+    if (!sel_rating_.empty())
+        pill("IMDb " + sel_rating_, kAmber.with_alpha(0.95f), kBlack);
+    if (!sel_cert_.empty())
+        pill(sel_cert_, kWhite.with_alpha(0.16f), kWhite);
+    if (!sel_sub_.empty())
+        ui::text(list, fonts.regular, fonts.regular.font->fit(sel_sub_, 20, x + w - px), px + 6.0f, y + 23.0f, 20,
+                 pal.text_muted);
+    y += 70.0f;
+
+    /* the description, three lines */
+    y = ui::paragraph(list, fonts.regular, sel_overview_, x, y, 22, w, 32.0f, kWhite.with_alpha(0.86f), 3);
+
+    /* who is in it */
+    if (!sel_cast_.empty())
+    {
+        y += 10.0f;
+        const float lw = ui::text(list, fonts.semibold, "STARRING", x, y, 14, pal.text_faint, Align::left, 2.0f);
+        ui::text(list, fonts.regular, fonts.regular.font->fit(sel_cast_, 20, w - lw - 20.0f), x + lw + 16.0f, y + 1.0f,
+                 20, kWhite.with_alpha(0.9f));
+    }
+    if (!sel_resume_.empty())
+        ui::text(list, fonts.semibold, sel_resume_, 1824.0f, kShelfTop + 52.0f, 18, pal.accent, Align::right, 0.6f);
+}
+
 /* The focused card, top right: what it is, how far in (and what is on now). */
 void ProviderGridScreen::draw_selected_line(DrawList &list, const Context &ctx) const
 {
     if (!has_selected_)
         return;
+    if (details_mode())
+    {
+        draw_details(list, ctx);
+        return;
+    }
     const ui::Fonts &fonts = ctx.fonts;
     const Palette &pal = ctx.palette;
     const float rx = 1824.0f;
@@ -666,14 +735,25 @@ void ProviderGridScreen::draw_shelves(DrawList &list, const Context &ctx) const
     const ui::Fonts &fonts = ctx.fonts;
     const Palette &pal = ctx.palette;
 
+    const bool details = details_mode();
+    const float base = kShelfTop + (details ? kDetailsShift : 0.0f);
     for (const Shelf &s : shelves_)
     {
-        const float y = kShelfTop + (static_cast<float>(s.abs_index) - scroll_y_) * kShelfPitch;
-        if (y > 1010.0f || y < kShelfTop - 330.0f)
+        const float y = base + (static_cast<float>(s.abs_index) - scroll_y_) * kShelfPitch;
+        /* With the Details block there is room for the focused row only; the rows above slide away
+         * under it, the next row shows its title. */
+        if (y > 1010.0f || y < base - (details ? 120.0f : 330.0f))
             continue;
-        const float fade = y >= kShelfTop ? 1.0f : std::max(0.0f, 1.0f - (kShelfTop - y) / 260.0f);
+        const float fade = y >= base ? 1.0f : std::max(0.0f, 1.0f - (base - y) / (details ? 120.0f : 260.0f));
         const float rise = tween::stagger(age_, s.abs_index, 0.06f, 0.45f);
         list.push_opacity(fade * rise);
+        if (details && y > base + kShelfPitch * 0.5f)
+        {
+            ui::text(list, fonts.display, fonts.display.font->fit(s.title, 26, 900.0f), kGridX, y + 26, 26,
+                     kWhite.with_alpha(0.45f));
+            list.pop_opacity();
+            continue;
+        }
 
         /* the shelf's title and how many it holds */
         const bool focused_shelf = s.abs_index == shelf_focus_abs_;
@@ -726,6 +806,8 @@ void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
 {
     const std::uint32_t bd_tex = (shelves_active_ && bd_) ? ctx.textures.pixels(bd_, bd_w_, bd_h_, hash_of(bd_key_)) : 0;
     draw_backdrop(list, ctx, bd_tex, bd_alpha_);
+    if (details_mode())     /* keeps the text readable over a bright picture */
+        list.gradient_rect_h({0.0f, 0.0f, 1500.0f, 1080.0f}, 0, kBlack.with_alpha(0.72f), kBlack.with_alpha(0.0f));
     const ui::Fonts &fonts = ctx.fonts;
     const Palette &pal = ctx.palette;
     const bool xt = variant_ == EVO_HUI_PROVIDER_XTREAM;
