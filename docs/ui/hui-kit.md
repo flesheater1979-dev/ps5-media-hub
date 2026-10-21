@@ -63,7 +63,7 @@ setting switches them.
 ./tools/hui_preview.sh        # every screen -> output/uiview/hui_*.png (no console)
 ```
 
-Add a fixture in `tools/hui_preview/hui_preview.cpp` for a new screen or state.
+Add a fixture in `tools/hui_preview/hui_preview.cpp` for a new screen or state. The provider screens have fixtures for each home: `shelves` (Jellyfin), `shelves_stremio`, `shelves_plex`, `shelves_iptv`, `shelves_xtream` (poster, channel and category shelves side by side) and `livetv`/`xtream`/`provider_folder` for the See all levels; see [provider-architecture.md](../addons/provider-architecture.md#home-layout-shelves-for-every-provider).
 Layout questions are answered there; only run the console for behaviour.
 Hardware loop: [tooling.md](../build/tooling.md#hardware-cycle).
 
