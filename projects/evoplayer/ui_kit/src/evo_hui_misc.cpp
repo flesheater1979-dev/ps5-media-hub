@@ -130,7 +130,7 @@ void DialogOverlay::draw(DrawList &list, const Context &ctx) const
     {
         ui::Theme theme = p.kit_theme();
         theme.primary = p.accent;
-        theme.on_primary = kWhite;
+        theme.on_primary = ui::Painter::on(p.accent);
         theme.secondary = kWhite.with_alpha(0.1f);
         theme.on_secondary = kWhite;
         theme.radius = 100.0f;
