@@ -1,5 +1,7 @@
 #include "evo/screens/PlayerScreen.hpp"
 #include "evo/Application.hpp"
+#include "evo/screens/ProviderHostScreen.hpp"
+#include "evo_provider.h"
 #include "evo_rmlui_bridge.h"
 #include "evo_playback.h"
 #include "evo_demux.h"
@@ -147,6 +149,62 @@ void PlayerScreen::onExit() {
     StatefulScreen::onExit();
 }
 
+namespace {
+
+/*
+ * What the media server knows about the item on screen: its intro and credits,
+ * and the episode after it. Filled by two requests when a new item starts;
+ * answers for an item that is no longer playing are dropped.
+ */
+struct SegState {
+    std::string item;
+    std::vector<evo_provider_segment_t> segs;
+    std::string nextId, nextTitle;
+    bool hinted[8] = {};
+    bool autoplayed = false;
+};
+SegState g_seg;
+
+struct SegCtx { std::string item; };
+
+void on_segments(int ok, const evo_provider_segment_t* segs, int count, void* ud)
+{
+    auto* c = static_cast<SegCtx*>(ud);
+    if (ok && c->item == g_seg.item)
+        g_seg.segs.assign(segs, segs + count);
+    delete c;
+}
+
+void on_next(int ok, const char* id, const char* title, void* ud)
+{
+    auto* c = static_cast<SegCtx*>(ud);
+    if (ok && id && c->item == g_seg.item) {
+        g_seg.nextId = id;
+        g_seg.nextTitle = title ? title : "";
+    }
+    delete c;
+}
+
+/* The segment the playhead is inside (-1 for none). */
+int active_segment(double pos)
+{
+    for (size_t i = 0; i < g_seg.segs.size(); ++i)
+        if (pos >= g_seg.segs[i].start_sec - 0.5 && pos < g_seg.segs[i].end_sec - 1.0)
+            return static_cast<int>(i);
+    return -1;
+}
+
+void start_next_episode(const PlaybackSource& src)
+{
+    if (g_seg.nextId.empty() || g_seg.autoplayed) return;
+    g_seg.autoplayed = true;
+    toast("UP NEXT", g_seg.nextTitle.c_str());
+    std::string path = "evo://" + src.provider + "/" + g_seg.nextId;
+    ProviderHostScreen::launchRecent(path.c_str(), g_seg.nextTitle.c_str(), 0.0);
+}
+
+} // namespace
+
 bool PlayerScreen::handleInput(uint32_t pressed, uint32_t held, uint32_t released) {
     (void)released;
     auto playback = Application::getInstance().getPlaybackController();
@@ -189,6 +247,21 @@ bool PlayerScreen::handleInput(uint32_t pressed, uint32_t held, uint32_t release
         return true;
     }
     if (pressed & PadButtons::Triangle) {
+        /* Inside an intro or the credits, Triangle skips them. */
+        const PlaybackSource& src = playback->getSource();
+        const int seg = src.isProvider() ? active_segment(playback->getPositionSeconds()) : -1;
+        if (seg >= 0) {
+            const evo_provider_segment_t& sg = g_seg.segs[seg];
+            if (sg.kind == EVO_SEGMENT_OUTRO && !g_seg.nextId.empty()) {
+                start_next_episode(src);
+            } else if (sg.end_sec < playback->getDurationSeconds() - 2.0) {
+                playback->seekTo(sg.end_sec);
+                toast("PLAYBACK", sg.kind == EVO_SEGMENT_INTRO ? "Skipped intro" : "Skipped credits");
+            } else {
+                playback->seekTo(playback->getDurationSeconds() - 1.0);
+            }
+            return true;
+        }
         /* Aspect ratio, as it has always been on this screen. */
         playback->cycleViewMode();
         toast("VIEW MODE", playback->getViewMode() == ViewMode::Fit ? "FIT" :
@@ -291,6 +364,31 @@ void PlayerScreen::update(double deltaMs) {
     }
 
     uint64_t now = NowMs();
+
+    /* Skip prompts and "up next": only for a media-server item with a timeline. */
+    {
+        const PlaybackSource& src = playback->getSource();
+        if (src.isProvider() && !src.is_live && !src.item_id.empty()) {
+            if (src.item_id != g_seg.item) {
+                g_seg = SegState();
+                g_seg.item = src.item_id;
+                if (const evo_provider_t* p = evo_provider_find(src.provider.c_str())) {
+                    if (p->segments) p->segments(src.item_id.c_str(), on_segments, new SegCtx{src.item_id});
+                    if (p->next_item) p->next_item(src.item_id.c_str(), on_next, new SegCtx{src.item_id});
+                }
+            }
+            const int seg = active_segment(playback->getPositionSeconds());
+            if (seg >= 0 && seg < 8 && !g_seg.hinted[seg]) {
+                g_seg.hinted[seg] = true;
+                const bool outro = g_seg.segs[seg].kind == EVO_SEGMENT_OUTRO;
+                toast("TRIANGLE", outro ? (g_seg.nextId.empty() ? "Skip credits" : "Next episode")
+                                        : "Skip intro");
+            }
+            if (evo_pb_is_eof() && !g_seg.nextId.empty())
+                start_next_episode(src);
+        }
+    }
+
     /*
      * Hold the OSD up once the clip has finished.
      *

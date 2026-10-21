@@ -48,6 +48,11 @@ typedef struct emby_config {
     /* The path the server lives under behind a reverse proxy ("/jellyfin"),
      * "" at the root. Every request, image and stream URL is built under it. */
     char path[96];
+    /* This console's id on the server, made once and saved, so two consoles
+     * are two devices (not one hard-coded "evo-ps5"). */
+    char device_id[48];
+    /* Server transcoding (HLS): 0 only when a version will not open, 1 always. */
+    int  transcode;
 } emby_config_t;
 
 typedef enum { MS_EMBY = 0, MS_JELLYFIN = 1 } ms_kind_t;
@@ -97,6 +102,18 @@ int  ms_resolve(ms_client_t *c, const char *item_id,
                 evo_provider_resolve_cb cb, void *ud);
 void ms_report(ms_client_t *c, const char *item_id, int64_t pos_sec,
                int64_t dur_sec, evo_provider_play_state_t state);
+
+/* Mark played / unplayed, favourite / unfavourite (action "played", "unplayed",
+ * "fav", "unfav", or "transcode" to flip server transcoding). Catalog ids (i:, ser:, sea:a:b, fol:) are accepted as they are. */
+int  ms_item_action(ms_client_t *c, const char *item_id, const char *action,
+                    evo_provider_done_cb cb, void *ud);
+
+int  ms_panel(ms_client_t *c, const char *item_id, const char *kind, evo_provider_rows_cb cb, void *ud);
+
+/* Intro / credits stretches (Jellyfin media segments, Emby chapter markers) and
+ * the next episode of the item's series. */
+int  ms_segments(ms_client_t *c, const char *item_id, evo_provider_segments_cb cb, void *ud);
+int  ms_next_item(ms_client_t *c, const char *item_id, evo_provider_next_cb cb, void *ud);
 
 /* The version about to play (the provider's stream_chosen): later reports
  * carry its MediaSourceId and PlaySessionId. */

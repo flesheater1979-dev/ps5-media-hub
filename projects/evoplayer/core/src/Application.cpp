@@ -616,6 +616,7 @@ void* web_start_worker(void*) {
  */
 struct WebReport {
     bool on = false;
+    bool emby = false;      /* /emby/ prefix: Emby, else Jellyfin */
     std::string base;       /* scheme://host:port[/emby] */
     std::string item;
     std::string key;
@@ -666,7 +667,7 @@ void web_report_begin(const std::string& url) {
     if (idEnd == std::string::npos || idEnd == idStart || key.empty()) return;
 
     g_web_rep.base = url.substr(0, path);
-    if (low.compare(path, 6, "/emby/") == 0) g_web_rep.base += "/emby";
+    if (low.compare(path, 6, "/emby/") == 0) { g_web_rep.base += "/emby"; g_web_rep.emby = true; }
     g_web_rep.item = url.substr(idStart, idEnd - idStart);
     g_web_rep.key = key;
     g_web_rep.mediaSource = url_param(url, "MediaSourceId");
@@ -684,11 +685,16 @@ void web_report(const char* what, double pos) {
     char body[640];
     std::snprintf(body, sizeof body,
                   "{\"ItemId\":\"%s\",\"MediaSourceId\":\"%s\",\"PlaySessionId\":\"%s\","
-                  "\"PositionTicks\":%lld,\"CanSeek\":true,\"PlayMethod\":\"DirectStream\"}",
+                  "\"PositionTicks\":%lld,\"CanSeek\":true,\"PlayMethod\":\"DirectPlay\"}",
                   g_web_rep.item.c_str(), g_web_rep.mediaSource.c_str(),
                   g_web_rep.playSession.c_str(), (long long)(pos * 10000000.0));
     std::string url = g_web_rep.base + "/Sessions/Playing" + what;
-    std::string hdr = "X-Emby-Token: " + g_web_rep.key;
+    /* Emby reads X-Emby-Token; Jellyfin answers it 401 and wants the
+     * MediaBrowser Authorization header (Jellyfin has no /emby prefix). */
+    std::string hdr = g_web_rep.emby
+        ? "X-Emby-Token: " + g_web_rep.key
+        : std::string("Authorization: MediaBrowser Client=\"EVO Player\", Device=\"PlayStation 5\", "
+                      "DeviceId=\"evo-ps5-web\", Version=\"") + EVO_PLAYER_VERSION + "\", Token=\"" + g_web_rep.key + "\"";
     const char* headers[1] = { hdr.c_str() };
     evo_net_request_async("POST", url.c_str(), body, headers, 1, web_report_cb,
                           (void*)(what[0] ? what : "/start"));

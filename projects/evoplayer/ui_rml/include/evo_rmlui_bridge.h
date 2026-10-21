@@ -595,7 +595,27 @@ typedef struct {
     int             is_live;
     const char*     now;         /* EPG, "" when none */
     const char*     next;
+    int             see_all;     /* the "see all" card that ends a shelf */
 } evo_hui_provider_row_t;
+
+/*
+ * The media-server home as shelves: rows of posters (Continue Watching, Recently
+ * Added, one per library) instead of one folder level. The host keeps the data and
+ * the focus; a shelf carries a window of its cards, `first_card` being the index
+ * of the first one in the whole shelf.
+ */
+#define EVO_HUI_SHELVES      4
+#define EVO_HUI_SHELF_CARDS  11
+typedef struct {
+    const char* title;
+    int         abs_index;       /* position among the shelves that have cards */
+    int         total_cards;
+    int         first_card;      /* shelf index of cards[0] */
+    int         focus_card;      /* shelf index of the focused card, -1 when this shelf has no focus */
+    int         scroll_card;     /* the card window's left edge, in cards (the host's own scroll) */
+    int         card_count;
+    evo_hui_provider_row_t cards[EVO_HUI_SHELF_CARDS];
+} evo_hui_shelf_t;
 
 /* One row of the options side panel (Live TV options, guide picker). */
 #define EVO_HUI_PROVIDER_PANEL_ROWS 16
@@ -677,6 +697,14 @@ typedef struct {
     const char* panel_back;
     evo_hui_panel_row_t panel_rows[EVO_HUI_PROVIDER_PANEL_ROWS];
     int         panel_row_count;
+
+    /* Shelves (the media-server home). */
+    int         shelves_active;
+    int         shelf_count;       /* in `shelves` */
+    int         shelf_total;       /* with cards, all */
+    int         shelf_focus_abs;   /* abs_index of the focused shelf */
+    int         item_menu;         /* Triangle opens the item menu */
+    evo_hui_shelf_t shelves[EVO_HUI_SHELVES];
 } evo_hui_provider_params_t;
 
 

@@ -87,6 +87,8 @@ extern int dbg_sub_cid;
 /* ---- lifecycle (demux/seek/open/close) ---- */
 void prospero_subtitle_clear(void);
 int  prospero_subtitle_load_for_media(const char *media_path);
+/* Load one subtitle file the caller fetched (a media server's sidecar); returns the cue count. */
+int  prospero_subtitle_load_external(const char *path);
 int  prospero_embedded_subtitle_open(AVFormatContext *format);
 void prospero_embedded_subtitle_reset(void);
 void prospero_embedded_subtitle_close(void);

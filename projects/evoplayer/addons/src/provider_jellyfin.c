@@ -57,6 +57,26 @@ static void jf_chosen(const char *id, const evo_stream_choice_t *ch)
     ms_stream_chosen(C, id, ch);
 }
 
+static int jf_item_action(const char *id, const char *action, evo_provider_done_cb cb, void *ud)
+{
+    return ms_item_action(C, id, action, cb, ud);
+}
+
+static int jf_segments(const char *id, evo_provider_segments_cb cb, void *ud)
+{
+    return ms_segments(C, id, cb, ud);
+}
+
+static int jf_next_item(const char *id, evo_provider_next_cb cb, void *ud)
+{
+    return ms_next_item(C, id, cb, ud);
+}
+
+static int jf_panel(const char *id, const char *kind, evo_provider_rows_cb cb, void *ud)
+{
+    return ms_panel(C, id, kind, cb, ud);
+}
+
 static const char *jf_get_source(void)          { return ms_get_source(C); }
 static int         jf_set_source(const char *v) { return ms_set_source(C, v); }
 
@@ -89,4 +109,8 @@ const evo_provider_t evo_provider_jellyfin = {
     .ui_embedded     = "mediaserver",
     .is_signed_in    = jf_signed_in,
     .sign_out        = jf_sign_out,
+    .item_action     = jf_item_action,
+    .segments        = jf_segments,
+    .next_item       = jf_next_item,
+    .panel           = jf_panel,
 };

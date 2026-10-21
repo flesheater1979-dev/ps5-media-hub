@@ -31,6 +31,7 @@ public:
     bool startPlaybackSource(const PlaybackSource& source,
                              double resumeOffset = 0.0) override;
     const std::string& getDisplayTitle() const override { return m_source.title; }
+    const PlaybackSource& getSource() const override { return m_source; }
     bool isLiveSource() const override { return m_source.is_live; }
     void stopPlayback() override;
 

@@ -47,6 +47,26 @@ static void emby_p_progress(const char *id, int64_t pos, int64_t dur, evo_provid
     ms_report(C, id, pos, dur, st);
 }
 
+static int emby_p_item_action(const char *id, const char *action, evo_provider_done_cb cb, void *ud)
+{
+    return ms_item_action(C, id, action, cb, ud);
+}
+
+static int emby_p_segments(const char *id, evo_provider_segments_cb cb, void *ud)
+{
+    return ms_segments(C, id, cb, ud);
+}
+
+static int emby_p_next_item(const char *id, evo_provider_next_cb cb, void *ud)
+{
+    return ms_next_item(C, id, cb, ud);
+}
+
+static int emby_p_panel(const char *id, const char *kind, evo_provider_rows_cb cb, void *ud)
+{
+    return ms_panel(C, id, kind, cb, ud);
+}
+
 static void emby_p_chosen(const char *id, const evo_stream_choice_t *ch)
 {
     ms_stream_chosen(C, id, ch);
@@ -74,6 +94,10 @@ const evo_provider_t evo_provider_emby = {
     .resolve         = emby_p_resolve,
     .report_progress = emby_p_progress,
     .stream_chosen   = emby_p_chosen,
+    .item_action     = emby_p_item_action,
+    .segments        = emby_p_segments,
+    .next_item       = emby_p_next_item,
+    .panel           = emby_p_panel,
     .get_source      = emby_p_get_source,
     .set_source      = emby_p_set_source,
     .web_ui_url      = emby_p_get_source,

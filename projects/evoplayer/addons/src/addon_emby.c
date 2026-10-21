@@ -36,9 +36,9 @@
 #define EVO_PLAYER_VERSION "dev"
 #endif
 
-#define MS_DEVICE_ID   "evo-ps5"
+#define MS_DEVICE_ID   "evo-ps5"      /* only until a device_id is made */
 #define MS_PAGE        96          /* rows per catalog request: twelve 8-card pages */
-#define MS_FIELDS      "Fields=Overview,ProductionYear,ChildCount&EnableImageTypes=Primary&ImageTypeLimit=1"
+#define MS_FIELDS      "Fields=Overview,ProductionYear,ChildCount,Genres,CommunityRating,OfficialRating,Taglines&EnableImageTypes=Primary&ImageTypeLimit=1"
 
 struct ms_client {
     ms_kind_t   kind;
@@ -56,6 +56,9 @@ struct ms_client {
     char chosen_item[96];
     char chosen_source[96];
     char chosen_session[64];
+    int  sort, filter;             /* library browsing: see sort_names / filter_names */
+    char genre[64];                /* "" = any */
+    int  chosen_transcode;         /* the chosen stream is a server transcode */
     char qc_secret[128];           /* Quick Connect in progress */
 };
 
@@ -77,6 +80,18 @@ emby_config_t *ms_config(ms_client_t *c) { return &c->cfg; }
 /* Config                                                                    */
 /* ------------------------------------------------------------------------- */
 
+/* A fresh id for this console, made once. Not a hardware serial: nothing here
+ * needs one, only that two consoles differ and one console stays the same. */
+static void ms_make_device_id(emby_config_t *g)
+{
+    if (g->device_id[0]) return;
+    unsigned long long a = (unsigned long long)time(NULL);
+    unsigned long long b = (unsigned long long)clock() * 2654435761ULL;
+    unsigned long long x = (a * 6364136223846793005ULL) ^ (b + (unsigned long long)(size_t)g);
+    snprintf(g->device_id, sizeof g->device_id, "evo-ps5-%08llx%08llx",
+             (x >> 32) & 0xffffffffULL, x & 0xffffffffULL);
+}
+
 int ms_load(ms_client_t *c)
 {
     emby_config_t *g = &c->cfg;
@@ -88,7 +103,7 @@ int ms_load(ms_client_t *c)
 
     FILE *f = fopen(evo_data_path(c->conf), "r");
     if (!f && c->usb_conf) f = fopen(c->usb_conf, "r");
-    if (!f) return 0;                    /* not set up yet - not an error */
+    if (!f) { ms_make_device_id(g); return 0; }   /* not set up yet - not an error */
 
     char line[1200];                     /* token= can be a long JWT */
     while (fgets(line, sizeof line, f)) {
@@ -104,8 +119,11 @@ int ms_load(ms_client_t *c)
         else if (!strncmp(line, "server_name=", 12)) snprintf(g->server_name, sizeof g->server_name, "%s", v);
         else if (!strncmp(line, "https=", 6))       g->use_https = atoi(v) ? true : false;
         else if (!strncmp(line, "path=", 5))        snprintf(g->path, sizeof g->path, "%s", v);
+        else if (!strncmp(line, "transcode=", 10))  g->transcode = atoi(v) ? 1 : 0;
+        else if (!strncmp(line, "device_id=", 10))  snprintf(g->device_id, sizeof g->device_id, "%s", v);
     }
     fclose(f);
+    ms_make_device_id(g);
     g->is_connected = g->token[0] && g->user_id[0];
     return 0;
 }
@@ -118,9 +136,9 @@ int ms_save(ms_client_t *c)
     if (!f) return -1;
     /* No password: the token is the session, and a password in a plain file
      * on the console is a password anyone with FTP can read. */
-    fprintf(f, "host=%s\nport=%d\nusername=%s\ntoken=%s\nuser_id=%s\nserver_name=%s\nhttps=%d\npath=%s\n",
+    fprintf(f, "host=%s\nport=%d\nusername=%s\ntoken=%s\nuser_id=%s\nserver_name=%s\nhttps=%d\npath=%s\ndevice_id=%s\ntranscode=%d\n",
             g->host, g->port, g->username, g->token, g->user_id, g->server_name,
-            g->use_https ? 1 : 0, g->path);
+            g->use_https ? 1 : 0, g->path, g->device_id, g->transcode);
     fclose(f);
     return 0;
 }
@@ -226,7 +244,7 @@ static void ms_auth_header(ms_client_t *c, int with_token, char *out, size_t cap
                      "%s: MediaBrowser Client=\"EVO Player\", Device=\"PlayStation 5\", "
                      "DeviceId=\"%s\", Version=\"%s\"",
                      c->kind == MS_EMBY ? "X-Emby-Authorization" : "Authorization",
-                     MS_DEVICE_ID, EVO_PLAYER_VERSION);
+                     c->cfg.device_id[0] ? c->cfg.device_id : MS_DEVICE_ID, EVO_PLAYER_VERSION);
     if (with_token && c->cfg.token[0] && n > 0 && (size_t)n < cap)
         snprintf(out + n, cap - (size_t)n, ", Token=\"%s\"", c->cfg.token);
 }
@@ -506,6 +524,8 @@ static void art_url(ms_client_t *c, const char *id, char *out, size_t cap)
 /* Context flags for the subtitle wording. */
 enum { CTX_LIST = 0, CTX_SEASON = 1, CTX_MIXED = 2 };
 
+static void append_meta(cJSON *o, evo_provider_item_t *it);
+
 static void map_item(ms_client_t *c, cJSON *o, int ctx, evo_provider_item_t *it)
 {
     evo_provider_item_clear(it);
@@ -525,6 +545,7 @@ static void map_item(ms_client_t *c, cJSON *o, int ctx, evo_provider_item_t *it)
     it->duration_sec = runtime;
     it->resume_pos_sec = (int64_t)(jnum(ud, "PlaybackPositionTicks") / 10000000.0);
     it->played = jbool(ud, "Played");
+    it->favorite = jbool(ud, "IsFavorite");
 
     if (!strcmp(type, "Series")) {
         snprintf(it->id, sizeof it->id, "ser:%s", id);
@@ -548,7 +569,25 @@ static void map_item(ms_client_t *c, cJSON *o, int ctx, evo_provider_item_t *it)
         it->kind = EVO_MEDIA_FOLDER;
         int n = (int)jnum(o, "ChildCount");
         if (n > 0) snprintf(it->subtitle, sizeof it->subtitle, "%d item%s", n, n == 1 ? "" : "s");
-        if (has_primary && !strcmp(type, "BoxSet")) art_url(c, id, it->art_url, sizeof it->art_url);
+        if (has_primary) art_url(c, id, it->art_url, sizeof it->art_url);
+    } else if (!strcmp(type, "Audio")) {
+        snprintf(it->id, sizeof it->id, "a:%s", id);
+        it->kind = EVO_MEDIA_AUDIO;
+        cJSON *artists = cJSON_GetObjectItem(o, "Artists");
+        cJSON *a0 = artists ? cJSON_GetArrayItem(artists, 0) : NULL;
+        const char *artist = (a0 && cJSON_IsString(a0)) ? a0->valuestring : jstr(o, "AlbumArtist");
+        snprintf(it->subtitle, sizeof it->subtitle, "%s%s%s", artist, artist[0] && rt[0] ? " · " : "", rt);
+        if (jstr(o, "AlbumId")[0]) art_url(c, jstr(o, "AlbumId"), it->art_url, sizeof it->art_url);
+        else if (has_primary)      art_url(c, id, it->art_url, sizeof it->art_url);
+    } else if (!strcmp(type, "TvChannel")) {
+        snprintf(it->id, sizeof it->id, "tv:%s", id);
+        it->kind = EVO_MEDIA_VIDEO;
+        it->is_live = 1;
+        cJSON *cp = cJSON_GetObjectItem(o, "CurrentProgram");
+        const char *num = jstr(o, "Number");
+        snprintf(it->subtitle, sizeof it->subtitle, "%s%s%s", num, num[0] && cp ? " · " : "", cp ? jstr(cp, "Name") : "");
+        snprintf(it->now_title, sizeof it->now_title, "%s", cp ? jstr(cp, "Name") : "");
+        if (has_primary) art_url(c, id, it->art_url, sizeof it->art_url);
     } else {
         snprintf(it->id, sizeof it->id, "i:%s", id);
         it->kind = EVO_MEDIA_VIDEO;
@@ -567,6 +606,37 @@ static void map_item(ms_client_t *c, cJSON *o, int ctx, evo_provider_item_t *it)
             else               snprintf(it->subtitle, sizeof it->subtitle, "%s", rt);
             if (has_primary) art_url(c, id, it->art_url, sizeof it->art_url);
         }
+    }
+    if (!strcmp(type, "Movie") || !strcmp(type, "Series") || !strcmp(type, "Episode"))
+        append_meta(o, it);
+}
+
+/* " · ★ 7.8 · PG-13 · Action, Drama" on the end of the subtitle line, and the
+ * tagline in front of the overview, when the server has them. */
+static void append_meta(cJSON *o, evo_provider_item_t *it)
+{
+    char meta[96] = "";
+    size_t n = 0;
+    double rating = jnum(o, "CommunityRating");
+    const char *off = jstr(o, "OfficialRating");
+    if (rating > 0) n += (size_t)snprintf(meta + n, sizeof meta - n, " · %.1f/10", rating);
+    if (off[0] && n < sizeof meta) n += (size_t)snprintf(meta + n, sizeof meta - n, " · %s", off);
+    cJSON *g = cJSON_GetObjectItem(o, "Genres");
+    for (int i = 0; g && i < 2 && i < cJSON_GetArraySize(g) && n < sizeof meta; ++i) {
+        cJSON *v = cJSON_GetArrayItem(g, i);
+        if (cJSON_IsString(v))
+            n += (size_t)snprintf(meta + n, sizeof meta - n, "%s%s", i ? ", " : " · ", v->valuestring);
+    }
+    size_t have = strlen(it->subtitle);
+    if (meta[0] && have + strlen(meta) < sizeof it->subtitle)
+        snprintf(it->subtitle + have, sizeof it->subtitle - have, "%s", meta);
+
+    cJSON *tl = cJSON_GetObjectItem(o, "Taglines");
+    cJSON *t0 = tl ? cJSON_GetArrayItem(tl, 0) : NULL;
+    if (t0 && cJSON_IsString(t0) && t0->valuestring[0] && jstr(o, "Overview")[0]) {
+        char buf[sizeof it->overview];
+        snprintf(buf, sizeof buf, "%s - %s", t0->valuestring, it->overview);
+        snprintf(it->overview, sizeof it->overview, "%s", buf);
     }
 }
 
@@ -614,7 +684,7 @@ static void on_items(int ok, int status, const char *body, size_t len, void *ud)
     }
 
     int n = cJSON_GetArraySize(arr);
-    int extra = x->root ? 2 : 0;
+    int extra = x->root ? 4 : 0;
     if (n + extra > EVO_PROVIDER_PAGE_MAX) n = EVO_PROVIDER_PAGE_MAX - extra;
     evo_provider_item_t *items = (evo_provider_item_t *)calloc((size_t)(n + extra) + 1, sizeof *items);
     if (!items) {
@@ -628,10 +698,13 @@ static void on_items(int ok, int status, const char *body, size_t len, void *ud)
     if (x->root) {
         add_virtual(&items[k++], "v:resume", "Continue Watching", "Pick up where you left off");
         add_virtual(&items[k++], "v:nextup", "Next Up", "The next episode of your shows");
+        add_virtual(&items[k++], "v:latest", "Recently Added", "New in your libraries");
+        add_virtual(&items[k++], "v:favs", "Favourites", "Items you starred");
     }
     for (int i = 0; i < n; ++i) {
         cJSON *o = cJSON_GetArrayItem(arr, i);
         if (!o || !jstr(o, "Id")[0]) continue;
+        if (!x->root && (!strcmp(jstr(o, "Type"), "Photo") || !strcmp(jstr(o, "Type"), "Book"))) continue;
         if (x->root) {
             /* A view: lib:<CollectionType>:<id>. */
             const char *ct = jstr(o, "CollectionType");
@@ -641,7 +714,9 @@ static void on_items(int ok, int status, const char *body, size_t len, void *ud)
             snprintf(items[k].subtitle, sizeof items[k].subtitle, "%s",
                      !strcmp(ct, "movies")  ? "Movies" :
                      !strcmp(ct, "tvshows") ? "TV Shows" :
-                     !strcmp(ct, "music")   ? "Music" : "Library");
+                     !strcmp(ct, "music")   ? "Music" :
+                     !strcmp(ct, "livetv")  ? "Live TV" :
+                     !strcmp(ct, "photos") || !strcmp(ct, "homevideos") ? "Photos (not playable yet)" : "Library");
             items[k].is_folder = 1;
             items[k].kind = EVO_MEDIA_FOLDER;
             k++;
@@ -693,18 +768,56 @@ int ms_list_catalog(ms_client_t *c, const char *parent_id, int page,
                  uid, start, MS_PAGE, MS_FIELDS);
         return items_request(c, path, CTX_MIXED, start, 0, cb, ud);
     }
+    if (!strncmp(parent_id, "sim:", 4)) {
+        const char *sid = strrchr(parent_id + 4, ':');
+        sid = sid ? sid + 1 : parent_id + 4;
+        snprintf(path, sizeof path, "/Items/%s/Similar?UserId=%s&Limit=48&%s", sid, uid, MS_FIELDS);
+        return items_request(c, path, CTX_MIXED, 0, 0, cb, ud);
+    }
+    if (!strcmp(parent_id, "v:latest")) {
+        if (page > 0) return -1;
+        snprintf(path, sizeof path, "/Users/%s/Items/Latest?Limit=48&GroupItems=true&%s",
+                 uid, MS_FIELDS);
+        return items_request(c, path, CTX_MIXED, 0, 0, cb, ud);
+    }
+    if (!strcmp(parent_id, "v:favs")) {
+        snprintf(path, sizeof path,
+                 "/Users/%s/Items?Filters=IsFavorite&Recursive=true"
+                 "&IncludeItemTypes=Movie,Series,Episode&SortBy=SortName&SortOrder=Ascending"
+                 "&StartIndex=%d&Limit=%d&%s",
+                 uid, start, MS_PAGE, MS_FIELDS);
+        return items_request(c, path, CTX_MIXED, start, 0, cb, ud);
+    }
     if (!strncmp(parent_id, "lib:", 4)) {
         char type[32] = "", id[96] = "";
         const char *colon = strchr(parent_id + 4, ':');
         if (!colon) return -1;
         snprintf(type, sizeof type, "%.*s", (int)(colon - (parent_id + 4)), parent_id + 4);
         snprintf(id, sizeof id, "%s", colon + 1);
+        if (!strcmp(type, "livetv")) {
+            snprintf(path, sizeof path,
+                     "/LiveTv/Channels?UserId=%s&AddCurrentProgram=true&StartIndex=%d&Limit=%d&%s",
+                     uid, start, MS_PAGE, MS_FIELDS);
+            return items_request(c, path, CTX_LIST, start, 0, cb, ud);
+        }
         const char *include = !strcmp(type, "movies")  ? "&Recursive=true&IncludeItemTypes=Movie" :
-                              !strcmp(type, "tvshows") ? "&Recursive=true&IncludeItemTypes=Series" : "";
+                              !strcmp(type, "tvshows") ? "&Recursive=true&IncludeItemTypes=Series" :
+                              !strcmp(type, "music")   ? "&Recursive=true&IncludeItemTypes=MusicAlbum" : "";
+        static const char *const sorts[] = { "SortBy=SortName&SortOrder=Ascending",
+                                             "SortBy=DateCreated,SortName&SortOrder=Descending",
+                                             "SortBy=ProductionYear,SortName&SortOrder=Descending",
+                                             "SortBy=CommunityRating,SortName&SortOrder=Descending" };
+        static const char *const filters[] = { "", "&Filters=IsUnplayed", "&Filters=IsFavorite" };
+        char genre[160] = "";
+        if (c->genre[0]) {
+            char esc[120];
+            if (evo_provider_url_escape(c->genre, esc, sizeof esc) >= 0)
+                snprintf(genre, sizeof genre, "&Genres=%s", esc);
+        }
         snprintf(path, sizeof path,
-                 "/Users/%s/Items?ParentId=%s%s&SortBy=SortName&SortOrder=Ascending"
-                 "&StartIndex=%d&Limit=%d&%s",
-                 uid, id, include, start, MS_PAGE, MS_FIELDS);
+                 "/Users/%s/Items?ParentId=%s%s&%s%s%s&StartIndex=%d&Limit=%d&%s",
+                 uid, id, include, sorts[c->sort % 4], filters[c->filter % 3], genre,
+                 start, MS_PAGE, MS_FIELDS);
         return items_request(c, path, CTX_LIST, start, 0, cb, ud);
     }
     if (!strncmp(parent_id, "ser:", 4)) {
@@ -723,7 +836,7 @@ int ms_list_catalog(ms_client_t *c, const char *parent_id, int page,
     }
     if (!strncmp(parent_id, "fol:", 4)) {
         snprintf(path, sizeof path,
-                 "/Users/%s/Items?ParentId=%s&SortBy=SortName&SortOrder=Ascending"
+                 "/Users/%s/Items?ParentId=%s&SortBy=ParentIndexNumber,IndexNumber,SortName&SortOrder=Ascending"
                  "&StartIndex=%d&Limit=%d&%s",
                  uid, parent_id + 4, start, MS_PAGE, MS_FIELDS);
         return items_request(c, path, CTX_LIST, start, 0, cb, ud);
@@ -746,12 +859,360 @@ int ms_search(ms_client_t *c, const char *query, int page,
 }
 
 /* ------------------------------------------------------------------------- */
+/* Item actions                                                              */
+/* ------------------------------------------------------------------------- */
+
+typedef struct { evo_provider_done_cb cb; void *ud; } act_ctx_t;
+
+static void on_action(int ok, int status, const char *body, size_t len, void *ud)
+{
+    (void)len;
+    act_ctx_t *x = (act_ctx_t *)ud;
+    const int good = ok && status >= 200 && status < 300;
+    if (!good) PROV_LOG("media server action -> ok=%d http=%d %.120s", ok, status, body ? body : "");
+    if (x->cb) x->cb(good, NULL, x->ud);
+    free(x);
+}
+
+/* The server's own id from a catalog id: i:<id>, ser:<id>, fol:<id>, sea:<series>:<season>. */
+static const char *item_server_id(const char *id)
+{
+    const char *p = strrchr(id, ':');
+    return p ? p + 1 : id;
+}
+
+int ms_item_action(ms_client_t *c, const char *item_id, const char *action,
+                   evo_provider_done_cb cb, void *ud)
+{
+    if (!c->cfg.is_connected || !item_id || !action) return -1;
+    if (!strcmp(action, "transcode")) {
+        c->cfg.transcode = !c->cfg.transcode;
+        ms_save(c);
+        if (cb) cb(1, c->cfg.transcode ? "Server transcoding: always"
+                                       : "Server transcoding: only when a file will not play", ud);
+        return 0;
+    }
+    {
+        static const char *const sort_names[] = { "Name", "Date added", "Release year", "Rating" };
+        static const char *const filter_names[] = { "Everything", "Unwatched only", "Favourites only" };
+        static char msg[96];
+        if (!strcmp(action, "sort")) {
+            c->sort = (c->sort + 1) % 4;
+            snprintf(msg, sizeof msg, "Sorted by %s", sort_names[c->sort]);
+            if (cb) cb(1, msg, ud);
+            return 0;
+        }
+        if (!strcmp(action, "filter")) {
+            c->filter = (c->filter + 1) % 3;
+            snprintf(msg, sizeof msg, "Showing %s", filter_names[c->filter]);
+            if (cb) cb(1, msg, ud);
+            return 0;
+        }
+        if (!strncmp(action, "genre:", 6)) {
+            snprintf(c->genre, sizeof c->genre, "%s", action + 6);
+            snprintf(msg, sizeof msg, c->genre[0] ? "Genre: %s" : "Any genre", c->genre);
+            if (cb) cb(1, msg, ud);
+            return 0;
+        }
+    }
+    const char *id = item_server_id(item_id);
+    if (!*id || !strcmp(item_id, "v:") || !strncmp(item_id, "v:", 2) || !strncmp(item_id, "lib:", 4))
+        return -1;
+    const int played = !strcmp(action, "played") || !strcmp(action, "unplayed");
+    const int on     = !strcmp(action, "played") || !strcmp(action, "fav");
+    if (!played && strcmp(action, "fav") && strcmp(action, "unfav")) return -1;
+
+    char path[512];
+    if (c->kind == MS_JELLYFIN)
+        snprintf(path, sizeof path, "/%s/%s?userId=%s", played ? "UserPlayedItems" : "UserFavoriteItems",
+                 id, c->cfg.user_id);
+    else
+        snprintf(path, sizeof path, "/Users/%s/%s/%s", c->cfg.user_id,
+                 played ? "PlayedItems" : "FavoriteItems", id);
+
+    act_ctx_t *x = (act_ctx_t *)calloc(1, sizeof *x);
+    if (!x) return -2;
+    x->cb = cb; x->ud = ud;
+    int rc = ms_request(c, on ? "POST" : "DELETE", path, NULL, 1, on_action, x);
+    if (rc != 0) free(x);
+    return rc;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Side-panel rows: details and cast, browse options, genres                  */
+/* ------------------------------------------------------------------------- */
+
+typedef void (*ms_request_fn_t)(int ok, int status, const char *body, size_t len, void *ud);
+typedef struct { evo_provider_rows_cb cb; void *ud; } rows_ctx_t;
+
+static void row_add(evo_provider_row_t *rows, int *n, int max, const char *id,
+                    const char *title, const char *detail)
+{
+    if (*n >= max) return;
+    evo_provider_row_t *r = &rows[(*n)++];
+    snprintf(r->id, sizeof r->id, "%s", id);
+    snprintf(r->title, sizeof r->title, "%s", title);
+    snprintf(r->detail, sizeof r->detail, "%s", detail);
+}
+
+static void on_details(int ok, int status, const char *body, size_t len, void *ud)
+{
+    (void)len;
+    rows_ctx_t *x = (rows_ctx_t *)ud;
+    cJSON *o = (ok && status == 200 && body) ? cJSON_Parse(body) : NULL;
+    evo_provider_row_t rows[16];
+    int n = 0;
+    if (o) {
+        char buf[160];
+        cJSON *tl = cJSON_GetObjectItem(o, "Taglines");
+        cJSON *t0 = tl ? cJSON_GetArrayItem(tl, 0) : NULL;
+        if (t0 && cJSON_IsString(t0) && t0->valuestring[0]) row_add(rows, &n, 16, "", "Tagline", t0->valuestring);
+
+        size_t b = 0;
+        buf[0] = '\0';
+        double cr = jnum(o, "CommunityRating"), crit = jnum(o, "CriticRating");
+        if (cr > 0)   b += (size_t)snprintf(buf + b, sizeof buf - b, "%.1f/10 viewers", cr);
+        if (crit > 0) b += (size_t)snprintf(buf + b, sizeof buf - b, "%s%.0f%% critics", b ? " · " : "", crit);
+        if (jstr(o, "OfficialRating")[0])
+            b += (size_t)snprintf(buf + b, sizeof buf - b, "%s%s", b ? " · " : "", jstr(o, "OfficialRating"));
+        if (b) row_add(rows, &n, 16, "", "Rating", buf);
+
+        cJSON *g = cJSON_GetObjectItem(o, "Genres");
+        b = 0; buf[0] = '\0';
+        for (int i = 0; g && i < cJSON_GetArraySize(g) && b + 2 < sizeof buf; ++i) {
+            cJSON *v = cJSON_GetArrayItem(g, i);
+            if (cJSON_IsString(v)) b += (size_t)snprintf(buf + b, sizeof buf - b, "%s%s", b ? ", " : "", v->valuestring);
+        }
+        if (b) row_add(rows, &n, 16, "", "Genres", buf);
+
+        cJSON *st = cJSON_GetObjectItem(o, "Studios");
+        b = 0; buf[0] = '\0';
+        for (int i = 0; st && i < 2 && i < cJSON_GetArraySize(st) && b + 2 < sizeof buf; ++i)
+            b += (size_t)snprintf(buf + b, sizeof buf - b, "%s%s", b ? ", " : "", jstr(cJSON_GetArrayItem(st, i), "Name"));
+        if (b) row_add(rows, &n, 16, "", "Studio", buf);
+
+        cJSON *ppl = cJSON_GetObjectItem(o, "People");
+        b = 0; buf[0] = '\0';
+        for (int i = 0; ppl && i < cJSON_GetArraySize(ppl) && b + 2 < sizeof buf; ++i) {
+            cJSON *p = cJSON_GetArrayItem(ppl, i);
+            if (!strcmp(jstr(p, "Type"), "Director"))
+                b += (size_t)snprintf(buf + b, sizeof buf - b, "%s%s", b ? ", " : "", jstr(p, "Name"));
+        }
+        if (b) row_add(rows, &n, 16, "", "Director", buf);
+
+        int cast = 0;
+        for (int i = 0; ppl && i < cJSON_GetArraySize(ppl) && cast < 10; ++i) {
+            cJSON *p = cJSON_GetArrayItem(ppl, i);
+            if (strcmp(jstr(p, "Type"), "Actor")) continue;
+            row_add(rows, &n, 16, "", jstr(p, "Name"), jstr(p, "Role")[0] ? jstr(p, "Role") : "Cast");
+            ++cast;
+        }
+        cJSON_Delete(o);
+    }
+    if (x->cb) x->cb(o != NULL, rows, n, x->ud);
+    free(x);
+}
+
+static void on_genres(int ok, int status, const char *body, size_t len, void *ud)
+{
+    (void)len;
+    rows_ctx_t *x = (rows_ctx_t *)ud;
+    cJSON *root = (ok && status == 200 && body) ? cJSON_Parse(body) : NULL;
+    cJSON *arr = root ? cJSON_GetObjectItem(root, "Items") : NULL;
+    evo_provider_row_t rows[16];
+    int n = 0;
+    row_add(rows, &n, 16, "genre:", "Any genre", "Show everything");
+    for (int i = 0; arr && i < cJSON_GetArraySize(arr) && n < 16; ++i) {
+        const char *name = jstr(cJSON_GetArrayItem(arr, i), "Name");
+        char id[64];
+        snprintf(id, sizeof id, "genre:%s", name);
+        if (name[0]) row_add(rows, &n, 16, id, name, "");
+    }
+    if (x->cb) x->cb(root != NULL, rows, n, x->ud);
+    if (root) cJSON_Delete(root);
+    free(x);
+}
+
+int ms_panel(ms_client_t *c, const char *item_id, const char *kind, evo_provider_rows_cb cb, void *ud)
+{
+    if (!c->cfg.is_connected || !item_id || !kind) return -1;
+    if (!strcmp(kind, "browse")) {
+        static const char *const sort_names[] = { "Name", "Date added", "Release year", "Rating" };
+        static const char *const filter_names[] = { "Everything", "Unwatched only", "Favourites only" };
+        evo_provider_row_t rows[3];
+        int n = 0;
+        row_add(rows, &n, 3, "sort", "Sort by", sort_names[c->sort % 4]);
+        row_add(rows, &n, 3, "filter", "Show", filter_names[c->filter % 3]);
+        row_add(rows, &n, 3, "panel:genres", "Genre", c->genre[0] ? c->genre : "Any");
+        if (cb) cb(1, rows, n, ud);
+        return 0;
+    }
+    rows_ctx_t *x = (rows_ctx_t *)calloc(1, sizeof *x);
+    if (!x) return -2;
+    x->cb = cb; x->ud = ud;
+    char path[400];
+    ms_request_fn_t fn = NULL;
+    if (!strcmp(kind, "details")) {
+        snprintf(path, sizeof path, "/Users/%s/Items/%s?Fields=People,Genres,Studios,Taglines,CommunityRating,OfficialRating",
+                 c->cfg.user_id, item_server_id(item_id));
+        fn = on_details;
+    } else if (!strcmp(kind, "genres")) {
+        const char *lib = strrchr(item_id, ':');
+        snprintf(path, sizeof path, "/Genres?UserId=%s&ParentId=%s&SortBy=SortName&Recursive=true",
+                 c->cfg.user_id, lib ? lib + 1 : item_id);
+        fn = on_genres;
+    } else {
+        free(x);
+        return -1;
+    }
+    int rc = ms_request(c, "GET", path, NULL, 1, fn, x);
+    if (rc != 0) free(x);
+    return rc;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Segments and the next episode                                             */
+/* ------------------------------------------------------------------------- */
+
+typedef struct { evo_provider_segments_cb cb; void *ud; int jellyfin; } seg_ctx_t;
+
+static void on_segments(int ok, int status, const char *body, size_t len, void *ud)
+{
+    (void)len;
+    seg_ctx_t *x = (seg_ctx_t *)ud;
+    evo_provider_segment_t segs[8];
+    int n = 0;
+    cJSON *root = (ok && status == 200 && body) ? cJSON_Parse(body) : NULL;
+    if (root && x->jellyfin) {
+        cJSON *arr = cJSON_GetObjectItem(root, "Items");
+        for (int i = 0; arr && i < cJSON_GetArraySize(arr) && n < 8; ++i) {
+            cJSON *o = cJSON_GetArrayItem(arr, i);
+            const char *t = jstr(o, "Type");
+            int kind = (!strcmp(t, "Intro") || !strcmp(t, "Recap")) ? EVO_SEGMENT_INTRO :
+                       !strcmp(t, "Outro") ? EVO_SEGMENT_OUTRO : 0;
+            if (!kind) continue;
+            segs[n].kind = kind;
+            segs[n].start_sec = jnum(o, "StartTicks") / 10000000.0;
+            segs[n].end_sec = jnum(o, "EndTicks") / 10000000.0;
+            if (segs[n].end_sec > segs[n].start_sec) ++n;
+        }
+    } else if (root) {
+        /* Emby: chapter markers. IntroStart..IntroEnd, CreditsStart..end. */
+        cJSON *ch = cJSON_GetObjectItem(root, "Chapters");
+        double intro_start = -1;
+        for (int i = 0; ch && i < cJSON_GetArraySize(ch) && n < 8; ++i) {
+            cJSON *o = cJSON_GetArrayItem(ch, i);
+            const char *m = jstr(o, "MarkerType");
+            double t = jnum(o, "StartPositionTicks") / 10000000.0;
+            if (!strcmp(m, "IntroStart")) intro_start = t;
+            else if (!strcmp(m, "IntroEnd") && intro_start >= 0 && t > intro_start) {
+                segs[n].kind = EVO_SEGMENT_INTRO; segs[n].start_sec = intro_start; segs[n].end_sec = t; ++n;
+                intro_start = -1;
+            } else if (!strcmp(m, "CreditsStart")) {
+                segs[n].kind = EVO_SEGMENT_OUTRO; segs[n].start_sec = t; segs[n].end_sec = 1e9; ++n;
+            }
+        }
+    }
+    if (x->cb) x->cb(root != NULL, segs, n, x->ud);
+    if (root) cJSON_Delete(root);
+    free(x);
+}
+
+int ms_segments(ms_client_t *c, const char *item_id, evo_provider_segments_cb cb, void *ud)
+{
+    if (!c->cfg.is_connected || !item_id || strncmp(item_id, "i:", 2)) return -1;
+    seg_ctx_t *x = (seg_ctx_t *)calloc(1, sizeof *x);
+    if (!x) return -2;
+    x->cb = cb; x->ud = ud; x->jellyfin = c->kind == MS_JELLYFIN;
+    char path[400];
+    if (x->jellyfin)
+        snprintf(path, sizeof path,
+                 "/MediaSegments/%s?includeSegmentTypes=Intro&includeSegmentTypes=Outro&includeSegmentTypes=Recap",
+                 item_id + 2);
+    else
+        snprintf(path, sizeof path, "/Users/%s/Items/%s?Fields=Chapters", c->cfg.user_id, item_id + 2);
+    int rc = ms_request(c, "GET", path, NULL, 1, on_segments, x);
+    if (rc != 0) free(x);
+    return rc;
+}
+
+typedef struct { ms_client_t *c; evo_provider_next_cb cb; void *ud; char item[96]; } next_ctx_t;
+
+static void on_next_list(int ok, int status, const char *body, size_t len, void *ud)
+{
+    (void)len;
+    next_ctx_t *x = (next_ctx_t *)ud;
+    cJSON *root = (ok && status == 200 && body) ? cJSON_Parse(body) : NULL;
+    cJSON *arr = root ? cJSON_GetObjectItem(root, "Items") : NULL;
+    int done = 0;
+    /* StartItemId lists the item itself first; the one after it is next. */
+    for (int i = 0; arr && i < cJSON_GetArraySize(arr); ++i) {
+        cJSON *o = cJSON_GetArrayItem(arr, i);
+        if (!strcmp(jstr(o, "Id"), x->item)) {
+            cJSON *nx = cJSON_GetArrayItem(arr, i + 1);
+            if (nx && jstr(nx, "Id")[0]) {
+                char id[EVO_PROVIDER_MAX_ITEM_ID], title[160];
+                snprintf(id, sizeof id, "i:%s", jstr(nx, "Id"));
+                snprintf(title, sizeof title, "S%d E%d · %s", (int)jnum(nx, "ParentIndexNumber"),
+                         (int)jnum(nx, "IndexNumber"), jstr(nx, "Name"));
+                if (x->cb) x->cb(1, id, title, x->ud);
+                done = 1;
+            }
+            break;
+        }
+    }
+    if (!done && x->cb) x->cb(0, NULL, NULL, x->ud);
+    if (root) cJSON_Delete(root);
+    free(x);
+}
+
+static void on_next_item(int ok, int status, const char *body, size_t len, void *ud)
+{
+    (void)len;
+    next_ctx_t *x = (next_ctx_t *)ud;
+    cJSON *root = (ok && status == 200 && body) ? cJSON_Parse(body) : NULL;
+    const char *series = root && !strcmp(jstr(root, "Type"), "Episode") ? jstr(root, "SeriesId") : "";
+    if (series[0]) {
+        char path[512];
+        snprintf(path, sizeof path, "/Shows/%s/Episodes?UserId=%s&StartItemId=%s&Limit=2",
+                 series, x->c->cfg.user_id, x->item);
+        cJSON_Delete(root);
+        if (ms_request(x->c, "GET", path, NULL, 1, on_next_list, x) == 0) return;
+        if (x->cb) x->cb(0, NULL, NULL, x->ud);
+        free(x);
+        return;
+    }
+    if (root) cJSON_Delete(root);
+    if (x->cb) x->cb(0, NULL, NULL, x->ud);
+    free(x);
+}
+
+int ms_next_item(ms_client_t *c, const char *item_id, evo_provider_next_cb cb, void *ud)
+{
+    if (!c->cfg.is_connected || !item_id || strncmp(item_id, "i:", 2)) return -1;
+    next_ctx_t *x = (next_ctx_t *)calloc(1, sizeof *x);
+    if (!x) return -2;
+    x->c = c; x->cb = cb; x->ud = ud;
+    snprintf(x->item, sizeof x->item, "%s", item_id + 2);
+    char path[320];
+    snprintf(path, sizeof path, "/Users/%s/Items/%s", c->cfg.user_id, x->item);
+    int rc = ms_request(c, "GET", path, NULL, 1, on_next_item, x);
+    if (rc != 0) free(x);
+    return rc;
+}
+
+/* ------------------------------------------------------------------------- */
 /* Resolve + progress                                                        */
 /* ------------------------------------------------------------------------- */
 
+static void url_param(const char *url, const char *key, char *out, size_t cap);
+
 static const char *raw_id(const char *item_id)
 {
-    return (item_id && !strncmp(item_id, "i:", 2)) ? item_id + 2 : item_id;
+    if (!item_id) return item_id;
+    if (!strncmp(item_id, "i:", 2) || !strncmp(item_id, "a:", 2)) return item_id + 2;
+    if (!strncmp(item_id, "tv:", 3)) return item_id + 3;
+    return item_id;
 }
 
 int ms_build_stream_url(ms_client_t *c, const char *item_id, char *out, size_t cap)
@@ -759,8 +1220,8 @@ int ms_build_stream_url(ms_client_t *c, const char *item_id, char *out, size_t c
     if (!item_id || !out || cap == 0) return -1;
     char base[200];
     ms_base(c, base, sizeof base);
-    snprintf(out, cap, "%s/Videos/%s/stream?Static=true&api_key=%s",
-             base, raw_id(item_id), c->cfg.token);
+    snprintf(out, cap, "%s/%s/%s/stream?Static=true&api_key=%s", base,
+             !strncmp(item_id, "a:", 2) ? "Audio" : "Videos", raw_id(item_id), c->cfg.token);
     return 0;
 }
 
@@ -911,6 +1372,32 @@ int ms_parse_sources(ms_client_t *c, const char *item_id, const char *body,
             }
         }
         if (!as) as = as_default ? as_default : as_first;
+
+        /* A sidecar text subtitle (.srt next to the file): the default one, else
+         * English, else the first. The server converts it to SubRip. */
+        {
+            cJSON *best = NULL;
+            int best_rank = 0;
+            for (int k = 0; streams && k < cJSON_GetArraySize(streams); ++k) {
+                cJSON *s = cJSON_GetArrayItem(streams, k);
+                if (strcmp(jstr(s, "Type"), "Subtitle") || !jbool(s, "IsExternal")) continue;
+                cJSON *txt = cJSON_GetObjectItem(s, "IsTextSubtitleStream");
+                if (txt && cJSON_IsFalse(txt)) continue;
+                const char *lang = jstr(s, "Language");
+                int rank = jbool(s, "IsDefault") ? 3 : (!strcmp(lang, "eng") || !strcmp(lang, "en")) ? 2 : 1;
+                if (rank > best_rank) { best = s; best_rank = rank; }
+            }
+            if (best) {
+                char base[200];
+                ms_base(c, base, sizeof base);
+                if (c->kind == MS_JELLYFIN)
+                    snprintf(ch->sub_url, sizeof ch->sub_url, "%s/Videos/%s/%s/Subtitles/%d/0/Stream.srt?api_key=%s",
+                             base, raw_id(item_id), id, (int)jnum(best, "Index"), c->cfg.token);
+                else
+                    snprintf(ch->sub_url, sizeof ch->sub_url, "%s/Videos/%s/%s/Subtitles/%d/Stream.srt?api_key=%s",
+                             base, raw_id(item_id), id, (int)jnum(best, "Index"), c->cfg.token);
+            }
+        }
         if (vs) {
             ch->width  = (int)jnum(vs, "Width");
             ch->height = (int)jnum(vs, "Height");
@@ -949,12 +1436,52 @@ static void resolve_direct(ms_client_t *c, const char *item_id,
     if (cb) cb(1, &choice, 1, ud);
 }
 
+/* The same version as a server-made HLS stream: H.264 + AAC/AC-3 at up to 1080p,
+ * for a file EVO cannot decode or a link too slow for the original. */
+static void add_transcode(ms_client_t *c, const char *item, const evo_stream_choice_t *src,
+                          evo_stream_choice_t *out)
+{
+    char base[200], msid[200], ses[128], srcesc[200], dev[96];
+    ms_base(c, base, sizeof base);
+    url_param(src->url, "MediaSourceId", msid, sizeof msid);
+    url_param(src->url, "PlaySessionId", ses, sizeof ses);
+    if (evo_provider_url_escape(msid, srcesc, sizeof srcesc) < 0) srcesc[0] = '\0';
+    if (evo_provider_url_escape(c->cfg.device_id[0] ? c->cfg.device_id : MS_DEVICE_ID, dev, sizeof dev) < 0)
+        dev[0] = '\0';
+    evo_provider_stream_choice_clear(out);
+    snprintf(out->url, sizeof out->url,
+             "%s/Videos/%s/master.m3u8?MediaSourceId=%s&DeviceId=%s%s%s&VideoCodec=h264"
+             "&AudioCodec=aac,ac3&MaxStreamingBitrate=15000000&MaxWidth=1920"
+             "&TranscodingMaxAudioChannels=6&SegmentContainer=ts&MinSegments=1"
+             "&BreakOnNonKeyFrames=true&api_key=%s",
+             base, item, srcesc, dev, ses[0] ? "&PlaySessionId=" : "", ses, c->cfg.token);
+    snprintf(out->label, sizeof out->label, "Server transcode (1080p H.264)");
+    snprintf(out->container, sizeof out->container, "hls");
+    snprintf(out->video_codec, sizeof out->video_codec, "h264");
+    snprintf(out->audio_codec, sizeof out->audio_codec, "aac");
+    snprintf(out->sub_url, sizeof out->sub_url, "%s", src->sub_url);
+    out->width = 1920; out->height = 1080;
+    out->fallback = 1;
+}
+
 static void on_playback_info(int ok, int status, const char *body, size_t len, void *ud)
 {
     (void)len;
     resolve_ctx_t *x = (resolve_ctx_t *)ud;
-    evo_stream_choice_t *ch = (evo_stream_choice_t *)calloc(MS_MAX_SOURCES, sizeof *ch);
+    evo_stream_choice_t *ch = (evo_stream_choice_t *)calloc(MS_MAX_SOURCES + 1, sizeof *ch);
     int n = (ch && ok && status == 200) ? ms_parse_sources(x->c, x->item, body, ch, MS_MAX_SOURCES) : 0;
+    if (n > 0) {
+        evo_stream_choice_t tc;
+        add_transcode(x->c, raw_id(x->item), &ch[0], &tc);
+        if (x->c->cfg.transcode) {           /* always: first, and a real pick */
+            memmove(&ch[1], &ch[0], (size_t)n * sizeof *ch);
+            ch[0] = tc;
+            ch[0].fallback = 0;
+        } else {
+            ch[n] = tc;
+        }
+        ++n;
+    }
     if (n <= 0) {
         PROV_LOG("media server: PlaybackInfo for %s -> ok=%d http=%d, no sources - direct stream",
                  x->item, ok, status);
@@ -972,9 +1499,62 @@ static void on_playback_info(int ok, int status, const char *body, size_t len, v
     free(x);
 }
 
+/* A live channel: ask the server to open it and give back an HLS stream. */
+static void on_live_info(int ok, int status, const char *body, size_t len, void *ud)
+{
+    (void)len;
+    resolve_ctx_t *x = (resolve_ctx_t *)ud;
+    cJSON *root = (ok && status == 200 && body) ? cJSON_Parse(body) : NULL;
+    cJSON *srcs = root ? cJSON_GetObjectItem(root, "MediaSources") : NULL;
+    cJSON *ms = srcs ? cJSON_GetArrayItem(srcs, 0) : NULL;
+    const char *turl = jstr(ms, "TranscodingUrl");
+    evo_stream_choice_t ch;
+    evo_provider_stream_choice_clear(&ch);
+    if (turl[0]) {
+        char base[200];
+        ms_base(x->c, base, sizeof base);
+        if (!strncmp(turl, "/emby/", 6)) turl += 5;          /* base carries the prefix */
+        snprintf(ch.url, sizeof ch.url, "%s%s%s%s", base, turl,
+                 (strstr(turl, "api_key=") || strstr(turl, "ApiKey=")) ? "" : (strchr(turl, '?') ? "&api_key=" : "?api_key="),
+                 (strstr(turl, "api_key=") || strstr(turl, "ApiKey=")) ? "" : x->c->cfg.token);
+        snprintf(ch.container, sizeof ch.container, "hls");
+        snprintf(ch.label, sizeof ch.label, "Live");
+        ch.is_live = 1;
+        if (x->cb) x->cb(1, &ch, 1, x->ud);
+    } else {
+        PROV_LOG("media server: live channel %s -> ok=%d http=%d, no stream", x->item, ok, status);
+        if (x->cb) x->cb(0, NULL, 0, x->ud);
+    }
+    if (root) cJSON_Delete(root);
+    free(x);
+}
+
+static int ms_resolve_live(ms_client_t *c, const char *item_id, evo_provider_resolve_cb cb, void *ud)
+{
+    resolve_ctx_t *x = (resolve_ctx_t *)calloc(1, sizeof *x);
+    if (!x) return -2;
+    x->c = c; x->cb = cb; x->ud = ud;
+    snprintf(x->item, sizeof x->item, "%s", item_id);
+    char path[320], body[640];
+    snprintf(path, sizeof path, "/Items/%s/PlaybackInfo?UserId=%s&AutoOpenLiveStream=true&MaxStreamingBitrate=20000000",
+             raw_id(item_id), c->cfg.user_id);
+    snprintf(body, sizeof body, "{\"UserId\":\"%s\",\"DeviceProfile\":{\"MaxStreamingBitrate\":20000000,"
+             "\"TranscodingProfiles\":[{\"Type\":\"Video\",\"Container\":\"ts\",\"Protocol\":\"hls\","
+             "\"VideoCodec\":\"h264\",\"AudioCodec\":\"aac,ac3\",\"Context\":\"Streaming\"}]}}", c->cfg.user_id);
+    int rc = ms_request(c, "POST", path, body, 1, on_live_info, x);
+    if (rc != 0) free(x);
+    return rc;
+}
+
 int ms_resolve(ms_client_t *c, const char *item_id, evo_provider_resolve_cb cb, void *ud)
 {
-    if (!item_id || strncmp(item_id, "i:", 2) || !c->cfg.is_connected) return -1;
+    if (!item_id || !c->cfg.is_connected) return -1;
+    if (!strncmp(item_id, "a:", 2)) {            /* a track: the file, no versions */
+        resolve_direct(c, item_id, cb, ud);
+        return 0;
+    }
+    if (!strncmp(item_id, "tv:", 3)) return ms_resolve_live(c, item_id, cb, ud);
+    if (strncmp(item_id, "i:", 2)) return -1;
     resolve_ctx_t *x = (resolve_ctx_t *)calloc(1, sizeof *x);
     if (!x) return -2;
     x->c = c; x->cb = cb; x->ud = ud;
@@ -1017,6 +1597,7 @@ static void url_param(const char *url, const char *key, char *out, size_t cap)
 void ms_stream_chosen(ms_client_t *c, const char *item_id, const evo_stream_choice_t *choice)
 {
     c->chosen_item[0] = c->chosen_source[0] = c->chosen_session[0] = '\0';
+    c->chosen_transcode = choice && strstr(choice->url, "/master.m3u8?") != NULL;
     if (!item_id || !choice) return;
     url_param(choice->url, "MediaSourceId", c->chosen_source, sizeof c->chosen_source);
     if (!c->chosen_source[0]) return;                  /* the direct fallback */
@@ -1038,7 +1619,7 @@ static void on_report(int ok, int status, const char *body, size_t len, void *ud
 void ms_report(ms_client_t *c, const char *item_id, int64_t pos_sec, int64_t dur_sec,
                evo_provider_play_state_t state)
 {
-    if (!c->cfg.is_connected || !item_id || strncmp(item_id, "i:", 2)) return;
+    if (!c->cfg.is_connected || !item_id || (strncmp(item_id, "i:", 2) && strncmp(item_id, "a:", 2))) return;
     char body[640];
     long long pos = (long long)pos_sec * 10000000LL;
     const char *path = "/Sessions/Playing";
@@ -1057,15 +1638,18 @@ void ms_report(ms_client_t *c, const char *item_id, int64_t pos_sec, int64_t dur
     if (state == EVO_PROVIDER_PLAY_START) {
         snprintf(body, sizeof body,
                  "{\"ItemId\":\"%s\",\"MediaSourceId\":\"%s\",\"PlaySessionId\":\"%s\","
-                 "\"PositionTicks\":%lld,\"CanSeek\":true,\"PlayMethod\":\"DirectStream\"}",
-                 item, source, c->play_session, pos);
+                 "\"PositionTicks\":%lld,\"CanSeek\":true,\"PlayMethod\":\"%s\"}",
+                 item, source, c->play_session, pos, c->chosen_transcode && chosen ? "Transcode" : "DirectPlay");
     } else if (state == EVO_PROVIDER_PLAY_UPDATE) {
         path = "/Sessions/Playing/Progress";
         snprintf(body, sizeof body,
                  "{\"ItemId\":\"%s\",\"MediaSourceId\":\"%s\",\"PlaySessionId\":\"%s\","
-                 "\"PositionTicks\":%lld,\"CanSeek\":true,\"IsPaused\":false,"
-                 "\"PlayMethod\":\"DirectStream\",\"EventName\":\"TimeUpdate\"}",
-                 item, source, c->play_session, pos);
+                 "\"PositionTicks\":%lld,\"CanSeek\":true,\"IsPaused\":%s,"
+                 "\"PlayMethod\":\"%s\",\"EventName\":\"%s\"}",
+                 item, source, c->play_session, pos,
+                 c->chosen_transcode && chosen ? "Transcode" : "DirectPlay",
+                 evo_provider_is_paused() ? "true" : "false",
+                 evo_provider_is_paused() ? "Pause" : "TimeUpdate");
     } else {
         path = "/Sessions/Playing/Stopped";
         snprintf(body, sizeof body,
@@ -1075,7 +1659,7 @@ void ms_report(ms_client_t *c, const char *item_id, int64_t pos_sec, int64_t dur
         /* A later play of the same item from Recent goes through no picker. */
         if (chosen) c->chosen_item[0] = c->chosen_source[0] = c->chosen_session[0] = '\0';
     }
-    (void)dur_sec;
+    (void)dur_sec;   /* the server knows the runtime; the report has no field for it */
     ms_request(c, "POST", path, body, 1, on_report, (void *)(path + 10));
 }
 

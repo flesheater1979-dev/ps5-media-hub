@@ -41,6 +41,9 @@
 
 extern "C" {
 #include "evo_provider.h"
+#include "evo_rmlui_bridge.h"   /* evo_hui_provider_params_t */
+
+class EvoRenderBridge;
 #include "evo_provider_bundle.h"
 }
 
@@ -78,6 +81,7 @@ struct EvoProviderRow {
     int  progress = 0;
     Rml::String progress_w;   /* the same as a CSS width ("37%") for data-style-width */
     bool played = false;
+    bool favorite = false;
     /* Not bound: where playback resumes, handed to the player on activation. */
     long long resume_sec = 0;
 };
@@ -95,6 +99,24 @@ struct EvoPanelRow {
     bool chevron = false;   /* leads somewhere */
     bool badge_live = false;
     bool focused = false;
+};
+
+/* One poster on a shelf (the media-server home). */
+struct EvoShelfCard {
+    Rml::String id, title, subtitle, overview, art, initial;
+    std::string art_url, art_key;
+    bool is_folder = false, is_live = false, played = false, favorite = false, see_all = false;
+    int  progress = 0;
+    long long resume_sec = 0;
+    long long duration_sec = 0;
+};
+struct EvoShelf {
+    std::string parent;          /* the provider id of the level it came from */
+    Rml::String title;
+    std::vector<EvoShelfCard> cards;
+    bool fresh = false;          /* loaded since this home was built */
+    int  col = 0;                /* focused card */
+    int  first = 0;              /* left edge of the window, in cards */
 };
 
 struct EvoProviderModel {
@@ -241,6 +263,11 @@ public:
     std::string TakeChoice();
     const EvoProviderRow* GetFocusedRow() const;
     void ReloadCurrentLevel();
+    const char* CurrentParent() const { return m_stack.empty() ? "" : m_stack.back().c_str(); }
+    void OpenLevel(const char* id, const char* title);
+
+    /* The shelves home (media servers): rows of posters instead of one level. */
+    bool ShelvesActive() const;
 
 private:
     EvoRmlProviderHost() = default;
@@ -391,6 +418,27 @@ private:
     void PanelMove(int dir);
     void PublishPanel();
     std::vector<std::string> m_saved_usb_playlists;
+
+    /* ---- shelves (evo_rmlui_provider_shelves.cpp) ---- */
+    bool ShelfCapable() const;
+    void BuildShelves(const evo_provider_item_t* items, int count);
+    void LoadNextShelf();
+    void AddShelfCards(EvoShelf& s, const evo_provider_item_t* items, int count, int has_more);
+    bool ShelfKey(Key k);
+    int  NextShelf(int from, int dir) const;
+    int  ShelvesWithCards() const;
+    void SyncShelfFocus();
+    void PushShelfArt();
+    void FillShelfParams(evo_hui_provider_params_t& p, EvoRenderBridge* r);
+    const EvoProviderRow* ShelfFocusedRow() const;
+    static void ShelfCallback(int ok, const evo_provider_item_t* items, int count, int has_more, void* ud);
+
+    std::vector<EvoShelf> m_shelves;
+    bool m_shelves_on = false;          /* this provider shows its home as shelves */
+    bool m_shelf_wait_root = false;     /* the next root reply defines the shelves */
+    int  m_shelf_row = 0;               /* focused shelf (index into m_shelves) */
+    unsigned m_shelf_gen = 0;
+    mutable EvoProviderRow m_shelf_focus_row;
 };
 
 /* ------------------------------------------------------------------------- */
@@ -462,6 +510,12 @@ int  evo_rmlui_provider_take_choice(char *out, size_t out_sz);
 const char* evo_rmlui_provider_get_focused_title(void);
 const char* evo_rmlui_provider_get_focused_id(void);
 int         evo_rmlui_provider_get_focused_is_folder(void);
+/* The focused row's server-side state (media servers): watched, favourite. */
+void        evo_rmlui_provider_get_focused_flags(int *played, int *favorite);
 void        evo_rmlui_provider_reload(void);
+/* The folder id the level on screen came from ("" at the root). */
+const char* evo_rmlui_provider_current_parent(void);
+/* Open `id` as a new level under the focused row, as activating a folder would. */
+void        evo_rmlui_provider_open_level(const char *id, const char *title);
 
 } /* extern "C" */

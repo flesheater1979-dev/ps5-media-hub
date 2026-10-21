@@ -168,6 +168,12 @@ private:
     void openProviderMenu(int focus = 0); /* IPTV: Options -> side panel        */
     void openGuidePicker();
     void applyChoice(const std::string& id);
+    void openItemMenu(const struct evo_provider* p);
+    void openRowsPanel(const struct evo_provider* p, const char* item, const char* kind, const std::string& title);
+    std::string m_rowsItem;                       /* what a provider-built panel is about */   /* Triangle on a media-server item */
+    bool toggleFocusedFavorite();                 /* EVO's own favourites (this console) */
+    std::string m_itemId, m_itemTitle;
+    bool m_itemPlayed = false, m_itemFav = false;
     std::string m_panelPage;              /* "menu" / "guide" while the panel is up */
 
     /* The chooser's OPTIONS menu: everything that can be done to the focused

@@ -158,6 +158,15 @@ typedef struct evo_stream_choice {
     /* Request headers the stream needs ("Name: value\r\n" each; Stremio's
      * behaviorHints.proxyHeaders.request). Empty for a plain link. */
     char    headers[1024];
+
+    /* A text subtitle file that belongs to this stream (a media server's
+     * sidecar), fetched and loaded when it plays. "" = none. */
+    char    sub_url[1024];
+
+    /* An automatic alternative, not a version the user would pick: tried when
+     * the listed ones fail to open, and left out of a picker that has only one
+     * real version (a media server's transcode). */
+    int     fallback;
 } evo_stream_choice_t;
 
 /*
@@ -184,6 +193,7 @@ typedef struct evo_provider_item {
     int     is_folder;
     int     is_live;
     int     played;             /* the service marks it watched */
+    int     favorite;           /* the service marks it a favourite */
 
     /* Now-and-next, when the provider has an EPG. Empty otherwise. A full
      * XMLTV grid is explicitly out of #90's scope; two strings are not. */
@@ -212,6 +222,30 @@ typedef void (*evo_provider_items_cb)(int ok,
                                       int has_more,
                                       void *ud);
 
+/* An item action finished (ok 0 = the server refused or was unreachable). */
+typedef void (*evo_provider_done_cb)(int ok, const char *msg, void *ud);   /* msg: what to tell the user, or NULL */
+
+/* A stretch of the item the service knows: its intro, or the credits. */
+typedef enum { EVO_SEGMENT_INTRO = 1, EVO_SEGMENT_OUTRO = 2 } evo_segment_kind_t;
+typedef struct evo_provider_segment {
+    int    kind;                /* evo_segment_kind_t */
+    double start_sec;
+    double end_sec;             /* very large = to the end */
+} evo_provider_segment_t;
+typedef void (*evo_provider_segments_cb)(int ok, const evo_provider_segment_t *segs, int count, void *ud);
+/* The episode after this one. */
+typedef void (*evo_provider_next_cb)(int ok, const char *item_id, const char *title, void *ud);
+
+/* One row of a provider-built side panel (details and cast, browse options).
+ * An empty id is information only; "panel:<kind>" opens another panel; any
+ * other id is handed back to item_action. */
+typedef struct evo_provider_row {
+    char id[64];
+    char title[96];
+    char detail[160];
+} evo_provider_row_t;
+typedef void (*evo_provider_rows_cb)(int ok, const evo_provider_row_t *rows, int count, void *ud);
+
 typedef void (*evo_provider_resolve_cb)(int ok,
                                         const evo_stream_choice_t *choices,
                                         int count,
@@ -228,6 +262,11 @@ typedef enum {
     EVO_PROVIDER_PLAY_UPDATE = 1,
     EVO_PROVIDER_PLAY_STOP   = 2
 } evo_provider_play_state_t;
+
+/* Whether playback is paused right now, for progress reports (set by the
+ * player each tick, read by the provider that reports). */
+void evo_provider_set_paused(int paused);
+int  evo_provider_is_paused(void);
 
 /* ------------------------------------------------------------------------- */
 /* The vtable                                                                */
@@ -368,6 +407,24 @@ typedef struct evo_provider {
      */
     int  (*is_signed_in)(void);
     void (*sign_out)(void);
+
+    /*
+     * Optional. Do something to one catalog item on the service: action is
+     * "played", "unplayed", "fav" or "unfav". NULL = the provider has none, and
+     * the screen offers no item menu. cb fires once, on the main thread.
+     */
+    int  (*item_action)(const char *item_id, const char *action,
+                        evo_provider_done_cb cb, void *ud);
+
+    /* Optional. The intro / credits of an item, and its next episode, so the
+     * player can offer "skip" and carry on to the next one. */
+    int  (*segments)(const char *item_id, evo_provider_segments_cb cb, void *ud);
+    int  (*next_item)(const char *item_id, evo_provider_next_cb cb, void *ud);
+
+    /* Optional. Rows for a side panel: kind "details" (facts and cast of an
+     * item), "browse" (sort / filter / genre of the level `item_id` names) or
+     * "genres". */
+    int  (*panel)(const char *item_id, const char *kind, evo_provider_rows_cb cb, void *ud);
 } evo_provider_t;
 
 /* ------------------------------------------------------------------------- */

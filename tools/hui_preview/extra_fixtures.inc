@@ -310,3 +310,51 @@ static void fill_channels_fixture(evo_hui_provider_params_t& p, std::vector<uint
         }
     }
 }
+
+/* The media-server home as shelves (Continue Watching, Recently Added, a library). */
+static void fill_shelves_fixture(evo_hui_provider_params_t& p, std::vector<uint32_t>& art, int focus_shelf, int focus_card)
+{
+    fill_provider_fixture(p, art, 0);
+    p.shelves_active = 1;
+    p.item_menu = 1;
+    p.breadcrumb = "Jellyfin";
+    p.shelf_total = 4;
+    p.shelf_count = 4;
+    p.shelf_focus_abs = focus_shelf;
+    static const char* const kShelf[4] = {"Continue Watching", "Next Up", "Recently Added", "Movies"};
+    static const char* const kTitles[10] = {"Masterplan", "Whalefall", "Street Fighter", "Tenzing", "Animals",
+                                            "The Spiral", "Other Mommy", "Love of Your Life", "Big Buck Bunny", "See all"};
+    for (int s = 0; s < 4; ++s)
+    {
+        evo_hui_shelf_t& sh = p.shelves[s];
+        sh.title = kShelf[s];
+        sh.abs_index = s;
+        sh.total_cards = 24;
+        sh.first_card = 0;
+        sh.scroll_card = 0;
+        sh.focus_card = s == focus_shelf ? focus_card : -1;
+        sh.card_count = 10;
+        for (int i = 0; i < 10; ++i)
+        {
+            evo_hui_provider_row_t& c = sh.cards[i];
+            c.title = kTitles[(i + s) % 9];
+            c.subtitle = "2026";
+            c.initial = "M";
+            c.art_key = kTitles[(i + s) % 9];
+            if (i != 9 && i != 5)
+            {
+                c.art = art.data();
+                c.art_w = 200;
+                c.art_h = 300;
+            }
+            c.played = s == 2 && i == 1;
+            c.progress = s == 0 && i < 4 ? 20 + i * 18 : 0;
+            c.see_all = i == 9;
+            if (i == 9)
+                c.title = "See all";
+        }
+    }
+    p.selected_title = "Street Fighter";
+    p.selected_subtitle = "2026  -  7.1/10  -  R  -  Action";
+    p.selected_resume = "Resume from 41:20";
+}

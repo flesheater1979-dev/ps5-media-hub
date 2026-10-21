@@ -206,7 +206,8 @@ int prospero_embedded_subtitle_supported(
         codec_id == AV_CODEC_ID_SUBRIP ||
         codec_id == AV_CODEC_ID_ASS ||
         codec_id == AV_CODEC_ID_SSA ||
-        codec_id == AV_CODEC_ID_WEBVTT
+        codec_id == AV_CODEC_ID_WEBVTT ||
+        codec_id == AV_CODEC_ID_MOV_TEXT   /* MP4/MOV tx3g, the usual debrid .mp4 */
     );
 }
 
@@ -2150,6 +2151,20 @@ static int prospero_subtitle_load_file(
     );
 
     return prospero_subtitle_count;
+}
+
+
+int prospero_subtitle_load_external(const char *path) {
+    int count = prospero_subtitle_load_file(path);
+
+    if (count > 0) {
+        char message[96];
+
+        snprintf(message, sizeof(message), "Loaded %d cues", count);
+        toast("SUBTITLES", message);
+    }
+
+    return count;
 }
 
 

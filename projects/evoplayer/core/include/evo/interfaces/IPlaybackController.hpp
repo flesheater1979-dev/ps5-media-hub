@@ -68,6 +68,8 @@ struct PlaybackSource {
      *  all assume otherwise, so this has to be known rather than discovered
      *  by a seek that fails. */
     bool is_live = false;
+    /** A text subtitle file for this stream (a media server's sidecar); empty = none. */
+    std::string subtitleUrl;
 
     bool isProvider() const { return !provider.empty(); }
 };
@@ -91,6 +93,8 @@ public:
     /** The title to put on screen: the provider's, when there is one, else
      *  empty so the caller falls back to deriving it from the filename. */
     virtual const std::string& getDisplayTitle() const = 0;
+    /** What is playing: the provider and item ids for a provider source. */
+    virtual const PlaybackSource& getSource() const = 0;
     virtual bool isLiveSource() const = 0;
 
     virtual void togglePause() = 0;

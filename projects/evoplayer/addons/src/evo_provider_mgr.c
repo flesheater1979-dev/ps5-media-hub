@@ -266,6 +266,10 @@ const evo_provider_t *evo_provider_at(int index)
     return PROVIDERS[index];
 }
 
+static int g_play_paused;
+void evo_provider_set_paused(int paused) { g_play_paused = paused ? 1 : 0; }
+int  evo_provider_is_paused(void) { return g_play_paused; }
+
 const evo_provider_t *evo_provider_find(const char *id)
 {
     if (!id) return NULL;

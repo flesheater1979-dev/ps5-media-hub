@@ -39,6 +39,13 @@ constexpr float kCardW = 232.0f;
 constexpr float kGap = 24.0f;
 constexpr Rect kDetail{1288.0f, 214.0f, 536.0f, 700.0f};
 
+/* Shelves: rows of posters. */
+constexpr float kShelfTop = 214.0f;
+constexpr float kShelfPitch = 404.0f;
+constexpr float kPosterW = 176.0f;
+constexpr float kPosterH = 264.0f;
+constexpr float kCardStride = 198.0f;
+
 std::string str(const char *s) { return std::string(s ? s : ""); }
 
 std::uint64_t hash_of(const std::string &s)
@@ -112,7 +119,7 @@ void ProviderGridScreen::set(const evo_hui_provider_params_t &p)
     tuning_ = p.tuning != 0;
     has_error_ = p.has_error != 0;
     empty_ = p.empty != 0;
-    multi_page_ = p.has_multiple_pages != 0;
+    multi_page_ = p.has_multiple_pages != 0 && !p.shelves_active;
     folder_level_ = p.is_folder_level != 0;
     in_folder_ = p.in_folder != 0;
     count_ = p.count;
@@ -136,6 +143,40 @@ void ProviderGridScreen::set(const evo_hui_provider_params_t &p)
         row.is_live = r.is_live != 0;
         row.progress = r.progress;
         rows_.push_back(std::move(row));
+    }
+    shelves_active_ = p.shelves_active != 0;
+    item_menu_ = p.item_menu != 0;
+    shelf_total_ = p.shelf_total;
+    shelf_focus_abs_ = p.shelf_focus_abs;
+    shelves_.clear();
+    for (int i = 0; shelves_active_ && i < p.shelf_count && i < EVO_HUI_SHELVES; ++i)
+    {
+        const evo_hui_shelf_t &src = p.shelves[i];
+        Shelf s;
+        s.title = str(src.title);
+        s.abs_index = src.abs_index;
+        s.total = src.total_cards;
+        s.first_card = src.first_card;
+        s.focus_card = src.focus_card;
+        s.scroll_card = src.scroll_card;
+        for (int k = 0; k < src.card_count && k < EVO_HUI_SHELF_CARDS; ++k)
+        {
+            const evo_hui_provider_row_t &r = src.cards[k];
+            Row row;
+            row.title = str(r.title);
+            row.subtitle = str(r.subtitle);
+            row.initial = str(r.initial);
+            row.art_key = str(r.art_key);
+            row.art = r.art;
+            row.art_w = r.art_w;
+            row.art_h = r.art_h;
+            row.is_folder = r.is_folder != 0;
+            row.played = r.played != 0;
+            row.progress = r.progress;
+            s.cards.push_back(std::move(row));
+            s.see_all.push_back(r.see_all ? 1 : 0);
+        }
+        shelves_.push_back(std::move(s));
     }
     has_selected_ = p.has_selected != 0;
     sel_folder_ = p.selected_is_folder != 0;
@@ -199,6 +240,7 @@ void ProviderGridScreen::enter()
 {
     age_ = 0.0f;
     ring_snapped_ = false;
+    scroll_snapped_ = false;
 }
 
 bool ProviderGridScreen::setup_shown() const
@@ -224,7 +266,28 @@ void ProviderGridScreen::update(float dt)
     if (panel_open_)
         panel_age_ += dt;
     Rect target{};
-    if (setup_shown() && setup_focus_ >= 0)
+    if (shelves_active_)
+    {
+        /* Ease the shelves toward the focus (vertical) and each row toward its own window (horizontal). */
+        const float k = 1.0f - std::exp(-dt * 14.0f);
+        if (!scroll_snapped_)
+        {
+            scroll_y_ = static_cast<float>(shelf_focus_abs_);
+            scroll_snapped_ = true;
+        }
+        scroll_y_ += (static_cast<float>(shelf_focus_abs_) - scroll_y_) * k;
+        for (const Shelf &s : shelves_)
+        {
+            if (s.abs_index < 0 || s.abs_index >= 32)
+                continue;
+            float &sx = scroll_x_[s.abs_index];
+            sx += (static_cast<float>(s.scroll_card) - sx) * k;
+        }
+        for (const Shelf &s : shelves_)
+            if (s.focus_card >= 0)
+                target = shelf_card_rect(s, s.focus_card);
+    }
+    else if (setup_shown() && setup_focus_ >= 0)
     {
         const int n = (variant_ == EVO_HUI_PROVIDER_XTREAM && setup_configured_) ? 3 : 2;
         const float w = 380.0f, gap = 28.0f;
@@ -250,8 +313,31 @@ void ProviderGridScreen::update(float dt)
     ring_.update(dt, 22.0f);
 }
 
+Rect ProviderGridScreen::shelf_card_rect(const Shelf &s, int card_index) const
+{
+    const float sx = (s.abs_index >= 0 && s.abs_index < 32) ? scroll_x_[s.abs_index] : 0.0f;
+    const float y = kShelfTop + (static_cast<float>(s.abs_index) - scroll_y_) * kShelfPitch + 44.0f;
+    return {kGridX + (static_cast<float>(card_index) - sx) * kCardStride, y, kPosterW, kPosterH};
+}
+
 bool ProviderGridScreen::focus(FocusInfo *out) const
 {
+    if (shelves_active_ && !panel_open_)
+    {
+        for (const Shelf &s : shelves_)
+        {
+            if (s.focus_card < 0)
+                continue;
+            const int k = s.focus_card - s.first_card;
+            out->id = "shelf-" + std::to_string(s.abs_index) + "-" + std::to_string(s.focus_card);
+            out->text = (k >= 0 && k < static_cast<int>(s.cards.size())) ? s.cards[k].title : s.title;
+            out->index = s.focus_card + 1;
+            out->total = s.total;
+            out->rect = shelf_card_rect(s, s.focus_card);
+            return true;
+        }
+        return false;
+    }
     if (panel_open_)
     {
         for (std::size_t i = 0; i < panel_rows_.size(); ++i)
@@ -677,6 +763,99 @@ void ProviderGridScreen::draw_panel(DrawList &list, const Context &ctx) const
     list.pop_opacity();
 }
 
+void ProviderGridScreen::draw_shelves(DrawList &list, const Context &ctx) const
+{
+    const ui::Fonts &fonts = ctx.fonts;
+    const Palette &pal = ctx.palette;
+
+    for (const Shelf &s : shelves_)
+    {
+        const float y = kShelfTop + (static_cast<float>(s.abs_index) - scroll_y_) * kShelfPitch;
+        if (y > 1010.0f || y < kShelfTop - 330.0f)
+            continue;
+        const float fade = y >= kShelfTop ? 1.0f : std::max(0.0f, 1.0f - (kShelfTop - y) / 260.0f);
+        const float rise = tween::stagger(age_, s.abs_index, 0.06f, 0.45f);
+        list.push_opacity(fade * rise);
+
+        /* the shelf's title and how many it holds */
+        const bool focused_shelf = s.abs_index == shelf_focus_abs_;
+        const float tw = ui::text(list, fonts.display, fonts.display.font->fit(s.title, 30, 900.0f), kGridX, y + 26, 30,
+                                  focused_shelf ? kWhite : kWhite.with_alpha(0.78f));
+        ui::text(list, fonts.regular, std::to_string(s.total), kGridX + tw + 14, y + 26, 18, pal.text_faint);
+
+        const float sx = (s.abs_index >= 0 && s.abs_index < 32) ? scroll_x_[s.abs_index] : 0.0f;
+        for (std::size_t i = 0; i < s.cards.size(); ++i)
+        {
+            const Row &row = s.cards[i];
+            const int idx = s.first_card + static_cast<int>(i);
+            const float cx = kGridX + (static_cast<float>(idx) - sx) * kCardStride;
+            if (cx > 1900.0f || cx < kGridX - kCardStride)
+                continue;
+            /* ease the card out where it meets the rail on the left */
+            const float edge = cx < kGridX ? std::max(0.0f, 1.0f - (kGridX - cx) / kCardStride) : 1.0f;
+            list.push_opacity(edge);
+            const Rect poster{cx, y + 44.0f, kPosterW, kPosterH};
+            const bool see_all = i < s.see_all.size() && s.see_all[i];
+            list.shadow(poster, 14, 16, kBlack.with_alpha(0.35f));
+            if (see_all)
+            {
+                list.gradient_rect(poster, 14, pal.accent_soft, pal.bg_bottom);
+                const std::uint32_t chev = ctx.textures.icon("../icons/icon_chevron.png");
+                if (chev)
+                    list.image(chev, {poster.cx() - 22, poster.cy() - 40, 44, 44}, ::hui::gfx::kFullUv, kWhite.with_alpha(0.85f));
+                ui::text(list, fonts.semibold, "SEE ALL", poster.cx(), poster.cy() + 38, 18, kWhite, Align::center, 2.0f);
+            }
+            else
+            {
+                draw_art(list, ctx, poster, 14, row.art, row.art_w, row.art_h, row.art_key, row.is_folder, row.initial, 72.0f,
+                         false);
+                if (row.played)
+                {
+                    const float w2 = fonts.semibold.measure("WATCHED", 12, 1.2f) + 16;
+                    Rect pill{poster.x + 8, poster.y + 8, w2, 22};
+                    list.rounded_rect(pill, 11, kBlack.with_alpha(0.62f));
+                    ui::text(list, fonts.semibold, "WATCHED", pill.cx(), pill.y + 16, 12, kWhite, Align::center, 1.2f);
+                }
+                if (row.progress > 0)
+                {
+                    Rect bar{poster.x + 8, poster.y + poster.h - 12, poster.w - 16, 5};
+                    list.rounded_rect(bar, 2.5f, kBlack.with_alpha(0.55f));
+                    list.rounded_rect({bar.x, bar.y, bar.w * std::min(100, row.progress) / 100.0f, bar.h}, 2.5f, pal.accent);
+                }
+                ui::text(list, fonts.semibold, fonts.semibold.font->fit(row.title, 18, kPosterW), cx + 2, poster.y + poster.h + 28,
+                         18, kWhite.with_alpha(0.92f));
+                ui::text(list, fonts.regular, fonts.regular.font->fit(row.subtitle, 15, kPosterW), cx + 2,
+                         poster.y + poster.h + 50, 15, pal.text_faint);
+            }
+            list.pop_opacity();
+        }
+        list.pop_opacity();
+    }
+
+    /* the focus ring, over whatever it sits on */
+    for (const Shelf &s : shelves_)
+    {
+        if (s.focus_card < 0)
+            continue;
+        const Rect ring = ring_.value();
+        list.glow(ring, 16, 20, pal.accent.with_alpha(0.32f + 0.1f * ui::breathe(ctx.time)));
+        list.bordered_rect(ring.inset(-5), 20, Color::rgb(0x000000, 0.0f), 4, kWhite);
+    }
+
+    /* the focused title, top right: what it is, how far in */
+    if (has_selected_)
+    {
+        const float rx = 1824.0f;
+        ui::text(list, fonts.display, fonts.display.font->fit(sel_title_, 32, 760.0f), rx, 128, 32, kWhite, Align::right);
+        std::string line = sel_sub_;
+        if (!sel_resume_.empty())
+            line += (line.empty() ? "" : "  -  ") + sel_resume_;
+        else if (sel_played_)
+            line += (line.empty() ? "" : "  -  ") + std::string("Watched");
+        ui::text(list, fonts.regular, fonts.regular.font->fit(line, 19, 760.0f), rx, 162, 19, pal.text_muted, Align::right);
+    }
+}
+
 void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
 {
     draw_backdrop(list, ctx);
@@ -701,7 +880,7 @@ void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
         if (channels())
             list.circle(kGridX + 76 + tw + 18, 118, 6, kLive.with_alpha(0.6f + 0.4f * ui::breathe(ctx.time)));
         ui::text(list, fonts.regular, crumb_, kGridX + 76, 168, 20, pal.text_muted);
-        if (!empty_)
+        if (!empty_ && !shelves_active_)
         {
             float right = 1824.0f;
             std::string counter;
@@ -731,7 +910,11 @@ void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
     if (!status_.empty())
         ui::text(list, fonts.semibold, status_, kGridX + 2, 200, 17, has_error_ ? kRed : pal.accent, Align::left, 0.6f);
 
-    if (setup_shown())
+    if (shelves_active_)
+    {
+        draw_shelves(list, ctx);
+    }
+    else if (setup_shown())
     {
         draw_setup(list, ctx);
     }
@@ -843,9 +1026,11 @@ void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
         }
         else
         {
-            hints.push_back({ui::Button::cross, folder_level_ ? "Open" : "Play"});
+            hints.push_back({ui::Button::cross, (shelves_active_ ? sel_folder_ : folder_level_) ? "Open" : "Play"});
             hints.push_back({ui::Button::circle, "Back"});
             hints.push_back({ui::Button::square, "Search"});
+            if (item_menu_)
+                hints.push_back({ui::Button::triangle, "More"});
             if (multi_page_)
                 hints.push_back({ui::Button::l1, "Page", ui::Button::r1});
             hints.push_back({ui::Button::options, options_hint_.empty() ? "Edit server" : options_hint_.c_str()});

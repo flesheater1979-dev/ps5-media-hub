@@ -194,6 +194,7 @@ int launch_choice(int idx)
     /* Either side may know it is live: the provider's catalog said so, or the
      * resolved choice did (an HLS playlist with no EXT-X-ENDLIST). */
     src.is_live  = (g_pending.is_live || c.is_live) ? true : false;
+    src.subtitleUrl = c.sub_url;
 
     /* Read by evo_stream_io_open() on the worker started below. */
     snprintf(evo_stream_headers, sizeof evo_stream_headers, "%s", c.headers);
@@ -353,7 +354,11 @@ void on_resolved(int ok, const evo_stream_choice_t* choices, int count, void* ud
         /* Every row is a real source the addon listed: no guesses, and no HLS
          * quality read - its rows would be inserted as if after a playlist URL. */
         g_variants = VariantsState::None;
-        if (pp->choice_count > 1) {
+        /* An automatic alternative (a server transcode) is no reason to ask. */
+        int real = 0;
+        for (int i = 0; i < pp->choice_count; ++i)
+            if (!pp->choices[i].fallback) ++real;
+        if (real > 1) {
             g_pick_stage = PickStage::Ready;
             return;
         }
@@ -1446,55 +1451,14 @@ bool ProviderHostScreen::handleInput(uint32_t pressed, uint32_t held, uint32_t r
     }
 
     if (pressed & PadButtons::Triangle) {
-        if (!evo_rmlui_provider_get_focused_is_folder()) {
-            const char* title = evo_rmlui_provider_get_focused_title();
-            const char* id = evo_rmlui_provider_get_focused_id();
-            if (title && title[0]) {
-                /* Heap, not stack: a resolve can answer later from
-                 * evo_net_poll() (Stremio, and Emby/Jellyfin since #116 ask
-                 * the server for its versions), long after this frame. */
-                struct FavCtx {
-                    char title[128];
-                    char id[128];
-                };
-                auto* ctx = static_cast<FavCtx*>(std::calloc(1, sizeof(FavCtx)));
-                if (!ctx) return true;
-                std::snprintf(ctx->title, sizeof(ctx->title), "%s", title);
-                std::snprintf(ctx->id, sizeof(ctx->id), "%s", id ? id : "");
-
-                /* Toggle: the resolved stream URL when there is one, so the
-                 * favourite path points at the stream; else the title. */
-                auto toggle = [](FavCtx* c, const char* url) {
-                    int idx = url ? favorites_find(url) : -1;
-                    if (idx < 0) idx = favorites_find(c->title);
-                    if (idx < 0 && !url && c->id[0]) idx = favorites_find(c->id);
-                    if (idx >= 0) {
-                        favorites_remove(favorite_files[idx].path);
-                        favorites_save();
-                        toast("FAVORITES", "Removed from favorites");
-                        evo_feedback(EVO_FB_CANCEL);
-                    } else {
-                        favorites_add(url ? url : c->title, c->title, 0.0);
-                        favorites_save();
-                        toast("FAVORITES", "Added to favorites");
-                        evo_feedback(EVO_FB_CONFIRM);
-                    }
-                };
-                static void (*s_toggle)(FavCtx*, const char*) = toggle;
-
-                if (evo_provider_resolve_chain(m_providerId.c_str(), id, [](int ok, const evo_stream_choice_t* choices, int count, void* ud) {
-                        auto* c = static_cast<FavCtx*>(ud);
-                        const bool have = ok && count > 0 && choices && choices[0].url[0];
-                        s_toggle(c, have ? choices[0].url : nullptr);
-                        std::free(c);
-                    }, ctx) != 0) {
-                    toggle(ctx, nullptr);
-                    std::free(ctx);
-                }
-                evo_rmlui_provider_reload();
-                return true;
-            }
+        const evo_provider_t* ip = evo_provider_find(m_providerId.c_str());
+        const char* fid = evo_rmlui_provider_get_focused_id();
+        if (ip && ip->item_action && fid && fid[0] && std::strncmp(fid, "v:", 2) &&
+            std::strncmp(fid, "lib:", 4)) {
+            openItemMenu(ip);
+            return true;
         }
+        if (toggleFocusedFavorite()) return true;
     }
 
     /*
@@ -1819,8 +1783,220 @@ void ProviderHostScreen::openGuidePicker()
             "USE THIS GUIDE", "BACK", focus);
 }
 
+bool ProviderHostScreen::toggleFocusedFavorite()
+{
+    if (evo_rmlui_provider_get_focused_is_folder()) return false;
+    const char* title = evo_rmlui_provider_get_focused_title();
+    const char* id = evo_rmlui_provider_get_focused_id();
+    if (title && title[0]) {
+        /* Heap, not stack: a resolve can answer later from
+         * evo_net_poll() (Stremio, and Emby/Jellyfin since #116 ask
+         * the server for its versions), long after this frame. */
+        struct FavCtx {
+            char title[128];
+            char id[128];
+        };
+        auto* ctx = static_cast<FavCtx*>(std::calloc(1, sizeof(FavCtx)));
+        if (!ctx) return true;
+        std::snprintf(ctx->title, sizeof(ctx->title), "%s", title);
+        std::snprintf(ctx->id, sizeof(ctx->id), "%s", id ? id : "");
+
+        /* Toggle: the resolved stream URL when there is one, so the
+         * favourite path points at the stream; else the title. */
+        auto toggle = [](FavCtx* c, const char* url) {
+            int idx = url ? favorites_find(url) : -1;
+            if (idx < 0) idx = favorites_find(c->title);
+            if (idx < 0 && !url && c->id[0]) idx = favorites_find(c->id);
+            if (idx >= 0) {
+                favorites_remove(favorite_files[idx].path);
+                favorites_save();
+                toast("FAVORITES", "Removed from favorites");
+                evo_feedback(EVO_FB_CANCEL);
+            } else {
+                favorites_add(url ? url : c->title, c->title, 0.0);
+                favorites_save();
+                toast("FAVORITES", "Added to favorites");
+                evo_feedback(EVO_FB_CONFIRM);
+            }
+        };
+        static void (*s_toggle)(FavCtx*, const char*) = toggle;
+
+        if (evo_provider_resolve_chain(m_providerId.c_str(), id, [](int ok, const evo_stream_choice_t* choices, int count, void* ud) {
+                auto* c = static_cast<FavCtx*>(ud);
+                const bool have = ok && count > 0 && choices && choices[0].url[0];
+                s_toggle(c, have ? choices[0].url : nullptr);
+                std::free(c);
+            }, ctx) != 0) {
+            toggle(ctx, nullptr);
+            std::free(ctx);
+        }
+        evo_rmlui_provider_reload();
+        return true;
+    }
+    return false;
+}
+
+namespace {
+struct ActionCtx { std::string done; };
+struct RowsCtx { std::string title, kind; };
+}
+
+/* A panel whose rows the provider builds (details and cast, browse options, genres). */
+void ProviderHostScreen::openRowsPanel(const evo_provider_t* p, const char* item,
+                                       const char* kind, const std::string& title)
+{
+    m_panelPage = "rows";
+    m_rowsItem = item;
+    auto* ctx = new RowsCtx{title, kind};
+    int rc = p->panel(item, kind, [](int ok, const evo_provider_row_t* rows, int count, void* ud) {
+        auto* c = static_cast<RowsCtx*>(ud);
+        if (!ok || count <= 0) {
+            toast("OPTIONS", "Nothing to show");
+            delete c;
+            return;
+        }
+        PanelBuild pb;
+        for (int i = 0; i < count; ++i) {
+            PanelBuild::Row r;
+            r.id = std::string("row:") + rows[i].id;
+            r.title = rows[i].title;
+            r.detail = rows[i].detail;
+            r.chevron = std::strncmp(rows[i].id, "panel:", 6) == 0 ? 1 : 0;
+            pb.rows.push_back(r);
+        }
+        const bool info = c->kind == "details";
+        pb.show("OPTIONS  ›  ", info ? "DETAILS" : "BROWSE", c->title, "", "", "",
+                info ? "" : "SELECT", "BACK", 0);
+        delete c;
+    }, ctx);
+    if (rc != 0) { toast("OPTIONS", "Could not reach the server"); delete ctx; }
+}
+
+void ProviderHostScreen::openItemMenu(const evo_provider_t* p)
+{
+    evo_feedback(EVO_FB_OPEN);
+    m_panelPage = "item";
+    const char* id = evo_rmlui_provider_get_focused_id();
+    const char* title = evo_rmlui_provider_get_focused_title();
+    m_itemId = id ? id : "";
+    m_itemTitle = title ? title : "";
+    int played = 0, fav = 0;
+    evo_rmlui_provider_get_focused_flags(&played, &fav);
+    m_itemPlayed = played != 0;
+    m_itemFav = fav != 0;
+
+    PanelBuild pb;
+    PanelBuild::Row r;
+    r.id = "item:played";
+    r.title = m_itemPlayed ? "Mark as unwatched" : "Mark as watched";
+    r.detail = std::string("On ") + p->name;
+    r.icon = "/assets/icons/icon_recent_files.png";
+    pb.rows.push_back(r);
+
+    r = PanelBuild::Row();
+    r.id = "item:fav";
+    r.title = m_itemFav ? "Remove from favourites" : "Add to favourites";
+    r.detail = std::string("On ") + p->name;
+    r.icon = "/assets/icons/icon_favorites.png";
+    pb.rows.push_back(r);
+
+    if (p->panel) {
+        r = PanelBuild::Row();
+        r.id = "item:details";
+        r.title = "Details & cast";
+        r.detail = "Rating, genres, director, actors";
+        r.icon = "/assets/icons/icon_activity.png";
+        r.chevron = 1;
+        pb.rows.push_back(r);
+        if (m_itemId.rfind("i:", 0) == 0 || m_itemId.rfind("ser:", 0) == 0) {
+            r = PanelBuild::Row();
+            r.id = "item:similar";
+            r.title = "Similar titles";
+            r.detail = "More like this";
+            r.icon = "/assets/icons/icon_folder.png";
+            pb.rows.push_back(r);
+        }
+        if (std::strncmp(evo_rmlui_provider_current_parent(), "lib:", 4) == 0) {
+            r = PanelBuild::Row();
+            r.id = "item:browse";
+            r.title = "Sort, filter & genre";
+            r.detail = "For this library";
+            r.icon = "/assets/icons/icon_activity.png";
+            r.chevron = 1;
+            pb.rows.push_back(r);
+        }
+    }
+
+    r = PanelBuild::Row();
+    r.id = "item:transcode";
+    r.title = "Server transcoding";
+    r.detail = "Flip between only-when-needed and always";
+    r.icon = "/assets/icons/icon_activity.png";
+    pb.rows.push_back(r);
+
+    if (!evo_rmlui_provider_get_focused_is_folder()) {
+        r = PanelBuild::Row();
+        r.id = "item:evofav";
+        r.title = "EVO favourites";
+        r.detail = "Keep it on this console";
+        r.icon = "/assets/icons/icon_favorites.png";
+        pb.rows.push_back(r);
+    }
+    pb.show("", "OPTIONS", m_itemTitle, p->name, "", "", "SELECT", "CLOSE", 0);
+}
+
 void ProviderHostScreen::applyChoice(const std::string& id)
 {
+    if (id.rfind("row:", 0) == 0) {
+        /* A row the provider built: nothing, another panel, or an action. */
+        const evo_provider_t* ip = evo_provider_find(m_providerId.c_str());
+        const std::string rid = id.substr(4);
+        if (!ip || rid.empty()) return;
+        if (rid.rfind("panel:", 0) == 0) {
+            openRowsPanel(ip, m_rowsItem.c_str(), rid.c_str() + 6, "Genre");
+            return;
+        }
+        evo_rmlui_provider_hide_panel();
+        if (!ip->item_action) return;
+        ip->item_action(m_rowsItem.c_str(), rid.c_str(), [](int ok, const char* msg, void*) {
+            if (msg) toast("BROWSE", msg);
+            if (ok) evo_rmlui_provider_reload();
+        }, nullptr);
+        return;
+    }
+    if (id == "item:details" || id == "item:browse") {
+        const evo_provider_t* ip = evo_provider_find(m_providerId.c_str());
+        if (!ip || !ip->panel) return;
+        if (id == "item:details") openRowsPanel(ip, m_itemId.c_str(), "details", m_itemTitle);
+        else                      openRowsPanel(ip, evo_rmlui_provider_current_parent(), "browse", "Sort, filter & genre");
+        return;
+    }
+    if (id == "item:similar") {
+        evo_rmlui_provider_hide_panel();
+        const std::string level = "sim:" + m_itemId;
+        evo_rmlui_provider_open_level(level.c_str(), ("Like " + m_itemTitle).c_str());
+        return;
+    }
+    if (id.rfind("item:", 0) == 0) {
+        evo_rmlui_provider_hide_panel();
+        if (id == "item:evofav") { toggleFocusedFavorite(); return; }
+        const evo_provider_t* ip = evo_provider_find(m_providerId.c_str());
+        if (!ip || !ip->item_action) return;
+        const bool played = id == "item:played";
+        const char* action = id == "item:transcode" ? "transcode" : played ? (m_itemPlayed ? "unplayed" : "played")
+                                    : (m_itemFav ? "unfav" : "fav");
+        auto* ctx = new ActionCtx{played ? (m_itemPlayed ? "Marked as unwatched" : "Marked as watched")
+                                         : (m_itemFav ? "Removed from favourites" : "Added to favourites")};
+        int rc = ip->item_action(m_itemId.c_str(), action, [](int ok, const char* msg, void* ud) {
+            auto* c = static_cast<ActionCtx*>(ud);
+            toast("OPTIONS", ok ? (msg ? msg : c->done.c_str()) : "The server did not accept that");
+            evo_feedback(ok ? EVO_FB_CONFIRM : EVO_FB_CANCEL);
+            if (ok) evo_rmlui_provider_reload();
+            delete c;
+        }, ctx);
+        if (rc != 0) { toast("OPTIONS", "Could not reach the server"); delete ctx; }
+        return;
+    }
     if (id == "panel:back") {
         if (m_panelPage == "guide") openProviderMenu(1);
         else evo_rmlui_provider_hide_panel();

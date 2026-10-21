@@ -71,6 +71,7 @@ extern "C" void evo_log_alloc_state(const char *when)
 #include "evo_recent.h"
 #include "evo_toast.h"
 #include "evo_data_path.h"
+#include "evo_net.h"
 #include "evo_boot_log.h"
 #include "evo_boot_trace.h"
 #include "prospero_thumbnail.h"
@@ -1349,6 +1350,24 @@ bool PlaybackController::startPlaybackSource(const PlaybackSource& source,
     // Subtitle setup
     prospero_subtitle_clear();
     prospero_subtitle_load_for_media(filePath.c_str());
+    if (!m_source.subtitleUrl.empty()) {
+        /* A media server's sidecar subtitle: fetch it, then it loads like a local .srt. */
+        char* body = nullptr;
+        size_t blen = 0;
+        int st = 0;
+        if (evo_net_http_get_sync(m_source.subtitleUrl.c_str(), nullptr, 0, &body, &blen, &st) == 0 &&
+            body && blen > 0 && st == 200) {
+            const char* tmp = evo_data_path("ext_sub.srt");
+            if (FILE* f = std::fopen(tmp, "wb")) {
+                std::fwrite(body, 1, blen, f);
+                std::fclose(f);
+                prospero_subtitle_load_external(tmp);
+            }
+        } else {
+            evo_bt("PlaybackController: sidecar subtitle fetch failed (http %d)", st);
+        }
+        std::free(body);
+    }
     prospero_embedded_subtitle_open(play_fmt);
     prospero_secondary_subtitle_open(play_fmt);   // #110: only if one was chosen for this file
 
@@ -1737,7 +1756,10 @@ void PlaybackController::saveResumePosition() {
         const evo_provider_t* p = evo_provider_find(m_source.provider.c_str());
         if (p && (p->caps & EVO_PROVIDER_CAP_PROGRESS) && p->report_progress) {
             double now = static_cast<double>(GetCurrentTimeMs()) / 1000.0;
-            if (m_lastProgressReport <= 0.0 || now - m_lastProgressReport >= 10.0) {
+            const bool paused = isPaused();
+            const bool pauseChanged = paused != (evo_provider_is_paused() != 0);
+            evo_provider_set_paused(paused ? 1 : 0);
+            if (pauseChanged || m_lastProgressReport <= 0.0 || now - m_lastProgressReport >= 10.0) {
                 m_lastProgressReport = now;
                 p->report_progress(m_source.item_id.c_str(),
                                    static_cast<int64_t>(pos),

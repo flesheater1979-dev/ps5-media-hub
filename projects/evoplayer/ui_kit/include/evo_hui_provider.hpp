@@ -44,6 +44,16 @@ class ProviderGridScreen
         bool radio = false, on = false, warn = false, chevron = false, badge_live = false, focused = false;
     };
 
+    struct Shelf
+    {
+        std::string title;
+        int abs_index = 0, total = 0, first_card = 0, focus_card = -1, scroll_card = 0;
+        std::vector<Row> cards;
+        std::vector<char> see_all;
+    };
+    void draw_shelves(hui::gfx::DrawList &list, const Context &ctx) const;
+    hui::gfx::Rect shelf_card_rect(const Shelf &s, int card_index) const;
+
     bool channels() const { return variant_ == EVO_HUI_PROVIDER_LIVETV || variant_ == EVO_HUI_PROVIDER_XTREAM; }
     bool setup_shown() const;
     hui::gfx::Rect card_rect(int index) const;
@@ -79,6 +89,13 @@ class ProviderGridScreen
     std::string panel_crumb_, panel_eyebrow_, panel_title_, panel_sub_, panel_note_b_, panel_note_;
     std::string panel_accept_, panel_back_;
     std::vector<PanelRow> panel_rows_;
+
+    bool shelves_active_ = false, item_menu_ = false;
+    int shelf_total_ = 0, shelf_focus_abs_ = 0;
+    std::vector<Shelf> shelves_;
+    float scroll_y_ = 0.0f;                 /* in shelves */
+    float scroll_x_[32] = {};               /* per shelf, in cards */
+    bool scroll_snapped_ = false;
 
     float age_ = 0.0f;
     float panel_age_ = 0.0f;
