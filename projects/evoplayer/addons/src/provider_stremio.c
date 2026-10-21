@@ -62,6 +62,7 @@ typedef struct {
     int  has_meta, has_stream;
     char meta_types[160], stream_types[160];   /* ",movie,series," - "" = any */
     char prefixes[384];                          /* ",tt,kitsu:," - "" = any */
+    int  builtin;                /* EVO's own Cinemeta, see builtin_sync() */
 } addon_t;
 
 /*
@@ -103,12 +104,48 @@ static void ad_set_base(addon_t *a)
     while (n > 0 && a->base[n - 1] == '/') a->base[--n] = '\0';
 }
 
+/*
+ * Cinemeta, built in, as the Stremio app has it. Most addons people add are
+ * either stream-only (Torrentio: no catalogs at all, so nothing to browse) or
+ * catalog-only (Streaming Catalogs: lists of IMDb ids with no meta, so a series
+ * has no seasons to open). Stremio fills both gaps with Cinemeta, and so does
+ * EVO: it rides at the end of the list, is never saved or offered for removal,
+ * lends its catalogs only when no added addon has any, and is always there for
+ * series details and search. Skipped when the user added Cinemeta themselves.
+ */
+#define CINEMETA_BASE "https://v3-cinemeta.strem.io"
+
+static int user_count(void)
+{
+    return (S->nad > 0 && S->ad[S->nad - 1].builtin) ? S->nad - 1 : S->nad;
+}
+
+static void builtin_drop(void)
+{
+    if (S->nad > 0 && S->ad[S->nad - 1].builtin) memset(&S->ad[--S->nad], 0, sizeof S->ad[0]);
+}
+
+static void builtin_sync(void)
+{
+    int want = user_count() > 0;
+    for (int i = 0; want && i < user_count(); ++i)
+        if (!strcmp(S->ad[i].base, CINEMETA_BASE)) want = 0;
+    const int have = S->nad > 0 && S->ad[S->nad - 1].builtin;
+    if (!want) { builtin_drop(); return; }
+    if (have || S->nad >= AD_MAX) return;
+    addon_t *a = &S->ad[S->nad++];
+    memset(a, 0, sizeof *a);
+    snprintf(a->url, sizeof a->url, "%s/manifest.json", CINEMETA_BASE);
+    ad_set_base(a);
+    a->builtin = 1;
+}
+
 static int ad_save(void)
 {
     cJSON *root = cJSON_CreateObject();
     cJSON *arr = cJSON_CreateArray();
     cJSON_AddItemToObject(root, "addons", arr);
-    for (int i = 0; i < S->nad; ++i) cJSON_AddItemToArray(arr, cJSON_CreateString(S->ad[i].url));
+    for (int i = 0; i < user_count(); ++i) cJSON_AddItemToArray(arr, cJSON_CreateString(S->ad[i].url));
     char *txt = cJSON_Print(root);
     cJSON_Delete(root);
     if (!txt) return -1;
@@ -141,11 +178,12 @@ static int ad_init(void)
         S->nad++;
     }
     if (root) cJSON_Delete(root);
+    builtin_sync();
     return 0;
 }
 
 static void ad_shutdown(void) { }
-static int  ad_is_configured(void) { return g_addons.nad > 0; }
+static int  ad_is_configured(void) { S = &g_addons; return user_count() > 0; }
 
 /* The editor starts empty: the value typed is an addon to ADD, not a source
  * to replace (see ad_set_source). */
@@ -189,28 +227,30 @@ static int ad_set_source(const char *value)
         while (n > 0 && url[n - 1] == '/') url[--n] = '\0';
         strncat(url, "/manifest.json", sizeof url - strlen(url) - 1);
     }
-    for (int i = 0; i < S->nad; ++i)
+    for (int i = 0; i < user_count(); ++i)
         if (!strcmp(S->ad[i].url, url)) return 0;
-    if (S->nad >= AD_MAX) return -1;
+    builtin_drop();                      /* added ones go before it */
+    if (S->nad >= AD_MAX) { builtin_sync(); return -1; }
     memset(&S->ad[S->nad], 0, sizeof S->ad[S->nad]);
     snprintf(S->ad[S->nad].url, AD_URL, "%s", url);
     ad_set_base(&S->ad[S->nad]);
     S->nad++;
+    builtin_sync();
     return ad_save();
 }
 
-int evo_stremio_addon_count(void) { return g_addons.nad; }
+int evo_stremio_addon_count(void) { S = &g_addons; return user_count(); }
 
 const char *evo_stremio_addon_url(int i)
 {
     S = &g_addons;
-    return (i >= 0 && i < S->nad) ? S->ad[i].url : "";
+    return (i >= 0 && i < user_count()) ? S->ad[i].url : "";
 }
 
 const char *evo_stremio_addon_name(int i)
 {
     S = &g_addons;
-    if (i < 0 || i >= S->nad) return "";
+    if (i < 0 || i >= user_count()) return "";
     if (S->ad[i].name[0]) return S->ad[i].name;
     static char label[AD_URL];
     const char *u = S->ad[i].url;
@@ -224,9 +264,10 @@ const char *evo_stremio_addon_name(int i)
 int evo_stremio_addon_remove(int i)
 {
     S = &g_addons;
-    if (i < 0 || i >= S->nad) return -1;
+    if (i < 0 || i >= user_count()) return -1;
     for (int k = i; k + 1 < S->nad; ++k) S->ad[k] = S->ad[k + 1];
     memset(&S->ad[--S->nad], 0, sizeof S->ad[0]);
+    builtin_sync();
     return ad_save();
 }
 
@@ -352,9 +393,15 @@ static void emit_root(evo_provider_items_cb cb, void *ud)
     for (int i = 0; i < S->nad; ++i) max += S->ad[i].ncats + 1;
     evo_provider_item_t *items = (evo_provider_item_t *)calloc((size_t)max, sizeof *items);
     if (!items) { if (cb) cb(0, NULL, 0, 0, ud); return; }
+    /* The built-in Cinemeta lends its catalogs only when nothing added has any. */
+    int others = 0;
+    for (int i = 0; i < S->nad; ++i)
+        for (int c = 0; !S->ad[i].builtin && S->ad[i].loaded == 1 && c < S->ad[i].ncats; ++c)
+            if (!S->ad[i].cats[c].needs_extra) others = 1;
     int k = 0;
     for (int i = 0; i < S->nad; ++i) {
         addon_t *a = &S->ad[i];
+        if (a->builtin && (others || a->loaded < 0)) continue;
         if (a->loaded < 0) {
             evo_provider_item_clear(&items[k]);
             snprintf(items[k].id, sizeof items[k].id, "x:%d", i);
@@ -386,6 +433,9 @@ static void map_meta(int a, cJSON *m, evo_provider_item_t *it)
     evo_provider_item_clear(it);
     const char *type = jstr(m, "type");
     const char *id = jstr(m, "id");
+    /* A catalog keyed on its own ids (tmdb:123) that also gives the IMDb id:
+     * use that, which is what stream addons such as Torrentio look up. */
+    if (strncmp(id, "tt", 2) && !strncmp(jstr(m, "imdb_id"), "tt", 2)) id = jstr(m, "imdb_id");
     int series = !strcmp(type, "series") || !strcmp(type, "anime");
     snprintf(it->id, sizeof it->id, "%s:%d:%s:%s", series ? "s" : "m", a, type, id);
     snprintf(it->title, sizeof it->title, "%s", jstr(m, "name"));
@@ -691,7 +741,12 @@ static int list_series(int a, const char *type, const char *id, int season,
         return 0;
     }
     int m = find_meta_addon(a, type, id);
-    if (m < 0) return -1;
+    if (m < 0) {
+        PROV_LOG("%s: no addon gives details for %s/%s", S->tag, type, id);
+        evo_error_set("No addon gives the episode list for this title. Add one that "
+                      "serves details for it, or use a catalog with IMDb ids");
+        return -1;
+    }
     meta_ctx_t *x = (meta_ctx_t *)calloc(1, sizeof *x);
     if (!x) return -2;
     x->set = S;
@@ -1019,7 +1074,7 @@ static void nv_load_addons(void)
     if (store) cJSON_Delete(store);
 
     /* Unchanged: keep the loaded manifests. */
-    int same = n == S->nad;
+    int same = n == user_count();
     for (int i = 0; same && i < n; ++i) same = !strcmp(S->ad[i].url, urls[i]);
     if (same) return;
 
@@ -1032,10 +1087,11 @@ static void nv_load_addons(void)
         addon_t *a = &S->ad[S->nad++];
         int j = 0;
         while (j < nprev && strcmp(prev[j].url, urls[i])) j++;
-        if (j < nprev) { *a = prev[j]; continue; }
+        if (j < nprev) { *a = prev[j]; a->builtin = 0; continue; }
         snprintf(a->url, AD_URL, "%s", urls[i]);
         ad_set_base(a);
     }
+    builtin_sync();
     /* Row ids carry addon indexes, which may have moved. */
     S->cat_key[0] = '\0';
     S->meta_key[0] = '\0';

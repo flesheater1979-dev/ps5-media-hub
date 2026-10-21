@@ -143,6 +143,28 @@ FFmpeg's HTTP client (`evo_net_request_async_avio`), like Jellyfin's.
 Adding and removing addons stays in the web version; EVO's Addons provider
 keeps its own list.
 
+## Built-in Cinemeta (2026-10-21, hardware-verified)
+
+User report: "added Torrentio, nothing shows up; a catalog addon does not
+work". Both reproduced on the console:
+
+- Torrentio has no catalogs, so a list of only Torrentio browsed nothing.
+- A catalog-only addon (Streaming Catalogs: IMDb ids, no `meta`) listed shows,
+  but opening one was refused: no addon served their seasons.
+- Torrentio without debrid answers with `infoHash` streams only, which EVO
+  skips, so Play found nothing.
+
+Stremio covers the first two with Cinemeta built in, and EVO now does the same
+(`builtin_sync()` in `provider_stremio.c`): Cinemeta rides at the end of every
+instance's list while it has user addons, is never saved or offered for
+removal, lends its catalogs only when no added addon has any, and serves meta
+and search always. It is skipped when the user added Cinemeta themselves. A
+catalog item keyed on its own ids (`tmdb:`) with an `imdb_id` is mapped to
+the IMDb id, which is what stream addons look up. Play with nothing playable
+says why (no stream addon / torrent links only, needs debrid). Torrentio
+addresses with settings (`providers=yts,eztv|qualityfilter=...`) load fine.
+User guide: the GitHub wiki page "Stremio-Addons".
+
 ## Testing (all on the console, no browser involved)
 
 - Screens are EVO's own: `evo-remote.sh key` + `key l3` screenshots.
