@@ -175,9 +175,19 @@ void AgcBatch::destroy(Texture *texture)
 
 std::uint32_t AgcBatch::create_font_texture(const hui::gfx::Font &font)
 {
+    return create_font_atlas(font.atlas_width(), font.atlas_height(), font.atlas().data());
+}
+
+bool AgcBatch::update_font_texture(std::uint32_t handle, const hui::gfx::Font &font)
+{
+    return update_font_atlas(handle, font.atlas_width(), font.atlas_height(), font.atlas().data());
+}
+
+std::uint32_t AgcBatch::create_font_atlas(int width, int height, const std::uint8_t *r8)
+{
     if (!ok_ || font_count_ >= hui::gfx::kFontSlots)
         return 0;
-    Texture *tex = make_texture(font.atlas_width(), font.atlas_height(), 1, font.atlas().data());
+    Texture *tex = make_texture(width, height, 1, r8);
     if (!tex)
         return 0;
     fonts_[font_count_] = tex;
@@ -185,14 +195,14 @@ std::uint32_t AgcBatch::create_font_texture(const hui::gfx::Font &font)
     return hui::gfx::kFontHandleBase | font_count_;
 }
 
-bool AgcBatch::update_font_texture(std::uint32_t handle, const hui::gfx::Font &font)
+bool AgcBatch::update_font_atlas(std::uint32_t handle, int width, int height, const std::uint8_t *r8)
 {
     if (!hui::gfx::is_font_handle(handle))
         return false;
     const std::uint32_t slot = (handle & 0xfu) - 1u;
     if (slot >= font_count_)
         return false;
-    Texture *tex = make_texture(font.atlas_width(), font.atlas_height(), 1, font.atlas().data());
+    Texture *tex = make_texture(width, height, 1, r8);
     if (!tex)
         return false;
     if (fonts_[slot])

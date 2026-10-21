@@ -4,6 +4,7 @@
 #include "evo_feedback.h"
 #include "evo_toast.h"
 #include "evo_nav.h"
+#include "evo_langname.h"
 
 #include <cctype>
 #include <cstdio>
@@ -102,7 +103,8 @@ void AudioTrackPickerScreen::refreshTracks() {
         Entry e;
         e.kind = KindAudio;
         e.streamIndex = t.streamIndex;
-        e.label = t.language.empty() ? "UNKNOWN" : t.language;
+        const char* native = evo_language_native_name(t.language.c_str());
+        e.label = native ? native : (t.language.empty() ? "UNKNOWN" : t.language);
         if (!t.title.empty()) {
             e.label = t.title;
         }

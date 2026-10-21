@@ -20,6 +20,8 @@
 #include <libavutil/dict.h>
 #include <libavutil/mathematics.h>
 
+#include "evo_charset.h"
+#include "evo_boot_log.h"
 #include "evo_audio_out.h"   /* audio_handle, audio_clock_seconds */
 #include "evo_subsync.h"     /* #102 auto-sync worker */
 
@@ -1599,47 +1601,121 @@ static int prospero_subtitle_sidecar_path(
 }
 
 
+/* A subtitle file read into memory as UTF-8 (#128), handed out a line at a time. */
+typedef struct {
+    char *text;
+    size_t pos;
+} SubtitleText;
+
+static int subtitle_text_open(SubtitleText *t, const char *path) {
+    t->text = NULL;
+    t->pos = 0;
+
+    FILE *file = fopen(path, "rb");
+
+    if (!file) {
+        return 0;
+    }
+
+    size_t cap = 64 * 1024;
+    size_t len = 0;
+    unsigned char *raw = (unsigned char *)malloc(cap);
+
+    while (raw) {
+        size_t got = fread(raw + len, 1, cap - len, file);
+
+        len += got;
+
+        if (len < cap) {
+            break;
+        }
+
+        if (cap >= 8u * 1024u * 1024u) {
+            break; /* far larger than any subtitle file */
+        }
+
+        cap *= 2;
+
+        unsigned char *bigger = (unsigned char *)realloc(raw, cap);
+
+        if (!bigger) {
+            free(raw);
+            raw = NULL;
+        } else {
+            raw = bigger;
+        }
+    }
+
+    fclose(file);
+
+    if (!raw) {
+        return 0;
+    }
+
+    const char *name = NULL;
+
+    t->text = evo_charset_to_utf8(raw, len, path, &name);
+    free(raw);
+
+    if (!t->text) {
+        return 0;
+    }
+
+    evo_boot_log("subtitles: %s read as %s", path, name ? name : "?");
+
+    return 1;
+}
+
+/* fgets() over the converted text: one line, newline kept, NUL-terminated. */
+static char *subtitle_text_gets(char *line, size_t size, SubtitleText *t) {
+    if (!t->text || !t->text[t->pos] || size < 2) {
+        return NULL;
+    }
+
+    size_t n = 0;
+
+    while (t->text[t->pos] && n + 1 < size) {
+        char c = t->text[t->pos++];
+
+        line[n++] = c;
+
+        if (c == '\n') {
+            break;
+        }
+    }
+
+    line[n] = 0;
+    return line;
+}
+
+static void subtitle_text_close(SubtitleText *t) {
+    free(t->text);
+    t->text = NULL;
+}
+
 static int prospero_subtitle_load_file(
     const char *path
 ) {
-    FILE *file =
-        fopen(
-            path,
-            "rb"
-        );
+    /*
+     * #128: read the whole file and turn it into UTF-8 first. Sidecars come in
+     * UTF-16 and in legacy code pages (Windows-1251/1253/1255/1256, TIS-620,
+     * GBK, Big5, Shift-JIS, EUC-KR); the lines below then read the UTF-8 text.
+     */
+    SubtitleText src;
 
-    if (!file) {
+    if (!subtitle_text_open(&src, path)) {
         return 0;
     }
 
     prospero_subtitle_count = 0;
 
     char line[1024];
-    int first_line = 1;
 
     while (
         prospero_subtitle_count <
             PROSPERO_SUBTITLE_MAX_CUES &&
-        fgets(
-            line,
-            sizeof(line),
-            file
-        )
+        subtitle_text_gets(line, sizeof(line), &src)
     ) {
-        if (
-            first_line &&
-            (unsigned char)line[0] == 0xEF &&
-            (unsigned char)line[1] == 0xBB &&
-            (unsigned char)line[2] == 0xBF
-        ) {
-            memmove(
-                line,
-                line + 3,
-                strlen(line + 3) + 1
-            );
-        }
-
-        first_line = 0;
         prospero_subtitle_trim(line);
 
         if (!line[0]) {
@@ -1657,11 +1733,7 @@ static int prospero_subtitle_load_file(
             );
         } else {
             if (
-                !fgets(
-                    timing_line,
-                    sizeof(timing_line),
-                    file
-                )
+                !subtitle_text_gets(timing_line, sizeof(timing_line), &src)
             ) {
                 break;
             }
@@ -1707,11 +1779,7 @@ static int prospero_subtitle_load_file(
         cue->text[0] = 0;
 
         while (
-            fgets(
-                line,
-                sizeof(line),
-                file
-            )
+            subtitle_text_gets(line, sizeof(line), &src)
         ) {
             prospero_subtitle_trim(line);
 
@@ -1743,7 +1811,7 @@ static int prospero_subtitle_load_file(
         }
     }
 
-    fclose(file);
+    subtitle_text_close(&src);
 
     if (prospero_subtitle_count <= 0) {
         return 0;

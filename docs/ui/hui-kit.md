@@ -76,3 +76,7 @@ Hardware loop: [tooling.md](../build/tooling.md#hardware-cycle).
 3. Call them first in the matching `evo_rmlui_update_/render_<x>` in
    `evo_rmlui_bridge.cpp` (see `evo_rmlui_render_launch`).
 4. Add the source to `UI_KIT_SRCS` in the Makefile and `tools/hui_preview.sh`.
+
+## Text in every script (#128)
+
+Kit text goes: baked ASCII atlases, then `noto-fallback.huifont` (Latin ext, Greek, Cyrillic, Hebrew, Arabic with joining and bidi order in `src/gfx/font.cpp`, symbols; baked by `tools/font-baker/bake_fallback.cpp`), then `ComplexText` (`projects/evoplayer/ui_kit/src/evo_hui_complex.cpp`: HarfBuzz shapes, FreeType draws SDF glyphs into a growing 2048 atlas; Thai and Indic faces are embedded, Chinese/Japanese/Korean load from `/data/evoplayer/fonts/NotoSans{SC,JP,KR}-Regular.otf` when present). `tools/hui_preview.sh` has no HarfBuzz, so Thai/Indic/CJK only show on the console. Subtitle sidecars are converted to UTF-8 by `media/src/evo_charset.c`; track pickers show native language names (`evo_langname.c`).

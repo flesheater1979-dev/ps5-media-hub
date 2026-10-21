@@ -48,6 +48,9 @@ class AgcBatch
     /* Re-uploads a slot's atlas after the font grew (the dynamic fallback
      * font adds glyphs at run time). */
     bool update_font_texture(std::uint32_t handle, const hui::gfx::Font &font);
+    /* The same for an atlas that is not a baked Font (the run-time glyph cache). */
+    std::uint32_t create_font_atlas(int width, int height, const std::uint8_t *r8);
+    bool update_font_atlas(std::uint32_t handle, int width, int height, const std::uint8_t *r8);
 
     /* RGBA8, straight alpha, top row first: the byte order of EVO's
      * 0xAABBGGRR pixels. 0 on failure. */

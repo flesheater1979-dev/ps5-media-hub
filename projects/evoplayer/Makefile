@@ -110,6 +110,8 @@ MEDIA_SRCS := \
     media/src/evo_audio_resample.c \
     media/src/evo_audio_out.c \
     media/src/evo_subtitle.c \
+    media/src/evo_charset.c \
+    media/src/evo_langname.c \
     media/src/evo_subsync.c \
     media/src/evo_hw.c \
     media/src/evo_perf_monitor.c \
@@ -260,7 +262,8 @@ ifeq ($(AGC_DEVICE),1)
                    ui_kit/src/evo_hui_misc.cpp \
                    ui_kit/src/evo_hui_extra.cpp \
                    ui_kit/src/evo_hui_surround.cpp \
-                   ui_kit/src/evo_hui_provider.cpp
+                   ui_kit/src/evo_hui_provider.cpp \
+                   ui_kit/src/evo_hui_complex.cpp
 endif
 UI_KIT_OBJS := $(UI_KIT_SRCS:.cpp=.o)
 

@@ -9,6 +9,7 @@
 #include "evo_hui.h"
 
 #include "evo_hui_browser.hpp"
+#include "evo_hui_complex.hpp"
 #include "evo_hui_extra.hpp"
 #include "evo_hui_misc.hpp"
 #include "evo_hui_modals.hpp"
@@ -148,6 +149,12 @@ struct Kit
     std::unique_ptr<BundleTextures> host;
     std::unique_ptr<evo::kit::TextureCache> textures;
     hui::gfx::Font font_regular, font_semibold, font_display, font_mono;
+    /* Draws what the four faces lack: accents, Greek, Cyrillic, Hebrew, Arabic, symbols. */
+    hui::gfx::Font font_fallback;
+    hui::ui::FontRef fallback_ref;
+    /* Thai, Indic and CJK: shaped at run time, drawn from a growing atlas. */
+    evo::kit::ComplexText complex;
+    std::uint32_t complex_texture = 0;
     hui::ui::Fonts fonts;
     evo::kit::Palette palette;
 
@@ -225,6 +232,24 @@ struct Kit
             batch.release();
             return false;
         }
+        /* Optional: without it text falls back to '?' as before. */
+        if (load_font("hui/fonts/noto-fallback.huifont", &font_fallback, &fallback_ref))
+        {
+            for (hui::gfx::Font *f : {&font_regular, &font_semibold, &font_display, &font_mono})
+                f->set_fallback(&font_fallback, fallback_ref.texture);
+        }
+        complex_texture = batch.create_font_atlas(evo::kit::ComplexText::kAtlas,
+                                                  evo::kit::ComplexText::kAtlas, complex.atlas());
+        if (complex_texture)
+        {
+            complex.set_texture(complex_texture);
+            for (hui::gfx::Font *f : {&font_regular, &font_semibold, &font_display, &font_mono})
+                f->set_complex(&complex);
+        }
+        else
+        {
+            evo_boot_log("hui: complex glyph atlas upload failed");
+        }
         fonts.pixel = fonts.mono;
         fonts.hand = fonts.regular;
         host = std::make_unique<BundleTextures>(batch);
@@ -233,6 +258,17 @@ struct Kit
         state = up;
         evo_boot_log("hui: kit screens up");
         return true;
+    }
+
+    /* Uploads glyphs the layout just added, draws, then lets a full glyph
+     * atlas start over. */
+    void draw_batch(const hui::gfx::DrawList &list, int width, int height)
+    {
+        if (complex_texture && complex.take_dirty())
+            batch.update_font_atlas(complex_texture, evo::kit::ComplexText::kAtlas,
+                                    evo::kit::ComplexText::kAtlas, complex.atlas());
+        batch.draw(list, hui::gfx::fit_viewport(width, height), width, height);
+        complex.end_frame();
     }
 
     /* Advances the clock once per frame, however many kit draws it has. */
@@ -303,7 +339,7 @@ struct Kit
         draw_screen(dt, list, ctx);
         if (with_rail)
             rail.draw(list, ctx);
-        batch.draw(list, hui::gfx::fit_viewport(width, height), width, height);
+        draw_batch(list, width, height);
         return 1;
     }
 
@@ -336,7 +372,7 @@ struct Kit
         hui::gfx::DrawList &list = overlay_scratch;
         list.clear();
         draw_overlay(dt, list, ctx);
-        batch.draw(list, hui::gfx::fit_viewport(width, height), width, height);
+        draw_batch(list, width, height);
         return 1;
     }
 

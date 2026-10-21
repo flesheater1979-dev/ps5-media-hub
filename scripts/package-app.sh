@@ -650,6 +650,14 @@ for so in ${PRX_STUB_SOS[@]+"${PRX_STUB_SOS[@]}"}; do CONV_STUB_ARGS+=(--stub "$
     --module-sdk "${MODULE_SDK}" --companion-sdk "${COMPANION_SDK}" \
     --file-name eboot.elf
 
+# The read-only segment's file offset must be a multiple of 64 KB (the code size
+# sets it, see tools/native-app/ps5-pie.ld). At 0x4000 past one the console read
+# one 64 KB block of .rodata from the block before it.
+RO_OFFSET="$(readelf -lW "${BUILD}/eboot.elf" | awk '$1=="LOAD" && $7=="R" && $8 ~ /^0x/ {print $2; exit}')"
+if [[ -n "${RO_OFFSET}" ]] && (( (RO_OFFSET & 0xFFFF) != 0 )); then
+    die "read-only segment at file offset ${RO_OFFSET}, not a multiple of 64 KB - the console misreads .rodata (see ps5-pie.ld)"
+fi
+
 rm -rf -- "${APPDIR}"
 mkdir -p "${APPDIR}/sce_sys" "${APPDIR}/sce_module"
 "${TOOL}" self --sign --in "${BUILD}/eboot.elf" --out "${APPDIR}/eboot.bin" \

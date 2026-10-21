@@ -171,6 +171,13 @@ int main(int argc, char **argv)
         !load_font(renderer, fdir + "montserrat-medium.huifont", &display, &fonts.display) ||
         !load_font(renderer, fdir + "dejavu-sans-mono.huifont", &mono, &fonts.mono))
         return 1;
+    hui::gfx::Font fallback;
+    hui::ui::FontRef fallback_ref;
+    if (load_font(renderer, fdir + "noto-fallback.huifont", &fallback, &fallback_ref))
+    {
+        for (hui::gfx::Font *f : {&regular, &semibold, &display, &mono})
+            f->set_fallback(&fallback, fallback_ref.texture);
+    }
     fonts.pixel = fonts.mono;
     fonts.hand = fonts.regular;
 
@@ -491,6 +498,30 @@ int main(int argc, char **argv)
         {"home_library", 0, [&] { clear_focus(); launch.library[1].is_focused = 1; }},
         {"home_rail", 0, [&] { clear_focus(); nav.rail_focused = 1; nav.cursor_index = 1; }},
         {"list", 1, [&] { clear_focus(); lp.rows[2].is_focused = 1; lp.cursor_index = 2; }},
+        {"list_scripts", 1, [&] {
+             clear_focus();
+             static const char *const names[9][2] = {
+                 {"قناة الأخبار العربية", "Arabic"},
+                 {"MBC مصر 2 (HD)", "Arabic with Latin and numbers"},
+                 {"ערוץ 13 - חדשות", "Hebrew"},
+                 {"Русский кинозал", "Cyrillic"},
+                 {"Ελληνική Τηλεόραση", "Greek"},
+                 {"Café Münchën Œuvre Ñandú", "Accented Latin"},
+                 {"Phim Việt Nam", "Vietnamese"},
+                 {"فيلم فارسی گچپژ", "Persian letters"},
+                 {"Arrows ← ↑ → ↓ ★ ✓ ♪", "Symbols"}};
+             lp.title = "Scripts";
+             lp.subtitle = "Fallback font, Arabic joining, bidi order";
+             for (int i = 0; i < 9; ++i)
+             {
+                 lp.rows[i].title = names[i][0];
+                 lp.rows[i].detail = names[i][1];
+                 lp.rows[i].badge = "";
+                 lp.rows[i].progress = -1;
+             }
+             lp.rows[0].is_focused = 1;
+             lp.cursor_index = 0;
+         }},
         {"list_empty", 1, [&] { clear_focus(); lp.title = "Favorites"; lp.subtitle = "Saved for later";
                                  lp.is_empty = 1; lp.row_count = 0; lp.total_count = 0; }},
         {"list_menu", 1, [&] { clear_focus(); lp.title = "Recent Files"; lp.row_count = 9; lp.total_count = 23;

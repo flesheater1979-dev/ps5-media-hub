@@ -29,6 +29,14 @@ SECTIONS {
         QUAD(0xcccccccccccccccc)
         *(.text .text.*)
         *(.plt .plt.*)
+        /* #128: the converter puts the read-only segment at a file offset of
+         * 0x4000 + this segment's size rounded to 0x4000, and that offset must
+         * be a multiple of 64 KB. At 0x4000 past one the console read a 64 KB
+         * block of .rodata from the block before it, and strings came out as
+         * other strings (2026-10-21). End the code just under 0xC000 past a
+         * 64 KB boundary (a few bytes follow this section); package-app.sh
+         * checks the final offset. */
+        . = ALIGN(0x10000) + 0xB000;
     } : text
 
     .eh_frame_hdr : ALIGN(CONSTANT(MAXPAGESIZE)) {

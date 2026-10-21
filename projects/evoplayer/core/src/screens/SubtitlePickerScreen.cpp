@@ -1,6 +1,7 @@
 #include "evo/screens/SubtitlePickerScreen.hpp"
 #include "evo/Application.hpp"
 #include "evo_subtitle.h"
+#include "evo_langname.h"
 #include "evo_subsync.h"
 #include "evo_rmlui_bridge.h"
 #include "evo_feedback.h"
@@ -75,7 +76,9 @@ void SubtitlePickerScreen::refreshTracks() {
             const AVDictionaryEntry* lang = av_dict_get(stream->metadata, "language", nullptr, 0);
             const AVDictionaryEntry* title = av_dict_get(stream->metadata, "title", nullptr, 0);
 
-            std::string label = (lang && lang->value) ? lang->value : "Track";
+            /* The language's own name ("Русский", "日本語") when it is known. */
+            const char* native = (lang && lang->value) ? evo_language_native_name(lang->value) : nullptr;
+            std::string label = native ? native : (lang && lang->value) ? lang->value : "Track";
             if (title && title->value) {
                 label += " - ";
                 label += title->value;
