@@ -122,6 +122,8 @@ bool PlayerScreen::hasActiveOverlay() const {
                 char activeSubText[PROSPERO_EMBEDDED_SUBTITLE_TEXT_SIZE] = {0};
                 prospero_embedded_subtitle_text_at(subPos, activeSubText, sizeof(activeSubText));
                 if (activeSubText[0]) return true;
+                ProsperoSubtitleImage img;
+                if (prospero_embedded_subtitle_image_at(subPos, &img)) return true;
             }
 
             // #110: a caption in the secondary line is an overlay too.
@@ -471,8 +473,14 @@ void PlayerScreen::render(uint32_t* framebuffer, int width, int height) {
     }
 
     char activeSubText[PROSPERO_EMBEDDED_SUBTITLE_TEXT_SIZE] = {0};
+    ProsperoSubtitleImage subImage = {};
+    bool hasSubImage = false;
     if (prospero_subtitle_enabled && !playback->isMusicMode()) {
         double subPos = prospero_subtitle_position(subtitleClockSeconds());
+
+        if (!prospero_subtitle_use_external) {
+            hasSubImage = prospero_embedded_subtitle_image_at(subPos, &subImage) != 0;
+        }
 
         if (prospero_subtitle_use_external) {
             const ProsperoSubtitleCue* cue = prospero_subtitle_active_cue(subPos);
@@ -708,6 +716,15 @@ void PlayerScreen::render(uint32_t* framebuffer, int width, int height) {
         p.show_stats = m_showStatsForNerds ? 1 : 0;
         p.alpha = m_osdVisibilityAlpha;
         p.subtitle_text = activeSubText[0] ? activeSubText : nullptr;
+        if (hasSubImage) {
+            p.subtitle_image = subImage.pixels;
+            p.subtitle_image_x = subImage.x;
+            p.subtitle_image_y = subImage.y;
+            p.subtitle_image_w = subImage.w;
+            p.subtitle_image_h = subImage.h;
+            p.subtitle_image_canvas_w = subImage.canvas_w;
+            p.subtitle_image_canvas_h = subImage.canvas_h;
+        }
         p.subtitle_face = prospero_subtitle_face;
         p.subtitle_raised = 1;
         p.subtitle_text2 = secondarySubText[0] ? secondarySubText : nullptr;
@@ -724,12 +741,21 @@ void PlayerScreen::render(uint32_t* framebuffer, int width, int height) {
             feedPerformanceHud();
         }
         evo_rmlui_render_playback_osd(framebuffer, width, height);
-    } else if ((activeSubText[0] || secondarySubText[0]) && !playback->isMusicMode() &&
+    } else if ((activeSubText[0] || secondarySubText[0] || hasSubImage) && !playback->isMusicMode() &&
                evo_rmlui_is_initialized()) {
         evo_playback_osd_params_t p;
         std::memset(&p, 0, sizeof(p));
         p.title = "Video Playback";
         p.subtitle_text = activeSubText;
+        if (hasSubImage) {
+            p.subtitle_image = subImage.pixels;
+            p.subtitle_image_x = subImage.x;
+            p.subtitle_image_y = subImage.y;
+            p.subtitle_image_w = subImage.w;
+            p.subtitle_image_h = subImage.h;
+            p.subtitle_image_canvas_w = subImage.canvas_w;
+            p.subtitle_image_canvas_h = subImage.canvas_h;
+        }
         p.subtitle_face = prospero_subtitle_face;
         p.subtitle_raised = 0;
         p.subtitle_text2 = secondarySubText[0] ? secondarySubText : nullptr;

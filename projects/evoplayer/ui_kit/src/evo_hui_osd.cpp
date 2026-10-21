@@ -379,6 +379,23 @@ void OsdScreen::draw_captions(DrawList &list, const Context &ctx, float chrome) 
     };
 
     float top = bottom;
+    if (raw_.subtitle_image && raw_.subtitle_image_w > 0 && raw_.subtitle_image_h > 0)
+    {
+        const std::uint32_t tex =
+            ctx.textures.pixels(raw_.subtitle_image, raw_.subtitle_image_w, raw_.subtitle_image_h, 0x5047u);
+        if (tex)
+        {
+            const float sx = 1920.0f / static_cast<float>(std::max(raw_.subtitle_image_canvas_w, 1));
+            const float sy = 1080.0f / static_cast<float>(std::max(raw_.subtitle_image_canvas_h, 1));
+            Rect r{static_cast<float>(raw_.subtitle_image_x) * sx, static_cast<float>(raw_.subtitle_image_y) * sy,
+                   static_cast<float>(raw_.subtitle_image_w) * sx, static_cast<float>(raw_.subtitle_image_h) * sy};
+            /* Lifted clear of the timeline while the chrome is up. */
+            if (raw_.subtitle_raised && r.y + r.h > 850.0f)
+                r.y -= 150.0f * chrome;
+            list.image(tex, r, ::hui::gfx::kFullUv, kWhite);
+            top = r.y;
+        }
+    }
     if (!sub_lines_.empty())
         top = block(sub_lines_, bottom, size, kWhite);
     if (!sub2_lines_.empty())

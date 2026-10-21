@@ -100,7 +100,19 @@ int  prospero_secondary_subtitle_open(AVFormatContext *format);
 int  prospero_subtitle_wants_stream(int stream_index);
 
 /* ---- query used by the media-info track picker ---- */
-int  prospero_embedded_subtitle_supported(enum AVCodecID codec_id);
+int  prospero_embedded_subtitle_supported(enum AVCodecID codec_id);   /* text tracks */
+int  prospero_embedded_subtitle_is_bitmap(enum AVCodecID codec_id);   /* PGS pictures */
+
+/* A picture subtitle (PGS) is RGBA words (0xAABBGGRR) over the box x,y,w,h of a
+ * canvas_w x canvas_h frame. `pixels` is owned by the subtitle engine and stays
+ * valid until the next call. */
+typedef struct {
+    const uint32_t *pixels;
+    int x, y, w, h;
+    int canvas_w, canvas_h;
+} ProsperoSubtitleImage;
+
+int  prospero_embedded_subtitle_image_at(double position, ProsperoSubtitleImage *out);
 int  prospero_subtitle_declared_cues(AVStream *stream);
 
 /* ---- render helpers for prospero_subtitle_draw() (which lives in main.c) ---- */

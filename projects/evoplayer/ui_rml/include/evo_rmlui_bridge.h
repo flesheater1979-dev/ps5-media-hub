@@ -50,6 +50,12 @@ typedef struct {
      * EVO_FACE_SUB/MENU/TITLE (small/medium/large). chrome_hidden = 1 renders
      * only the caption with the rest of the OSD suppressed (controls faded). */
     const char* subtitle_text;
+    /* A picture subtitle (Blu-ray PGS): RGBA words (0xAABBGGRR) over the box
+     * image_x,y,w,h of an image_canvas_w x image_canvas_h frame. NULL when
+     * none. Drawn by the kit OSD only; the pixels must outlive the render call. */
+    const uint32_t* subtitle_image;
+    int subtitle_image_x, subtitle_image_y, subtitle_image_w, subtitle_image_h;
+    int subtitle_image_canvas_w, subtitle_image_canvas_h;
     int subtitle_face;
     int subtitle_raised;
     /* #110: the secondary caption. subtitle_text2 is drawn directly above the

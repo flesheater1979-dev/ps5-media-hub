@@ -140,12 +140,28 @@ int prospero_subtitle_use_external = 0;
  *                under a decode in flight.
  *   ring_mutex   the cue ring. The render thread only ever takes this one.
  */
+/* A picture cue (Blu-ray PGS): every rect of one display set composed into one
+ * RGBA image (0xAABBGGRR words) over the bounding box, on the track's canvas. */
+#define PROSPERO_BITMAP_CUES 4
+
+typedef struct {
+    double    start_seconds;
+    double    end_seconds;
+    int       x, y, w, h;
+    int       canvas_w, canvas_h;
+    uint32_t  serial;
+    uint32_t *pixels;
+} ProsperoBitmapCue;
+
 typedef struct {
     int             *stream_index;
     AVCodecContext **ctx;
     int             *count;
     enum AVCodecID   codec_id;
     int              head;
+    ProsperoBitmapCue bitmaps[PROSPERO_BITMAP_CUES];
+    int              bitmap_count;
+    uint32_t         bitmap_serial;
     ProsperoEmbeddedSubtitleCue cues[
         PROSPERO_EMBEDDED_SUBTITLE_MAX_CUES
     ];
@@ -195,6 +211,27 @@ int prospero_embedded_subtitle_supported(
 }
 
 
+/* Picture subtitles the primary track can show. The secondary stays text. */
+int prospero_embedded_subtitle_is_bitmap(
+    enum AVCodecID codec_id
+) {
+    return codec_id == AV_CODEC_ID_HDMV_PGS_SUBTITLE;
+}
+
+
+/* Caller holds slot->ring_mutex. */
+static void prospero_sub_slot_bitmaps_clear(
+    ProsperoSubSlot *slot
+) {
+    for (int i = 0; i < PROSPERO_BITMAP_CUES; i++) {
+        free(slot->bitmaps[i].pixels);
+        slot->bitmaps[i].pixels = NULL;
+    }
+
+    slot->bitmap_count = 0;
+}
+
+
 static void prospero_sub_slot_reset(
     ProsperoSubSlot *slot
 ) {
@@ -204,6 +241,7 @@ static void prospero_sub_slot_reset(
 
     slot->head = 0;
     *slot->count = 0;
+    prospero_sub_slot_bitmaps_clear(slot);
 
     pthread_mutex_unlock(
         &slot->ring_mutex
@@ -564,6 +602,8 @@ int prospero_embedded_subtitle_open(
     int best_stream = -1;
     int best_score = -100000;
     int found_pgs = 0;
+    int best_pgs = -1;
+    int best_pgs_score = 0;
 
     for (
         unsigned int index = 0;
@@ -586,6 +626,32 @@ int prospero_embedded_subtitle_open(
             stream->codecpar->codec_id ==
             AV_CODEC_ID_HDMV_PGS_SUBTITLE
         ) {
+            /* Picture tracks only win when there is no text track at all. */
+            int pgs_score = 0;
+            AVDictionaryEntry *pgs_lang =
+                av_dict_get(stream->metadata, "language", NULL, 0);
+
+            if (
+                pgs_lang && pgs_lang->value &&
+                (strcasecmp(pgs_lang->value, "eng") == 0 ||
+                 strcasecmp(pgs_lang->value, "en") == 0)
+            ) {
+                pgs_score += 100;
+            }
+
+            if (stream->disposition & AV_DISPOSITION_DEFAULT) {
+                pgs_score += 40;
+            }
+
+            if (stream->disposition & AV_DISPOSITION_FORCED) {
+                pgs_score -= 60;     /* signs only, not the dialogue */
+            }
+
+            if (!found_pgs || pgs_score > best_pgs_score) {
+                best_pgs_score = pgs_score;
+                best_pgs = (int)index;
+            }
+
             found_pgs = 1;
             continue;
         }
@@ -623,23 +689,23 @@ int prospero_embedded_subtitle_open(
                 requested_stream->codecpar &&
                 requested_stream->codecpar->codec_type ==
                     AVMEDIA_TYPE_SUBTITLE &&
-                prospero_embedded_subtitle_supported(
+                (prospero_embedded_subtitle_supported(
                     requested_stream->codecpar->codec_id
-                )
+                ) ||
+                prospero_embedded_subtitle_is_bitmap(
+                    requested_stream->codecpar->codec_id
+                ))
             ) {
                 best_stream = requested;
             }
         }
     }
 
-if (best_stream < 0) {
-        if (found_pgs) {
-            toast(
-                "SUBTITLES",
-                "PGS NOT SUPPORTED YET"
-            );
-        }
+    if (best_stream < 0 && found_pgs) {
+        best_stream = best_pgs;
+    }
 
+    if (best_stream < 0) {
         return 0;
     }
 
@@ -819,6 +885,166 @@ static void prospero_embedded_subtitle_add_cue(
     );
 
     (*slot->count)++;
+
+    pthread_mutex_unlock(
+        &slot->ring_mutex
+    );
+}
+
+
+/*
+ * One decoded picture subtitle into the slot's bitmap ring. A display set with
+ * no rects clears the screen: it ends the cue before it instead of adding one.
+ * Caller holds slot->state_mutex.
+ */
+static void prospero_sub_slot_add_bitmap(
+    ProsperoSubSlot *slot,
+    const AVSubtitle *subtitle,
+    double start_seconds,
+    double end_seconds
+) {
+    AVCodecContext *context = *slot->ctx;
+    int canvas_w = context ? context->width : 0;
+    int canvas_h = context ? context->height : 0;
+
+    int min_x = 0x7fffffff, min_y = 0x7fffffff, max_x = 0, max_y = 0;
+    int rects = 0;
+
+    for (unsigned int i = 0; i < subtitle->num_rects; i++) {
+        const AVSubtitleRect *r = subtitle->rects[i];
+
+        if (
+            !r || r->type != SUBTITLE_BITMAP ||
+            !r->data[0] || !r->data[1] ||
+            r->w <= 0 || r->h <= 0
+        ) {
+            continue;
+        }
+
+        if (r->x < min_x) min_x = r->x;
+        if (r->y < min_y) min_y = r->y;
+        if (r->x + r->w > max_x) max_x = r->x + r->w;
+        if (r->y + r->h > max_y) max_y = r->y + r->h;
+        rects++;
+    }
+
+    pthread_mutex_lock(
+        &slot->ring_mutex
+    );
+
+    if (rects == 0) {
+        /* Clear: the newest picture stops being shown here. */
+        if (slot->bitmap_count > 0) {
+            ProsperoBitmapCue *last =
+                &slot->bitmaps[
+                    (slot->bitmap_serial + PROSPERO_BITMAP_CUES - 1) %
+                    PROSPERO_BITMAP_CUES
+                ];
+
+            if (last->pixels && last->end_seconds > start_seconds) {
+                last->end_seconds = start_seconds;
+            }
+        }
+
+        pthread_mutex_unlock(
+            &slot->ring_mutex
+        );
+
+        return;
+    }
+
+    const int w = max_x - min_x;
+    const int h = max_y - min_y;
+
+    if (
+        w <= 0 || h <= 0 ||
+        (size_t)w * (size_t)h > (size_t)4096 * 2160
+    ) {
+        pthread_mutex_unlock(
+            &slot->ring_mutex
+        );
+
+        return;
+    }
+
+    uint32_t *pixels =
+        calloc(
+            (size_t)w * (size_t)h,
+            sizeof(uint32_t)
+        );
+
+    if (!pixels) {
+        pthread_mutex_unlock(
+            &slot->ring_mutex
+        );
+
+        return;
+    }
+
+    for (unsigned int i = 0; i < subtitle->num_rects; i++) {
+        const AVSubtitleRect *r = subtitle->rects[i];
+
+        if (
+            !r || r->type != SUBTITLE_BITMAP ||
+            !r->data[0] || !r->data[1] ||
+            r->w <= 0 || r->h <= 0
+        ) {
+            continue;
+        }
+
+        const uint32_t *palette =
+            (const uint32_t *)r->data[1];
+
+        for (int row = 0; row < r->h; row++) {
+            const uint8_t *src =
+                r->data[0] + (size_t)row * (size_t)r->linesize[0];
+
+            uint32_t *dst =
+                pixels +
+                (size_t)(r->y - min_y + row) * (size_t)w +
+                (size_t)(r->x - min_x);
+
+            for (int col = 0; col < r->w; col++) {
+                /* The palette is 0xAARRGGBB; the frame wants R,G,B,A bytes. */
+                uint32_t c = palette[src[col]];
+
+                dst[col] =
+                    (c & 0xff000000u) |
+                    ((c & 0x000000ffu) << 16) |
+                    (c & 0x0000ff00u) |
+                    ((c >> 16) & 0xffu);
+            }
+        }
+    }
+
+    if (slot->bitmap_count >= PROSPERO_BITMAP_CUES) {
+        /* Oldest goes; the ring is indexed by serial. */
+        ProsperoBitmapCue *old =
+            &slot->bitmaps[
+                slot->bitmap_serial % PROSPERO_BITMAP_CUES
+            ];
+
+        free(old->pixels);
+        old->pixels = NULL;
+        slot->bitmap_count--;
+    }
+
+    ProsperoBitmapCue *cue =
+        &slot->bitmaps[
+            slot->bitmap_serial % PROSPERO_BITMAP_CUES
+        ];
+
+    cue->start_seconds = start_seconds;
+    cue->end_seconds = end_seconds;
+    cue->x = min_x;
+    cue->y = min_y;
+    cue->w = w;
+    cue->h = h;
+    cue->canvas_w = canvas_w > 0 ? canvas_w : 1920;
+    cue->canvas_h = canvas_h > 0 ? canvas_h : 1080;
+    cue->pixels = pixels;
+    cue->serial = ++slot->bitmap_serial;
+    slot->bitmap_count++;
 
     pthread_mutex_unlock(
         &slot->ring_mutex
@@ -1017,6 +1243,21 @@ static void prospero_sub_slot_decode_locked(
             start_seconds + 5.0;
     }
 
+    if (prospero_embedded_subtitle_is_bitmap(slot->codec_id)) {
+        prospero_sub_slot_add_bitmap(
+            slot,
+            &subtitle,
+            start_seconds,
+            end_seconds
+        );
+
+        avsubtitle_free(
+            &subtitle
+        );
+
+        return;
+    }
+
     char text[
         PROSPERO_EMBEDDED_SUBTITLE_TEXT_SIZE
     ];
@@ -1161,6 +1402,90 @@ int prospero_embedded_subtitle_text_at(
         output,
         output_size
     );
+}
+
+
+/*
+ * The picture subtitle showing at `position`, for the render thread. The pixels
+ * are copied into a buffer the render side owns when the cue changes, so the
+ * demux thread recycling its ring never frees what is being drawn.
+ */
+int prospero_embedded_subtitle_image_at(
+    double position,
+    ProsperoSubtitleImage *out
+) {
+    static uint32_t *view = NULL;
+    static size_t view_cap = 0;
+    static uint32_t view_serial = 0;
+    static ProsperoSubtitleImage view_info;
+
+    if (!out) {
+        return 0;
+    }
+
+    ProsperoSubSlot *slot = SUB_PRIMARY;
+    int found = 0;
+
+    pthread_mutex_lock(
+        &slot->ring_mutex
+    );
+
+    const ProsperoBitmapCue *selected = NULL;
+
+    for (int i = 0; i < PROSPERO_BITMAP_CUES; i++) {
+        const ProsperoBitmapCue *cue = &slot->bitmaps[i];
+
+        if (
+            cue->pixels &&
+            position >= cue->start_seconds &&
+            position < cue->end_seconds &&
+            (!selected || cue->serial > selected->serial)
+        ) {
+            selected = cue;
+        }
+    }
+
+    if (selected) {
+        if (selected->serial != view_serial || !view) {
+            size_t need =
+                (size_t)selected->w * (size_t)selected->h;
+
+            if (need > view_cap) {
+                uint32_t *grown =
+                    realloc(view, need * sizeof(uint32_t));
+
+                if (grown) {
+                    view = grown;
+                    view_cap = need;
+                }
+            }
+
+            if (need <= view_cap && view) {
+                memcpy(view, selected->pixels, need * sizeof(uint32_t));
+                view_serial = selected->serial;
+                view_info.pixels = view;
+                view_info.x = selected->x;
+                view_info.y = selected->y;
+                view_info.w = selected->w;
+                view_info.h = selected->h;
+                view_info.canvas_w = selected->canvas_w;
+                view_info.canvas_h = selected->canvas_h;
+            } else {
+                selected = NULL;
+            }
+        }
+
+        if (selected) {
+            *out = view_info;
+            found = 1;
+        }
+    }
+
+    pthread_mutex_unlock(
+        &slot->ring_mutex
+    );
+
+    return found;
 }
 
 /* PROSPERO_EMBEDDED_SUBTITLE_MODULE_END */
@@ -2634,9 +2959,21 @@ int prospero_subtitle_select_primary(int track) {
         return 1;
     }
 
+    int picture =
+        play_fmt &&
+        track >= 0 &&
+        track < (int)play_fmt->nb_streams &&
+        play_fmt->streams[track] &&
+        play_fmt->streams[track]->codecpar &&
+        play_fmt->streams[track]->codecpar->codec_type ==
+            AVMEDIA_TYPE_SUBTITLE &&
+        prospero_embedded_subtitle_is_bitmap(
+            play_fmt->streams[track]->codecpar->codec_id
+        );
+
     if (
         !play_fmt ||
-        !prospero_secondary_stream_usable(track)
+        (!picture && !prospero_secondary_stream_usable(track))
     ) {
         return 0;
     }
