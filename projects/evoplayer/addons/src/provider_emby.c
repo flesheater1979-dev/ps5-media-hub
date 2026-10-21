@@ -60,7 +60,7 @@ static int         emby_p_set_source(const char *v) { return ms_set_source(C, v)
 const evo_provider_t evo_provider_emby = {
     .id              = "emby",
     .name            = "Emby",
-    .icon            = "icon_emby.png",
+    .icon            = "brand_emby.png",
     .caps            = EVO_PROVIDER_CAP_CATALOG | EVO_PROVIDER_CAP_SEARCH |
                        EVO_PROVIDER_CAP_RESOLVE | EVO_PROVIDER_CAP_PROGRESS |
                        EVO_PROVIDER_CAP_CONFIG  | EVO_PROVIDER_CAP_WEBUI |

@@ -40,6 +40,13 @@ class TextureHost
     virtual bool read_asset(const std::string &path, std::string *bytes) = 0;
 };
 
+/* A provider's logo (icons/brand_*.png): drawn in its own colours on a neutral
+ * well, never tinted like the one-colour UI icons. */
+inline bool is_brand_icon(const std::string &path)
+{
+    return path.find("/brand_") != std::string::npos;
+}
+
 /* Textures for pixels the app owns (cover art, thumbnails, icons). A cover is
  * keyed by its pixel pointer, size and a caller tag, uploaded once, and
  * dropped after it has gone unused for a while. */

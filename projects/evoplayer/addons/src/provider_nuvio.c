@@ -132,7 +132,7 @@ const char *evo_nuvio_store_file(void)
 const evo_provider_t evo_provider_nuvio = {
     .id            = "nuvio",
     .name          = "Nuvio",
-    .icon          = "icon_emby.png",
+    .icon          = "brand_nuvio.png",
     .caps          = EVO_PROVIDER_CAP_CATALOG | EVO_PROVIDER_CAP_SEARCH |
                      EVO_PROVIDER_CAP_RESOLVE | EVO_PROVIDER_CAP_CONFIG |
                      EVO_PROVIDER_CAP_WEBUI | EVO_PROVIDER_CAP_PICK,

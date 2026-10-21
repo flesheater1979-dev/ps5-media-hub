@@ -102,6 +102,7 @@ void ProviderGridScreen::set(const evo_hui_provider_params_t &p)
 {
     variant_ = p.variant;
     name_ = str(p.provider_name);
+    icon_ = str(p.provider_icon);
     crumb_ = str(p.breadcrumb);
     status_ = str(p.status);
     query_ = str(p.query);
@@ -686,12 +687,14 @@ void ProviderGridScreen::draw(DrawList &list, const Context &ctx) const
     /* header */
     {
         list.push_opacity(tween::stagger(age_, 0, 0.08f, 0.5f));
-        const std::uint32_t badge =
-            ctx.textures.icon(channels() ? "../icons/icon_tv.png" : "../icons/icon_emby.png");
+        const std::string badge_path =
+            !icon_.empty() ? icon_ : (channels() ? "../icons/icon_tv.png" : "../icons/icon_emby.png");
+        const bool brand = is_brand_icon(badge_path);
+        const std::uint32_t badge = ctx.textures.icon(badge_path);
         Rect box{kGridX, 96, 56, 56};
-        list.rounded_rect(box, 16, pal.accent.with_alpha(0.22f));
+        list.rounded_rect(box, 16, brand ? kWhite.with_alpha(0.08f) : pal.accent.with_alpha(0.22f));
         if (badge)
-            list.image(badge, box.inset(12), ::hui::gfx::kFullUv, kWhite);
+            list.image(badge, box.inset(brand ? 8 : 12), ::hui::gfx::kFullUv, kWhite);
         const std::string title = live ? "LIVE TV" : (xt ? "XTREAM CODES" : ui::upper(name_));
         const float tw = ui::text(list, fonts.display, title, kGridX + 76, 134, 40, kWhite);
         if (channels())

@@ -2211,7 +2211,7 @@ static int iptv_set_source(const char *value)
 const evo_provider_t evo_provider_iptv = {
     .id            = "iptv",
     .name          = "IPTV",
-    .icon          = "icon_emby.png",   /* the shared provider rail slot (#90) */
+    .icon          = "icon_tv.png",
     .caps          = EVO_PROVIDER_CAP_CATALOG | EVO_PROVIDER_CAP_SEARCH |
                      EVO_PROVIDER_CAP_RESOLVE |
                      EVO_PROVIDER_CAP_LIVE    | EVO_PROVIDER_CAP_CONFIG,

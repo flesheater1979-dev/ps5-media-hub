@@ -1709,6 +1709,10 @@ bool EvoRmlProviderHost::RenderKit(int width, int height)
     else                                     p.variant = EVO_HUI_PROVIDER_GENERIC;
 
     p.provider_name = m_model.provider_name.c_str();
+    static std::string icon;
+    icon = (m_provider && m_provider->icon && m_provider->icon[0])
+         ? std::string("../icons/") + m_provider->icon : std::string();
+    p.provider_icon = icon.c_str();
     p.breadcrumb = m_model.breadcrumb.c_str();
     p.status = m_model.status.c_str();
     p.query = m_model.query.c_str();

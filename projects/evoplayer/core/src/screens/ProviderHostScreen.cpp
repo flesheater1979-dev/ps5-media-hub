@@ -27,6 +27,7 @@ extern "C" {
 #include <cstring>
 #include <string>
 #include <vector>
+#include <deque>
 #include <cctype>
 #include <algorithm>
 #include <atomic>
@@ -41,6 +42,18 @@ namespace {
 /* Set by the launch tile / rail before navigating here. Empty means "whichever
  * provider is enabled", which is what the single shared rail slot does. */
 std::string g_pendingProvider;
+
+/* The provider's own icon (its vtable's .icon, a file in assets/icons/), as a
+ * path the list screens take. brand_*.png ones are drawn in their own colours. */
+const char* provider_icon(const ::evo_provider* p)
+{
+    static std::deque<std::pair<const ::evo_provider*, std::string>> paths;   /* stable c_str() */
+    if (!p || !p->icon || !p->icon[0]) return "../icons/icon_emby.png";
+    for (const auto& e : paths)
+        if (e.first == p) return e.second.c_str();
+    paths.emplace_back(p, std::string("../icons/") + p->icon);
+    return paths.back().second.c_str();
+}
 
 /* #101: what the chooser lists - every provider that is set up, plus every one
  * that can be set up from it. With one entry the rail slot goes straight in;
@@ -647,6 +660,7 @@ void ProviderHostScreen::enterPicker()
         if (!p->is_configured()) {
             detail = (p->caps & EVO_PROVIDER_CAP_WEBUI)
                    ? "Not set up - press X to enter the server address"
+                   : p->needs_sign_in ? "Not signed in - press X to sign in"
                    : p->ui_embedded ? "No addons yet - press X to add one"
                    : "Not set up - press X to add a playlist";
         } else if (isNativeWeb(p)) {
@@ -750,7 +764,7 @@ void ProviderHostScreen::renderPicker(uint32_t* framebuffer, int width, int heig
         params.is_empty = 1;
         params.empty_title = "Opening...";
         params.empty_hint = "The page opens beside the menu. Close it to come back here.";
-        params.empty_icon = "../icons/icon_emby.png";
+        params.empty_icon = provider_icon(p);
         evo_rmlui_update_list(&params);
         evo_rmlui_render_list(framebuffer, width, height);
         return;
@@ -769,7 +783,7 @@ void ProviderHostScreen::renderPicker(uint32_t* framebuffer, int width, int heig
         bool server = p && isNativeWeb(p);
         params.rows[i].title = p ? p->name : m_pickIds[i].c_str();
         params.rows[i].detail = m_pickDetail[i].c_str();
-        params.rows[i].icon_path = (web || server) ? "../icons/icon_emby.png" : "../icons/icon_folder.png";
+        params.rows[i].icon_path = p ? provider_icon(p) : "../icons/icon_folder.png";
         params.rows[i].badge = web ? "WEB" : server ? "SERVER"
                              : (p && (p->caps & EVO_PROVIDER_CAP_LIVE)) ? "LIVE" : "";
         params.rows[i].progress = -1;
@@ -799,8 +813,7 @@ void ProviderHostScreen::renderPicker(uint32_t* framebuffer, int width, int heig
         params.menu_eyebrow = "OPTIONS";
         params.menu_title = fp->name;
         params.menu_sub = m_pickDetail[m_pickIndex].c_str();
-        params.menu_icon = (fp->caps & EVO_PROVIDER_CAP_WEBUI) ? "../icons/icon_emby.png"
-                                                               : "../icons/icon_folder.png";
+        params.menu_icon = provider_icon(fp);
         for (int i = 0; i < params.menu_count; ++i) {
             params.menu[i].label = m_menu[i].label.c_str();
             params.menu[i].desc = m_menu[i].desc.c_str();

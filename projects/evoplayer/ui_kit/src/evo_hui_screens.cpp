@@ -912,10 +912,13 @@ void ListScreen::draw(DrawList &list, const Context &ctx) const
             r.y += 24.0f * (1.0f - tween::cubic_out(in));
             list.rounded_rect(r, 20, row.focused ? kWhite.with_alpha(0.14f) : p.surface);
             const Rect well{r.x + 12, r.y + 10, 56, 56};
-            list.rounded_rect(well, 16, row.focused ? p.accent : kWhite.with_alpha(0.08f));
+            const bool brand = is_brand_icon(row.icon);
+            list.rounded_rect(well, 16, row.focused ? (brand ? kWhite.with_alpha(0.92f) : p.accent)
+                                                    : kWhite.with_alpha(0.08f));
             const std::uint32_t icon = ctx.textures.icon(row.icon);
             if (icon)
-                list.image(icon, well.inset(14), ::hui::gfx::kFullUv, row.focused ? kInk : kWhite);
+                list.image(icon, well.inset(brand ? 10 : 14), ::hui::gfx::kFullUv,
+                           (row.focused && !brand) ? kInk : kWhite);
 
             float right = r.x + r.w - 24;
             if (row.chevron)
@@ -991,10 +994,11 @@ void ListScreen::draw(DrawList &list, const Context &ctx) const
         list.rounded_rect(card, 32, p.bg_top.with_alpha(0.96f));
         list.bordered_rect(card, 32, Color::rgb(0x000000, 0.0f), 1.5f, kWhite.with_alpha(0.14f));
         const Rect well{card.x + 32, card.y + 36, 64, 64};
-        list.rounded_rect(well, 18, p.accent);
+        const bool brand = is_brand_icon(menu_icon_);
+        list.rounded_rect(well, 18, brand ? kWhite.with_alpha(0.92f) : p.accent);
         const std::uint32_t icon = ctx.textures.icon(menu_icon_);
         if (icon)
-            list.image(icon, well.inset(16), ::hui::gfx::kFullUv, kInk);
+            list.image(icon, well.inset(brand ? 12 : 16), ::hui::gfx::kFullUv, brand ? kWhite : kInk);
         const float tx = well.x + well.w + 20;
         ui::text(list, fonts.semibold, ui::upper(menu_eyebrow_), tx, card.y + 54, 16, p.accent, Align::left,
                  3.0f);

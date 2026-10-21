@@ -1143,7 +1143,7 @@ static int ad_resolve(const char *item_id, evo_provider_resolve_cb cb, void *ud)
 const evo_provider_t evo_provider_stremio = {
     .id            = "addons",
     .name          = "Stremio Addons",
-    .icon          = "icon_emby.png",
+    .icon          = "brand_stremio.png",
     .caps          = EVO_PROVIDER_CAP_CATALOG | EVO_PROVIDER_CAP_SEARCH |
                      EVO_PROVIDER_CAP_RESOLVE | EVO_PROVIDER_CAP_CONFIG |
                      EVO_PROVIDER_CAP_PICK,

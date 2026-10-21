@@ -1533,7 +1533,7 @@ static void plex_report_progress(const char *item_id,
 }
 
 const evo_provider_t evo_provider_plex = {
-    .id = "plex", .name = "Plex",
+    .id = "plex", .name = "Plex", .icon = "brand_plex.png",
     .caps = EVO_PROVIDER_CAP_AUTH | EVO_PROVIDER_CAP_CATALOG |
             EVO_PROVIDER_CAP_RESOLVE | EVO_PROVIDER_CAP_PROGRESS,
     .api_version = EVO_PROVIDER_API_VERSION,

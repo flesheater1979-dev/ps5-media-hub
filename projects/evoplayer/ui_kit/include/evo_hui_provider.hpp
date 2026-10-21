@@ -56,7 +56,7 @@ class ProviderGridScreen
                   const std::string &initial, float initial_size, bool contain) const;
 
     int variant_ = 0;
-    std::string name_, crumb_, status_, query_, page_info_;
+    std::string name_, icon_, crumb_, status_, query_, page_info_;
     bool loading_ = false, tuning_ = false, has_error_ = false, empty_ = false, multi_page_ = false;
     bool folder_level_ = false, in_folder_ = false;
     int count_ = 0;
