@@ -86,6 +86,7 @@ unsigned int evo_usb_remote_take_buttons(void);
  */
 void evo_remote_goto_screen(int screen_id);
 void evo_remote_browser_source(int sidebar_index);
+void evo_remote_open_provider(const char *id);   /* "provider <id>": iptv xtream emby jellyfin plex stremio nuvio */
 
 /*
  * Open a file in the image viewer / text reader.

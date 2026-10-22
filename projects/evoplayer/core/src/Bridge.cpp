@@ -5,6 +5,7 @@
 #include "evo/screens/BrowserScreen.hpp"
 #include "evo/screens/TextReaderScreen.hpp"
 #include "evo/screens/ImageViewerScreen.hpp"
+#include "evo/screens/ProviderHostScreen.hpp"
 #include "pp_playback.h"
 #include "evo_playback.h"
 #include "evo_demux.h"
@@ -308,6 +309,23 @@ void evo_stop_media_playback(void) {
 void evo_remote_goto_screen(int screen_id) {
     if (auto sm = evo::Application::getInstance().getScreenManager())
         sm->navigateTo(static_cast<evo::ScreenId>(screen_id));
+}
+
+/*
+ * `provider <id>`: open that provider's own screen (shelves, or its setup
+ * card), the same path as choosing it in the chooser. Replaces the 6-10 D-pad
+ * presses from the home screen. A provider already on screen is left through
+ * the home screen first, so it re-enters and opens fresh.
+ */
+void evo_remote_open_provider(const char *id) {
+    auto sm = evo::Application::getInstance().getScreenManager();
+    if (!sm || !id || !id[0])
+        return;
+    if (sm->getCurrentScreenId() == evo::ScreenId::EmbyBrowse)
+        sm->navigateTo(evo::ScreenId::MainMenu);
+    evo::ProviderHostScreen::setPendingProvider(id);
+    sm->navigateTo(evo::ScreenId::EmbyBrowse);
+    evo::ProviderHostScreen::setPendingProvider("");
 }
 
 void evo_remote_browser_source(int sidebar_index) {
