@@ -326,6 +326,18 @@ void evo_direct_mem_get_stats(evo_direct_mem_stats_t *out_stats)
     pthread_mutex_unlock(&g_direct_pool.lock);
 }
 
+long long evo_direct_mem_kernel_total_mb(void)
+{
+#if defined(EVO_TARGET_PS5)
+    int64_t total = sceKernelGetDirectMemorySize();
+    if (total > 0)
+        return (long long)(total / (1024 * 1024));
+    return -1;
+#else
+    return -1;
+#endif
+}
+
 void evo_mem_budget_log(const char *when)
 {
     evo_direct_mem_stats_t st;

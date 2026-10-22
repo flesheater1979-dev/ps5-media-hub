@@ -14,6 +14,26 @@ memory-limited", say which pool, and check it against this page first.
 > to 448 MB. `package-app.sh` rejects a value outside that range. The tables
 > below are the original 448 MB measurements.
 
+> **Update 2026-10-22: Pro memory mode, +1.19 GiB of direct memory (#143).**
+> Setting bit 22 (`0x400000`) of `attribute3` in `param.json` switches the app
+> into Pro memory mode on a PS5 Pro (finding: obl1vn,
+> github.com/obl1vn/Unlock-ps5-pro-memory). Measured on the Pro, FW 12.70,
+> same build, flexible memory 1 GiB:
+>
+> | Package | `direct_total` | `direct_largest_free` | `flex_total` |
+> |---|---|---|---|
+> | standard (`attribute3` 0x80040) | 11712 MB | - | 1024 MB |
+> | `--pro-memory` (0x480040) | **12928 MB** (+1216 MB) | 11566 MB | 1024 MB |
+>
+> No `map_fail`; the app launches and the UI runs normally. Build it with
+> `package-app.sh --pro-memory`; it edits only the packaged `param.json`, never
+> the source file. Bit 4 and the `psml` block are NOT needed (bit 4 changes the
+> TV video mode). The mode is read when ShadowMount registers the app, so a
+> running app cannot switch itself. **Not tested on a base PS5.** To tell the
+> modes apart at runtime use the pool size (`direct_total` above 12288 MB =
+> Pro mode), because `evo_hw_is_ps5_pro()` cannot identify this console.
+> The tables below are from the standard package.
+
 ---
 
 ## The numbers

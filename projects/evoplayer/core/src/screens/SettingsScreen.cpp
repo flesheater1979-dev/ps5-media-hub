@@ -7,6 +7,7 @@
 #include "evo_boot_log.h"
 #include "evo_hw.h"
 #include "evo_agc_runtime.h"
+#include "evo_direct_mem.h"
 
 #include <cstddef>
 #include <cstdio>
@@ -59,6 +60,7 @@ enum class SettingKey : int {
     DebugOverlay,
     DeveloperTools,
     ConsoleModel,
+    MemoryMode,
     QuitEvo,
     /* EXPERIMENTAL */
     MotionSmoothing,
@@ -135,6 +137,8 @@ const PreviewSpec kPreviews[] = {
     {SettingKey::DeveloperTools, EVO_RMLUI_PREVIEW_INFO, "System diagnostics and performance stats."},
     {SettingKey::ConsoleModel, EVO_RMLUI_PREVIEW_INFO,
      "The console EVO detected. Some features, like Maximum AI upscaling, need a PS5 Pro."},
+    {SettingKey::MemoryMode, EVO_RMLUI_PREVIEW_INFO,
+     "How much GPU memory EVO was given. A PS5 Pro gives about 1.2 GiB more to the Pro memory package. Standard mode is the normal amount."},
     {SettingKey::QuitEvo, EVO_RMLUI_PREVIEW_INFO, "Releases everything, then close EVO from the switcher."},
 };
 
@@ -156,7 +160,7 @@ const SettingKey kInterfaceKeys[] = {
 };
 const SettingKey kSystemKeys[] = {
     SettingKey::CompatReport, SettingKey::DebugOverlay, SettingKey::DeveloperTools,
-    SettingKey::ConsoleModel, SettingKey::QuitEvo,
+    SettingKey::ConsoleModel, SettingKey::MemoryMode, SettingKey::QuitEvo,
 };
 /*
  * Things that work but are not finished. They stay out of the other sections so
@@ -439,6 +443,41 @@ SettingDef makeDef(SettingKey key, ISettingsService* settings) {
                       evo_hw_is_ps5_pro() ? "PS5 PRO"
                           : evo_hw_model_known() ? "PS5" : "NOT DETECTED");
         break;
+
+    /* #143: read-only row showing GPU memory budget & mode. */
+    case SettingKey::MemoryMode: {
+        /*
+         * Direct memory mode threshold (#143):
+         * Measured on the PS5 Pro (2026-10-22) from boot line "mem budget [boot] direct_total=...":
+         *   standard build  direct_total = 11712 MB
+         *   Pro memory mode direct_total = 12928 MB   (attribute3 bit 22 set)
+         * Pool > 12288 MB (12 GiB) indicates Pro memory mode.
+         */
+        constexpr long long kProMemoryThresholdMb = 12288;
+        static char s_mem_badge[32];
+        const long long pool = evo_direct_mem_kernel_total_mb();
+        if (pool > kProMemoryThresholdMb) {
+            std::snprintf(s_mem_badge, sizeof s_mem_badge, "%.1f GIB - PRO MODE",
+                          static_cast<double>(pool) / 1024.0);
+        } else if (pool > 0) {
+            std::snprintf(s_mem_badge, sizeof s_mem_badge, "%.1f GIB - STANDARD",
+                          static_cast<double>(pool) / 1024.0);
+        } else {
+            std::snprintf(s_mem_badge, sizeof s_mem_badge, "UNKNOWN");
+        }
+        /* The kit draws an action row as a chevron with no badge, so the value
+         * goes in the subtitle line, where it is visible. On a Pro in standard
+         * mode the line also points at the Pro build (EVO cannot switch itself). */
+        static char s_mem_sub[96];
+        if (pool > 0 && pool <= kProMemoryThresholdMb && evo_hw_is_ps5_pro())
+            std::snprintf(s_mem_sub, sizeof s_mem_sub,
+                          "%s - INSTALL THE PRO BUILD FOR +1.2 GIB", s_mem_badge);
+        else
+            std::snprintf(s_mem_sub, sizeof s_mem_sub, "%s", s_mem_badge);
+        d = actionDef(key, "MEMORY", s_mem_sub, "../icons/icon_activity.png",
+                      s_mem_badge);
+        break;
+    }
 
     case SettingKey::QuitEvo:
         d = actionDef(key, "QUIT EVO", "RELEASE EVERYTHING, THEN CLOSE FROM THE SWITCHER",

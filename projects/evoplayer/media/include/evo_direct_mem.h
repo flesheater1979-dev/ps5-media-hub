@@ -75,6 +75,13 @@ void evo_direct_mem_free(void *ptr);
 void evo_direct_mem_get_stats(evo_direct_mem_stats_t *out_stats);
 
 /*
+ * Kernel direct memory budget query: total direct memory size in MB
+ * (sceKernelGetDirectMemorySize() / 1 MiB).
+ * Returns -1 on failure or off-device (host build, where EVO_TARGET_PS5 is not defined).
+ */
+long long evo_direct_mem_kernel_total_mb(void);
+
+/*
  * Log the title's ACTUAL memory budget - all four numbers, in one line, tagged
  * with `when`.
  *

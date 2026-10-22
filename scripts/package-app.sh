@@ -13,6 +13,7 @@
 #   ./scripts/package-app.sh --usb-remote     + the scriptable FTP dev remote
 #                                             (/mnt/usb0/evo_cmd + evo_status +
 #                                             verbose vdec log) — off in release
+#   ./scripts/package-app.sh --pro-memory     opt into PS5 Pro ~1.2 GiB direct memory mode (#143)
 #   ./scripts/package-app.sh --virtual-keyboard  debug only: always use
 #                                             EVO's own keyboard, never the
 #                                             PS5 IME, which the dev remote
@@ -45,6 +46,7 @@ REBUILD_LIBC=0
 FFPFSC=0
 ZIP=0
 USB_REMOTE=0
+PRO_MEMORY=0
 BREADCRUMBS=0
 VIRTUAL_KB=0
 AGC_DEVICE=1        # bare-metal AGC is the only render path
@@ -64,6 +66,7 @@ while (( $# )); do
         --ffpfsc)       FFPFSC=1 ;;
         --zip)          ZIP=1 ;;
         --usb-remote)   USB_REMOTE=1 ;;   # dev: /mnt/usb0/evo_cmd + evo_status + verbose vdec log
+        --pro-memory)   PRO_MEMORY=1 ;;   # #143: set attribute3 bit 22 so a PS5 Pro gives the app ~1.2 GiB more direct memory
         --breadcrumbs)  BREADCRUMBS=1 ;;  # #51: bring back the on-screen boot-trace popups
         --virtual-keyboard) VIRTUAL_KB=1 ;;  # debug: EVO's keyboard instead of the PS5 IME
         --agc)          AGC_DEVICE=1 ;;   # accepted and redundant: AGC is the only render path
@@ -77,7 +80,7 @@ while (( $# )); do
         --no-native-secondary-4k) NO_NATIVE_SECONDARY_4K=1 ;;               # #41: escape hatch — HEVC/VP9 stay on but drop to 1080p, rollback to pre-2026-09-11 4K behaviour
         --native-10bit)         NATIVE_10BIT=1; NO_NATIVE_10BIT=0 ;;        # #41 Phase D: HEVC Main10 + VP9 Profile 2 resident decoders — ON BY DEFAULT, so this flag is a no-op kept for back-compat and for scripts that state it explicitly
         --no-native-10bit)      NO_NATIVE_10BIT=1; NATIVE_10BIT=0 ;;        # #41 Phase D escape hatch — 10-bit stays on the FFmpeg CPU path. Try this first if thumbnail/poster decode fails to allocate: Phase D's two slots left ~3 MB of flex memory free AT BOOT on 2026-09-11
-        -h|--help)      sed -n '2,38p' "$0"; exit 0 ;;
+        -h|--help)      sed -n '2,39p' "$0"; exit 0 ;;
         *) die "unknown option: $1 (try --help)" ;;
     esac
     shift
@@ -92,6 +95,7 @@ if ! in_container; then
     (( FFPFSC ))       && FWD+=(--ffpfsc)
     (( ZIP ))          && FWD+=(--zip)
     (( USB_REMOTE ))   && FWD+=(--usb-remote)
+    (( PRO_MEMORY ))   && FWD+=(--pro-memory)
     (( BREADCRUMBS ))  && FWD+=(--breadcrumbs)
     (( VIRTUAL_KB ))   && FWD+=(--virtual-keyboard)
     # Forward the RESOLVED choice, never the default, so the in-container build
@@ -667,6 +671,32 @@ mkdir -p "${APPDIR}/sce_sys" "${APPDIR}/sce_module"
 # 9. Assemble the deployment folder.
 # ---------------------------------------------------------------------------
 cp "${PARAM}" "${APPDIR}/sce_sys/param.json"
+if (( PRO_MEMORY )); then
+    PRO_ATTR3_HEX="$(python3 - "${APPDIR}/sce_sys/param.json" <<'PY'
+import json, sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    v = json.load(f)
+
+if "attribute3" not in v:
+    raise SystemExit("attribute3 missing from param.json")
+a3 = v["attribute3"]
+if isinstance(a3, bool) or not isinstance(a3, int):
+    raise SystemExit("attribute3 in param.json is not an integer")
+
+new_a3 = a3 | 0x400000
+v["attribute3"] = new_a3
+
+with open(path, "w", encoding="utf-8", newline="\n") as f:
+    json.dump(v, f, indent=2)
+    f.write("\n")
+
+print(f"{hex(a3)} -> {hex(new_a3)}")
+PY
+)" || die "attribute3 missing or not an integer in param.json"
+    ok "pro memory: attribute3 ${PRO_ATTR3_HEX}"
+fi
 cp "${LIBC_PRX}" "${APPDIR}/sce_module/libc.prx"
 for asset in icon0.png pic0.png pic1.png snd0.at9; do
     [[ -f "${SCE_SYS}/${asset}" ]] && cp "${SCE_SYS}/${asset}" "${APPDIR}/sce_sys/${asset}"

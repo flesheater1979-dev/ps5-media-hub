@@ -146,6 +146,12 @@ The `--pro-mode` build flag, the `libkernel.syms` stub and the probe changes
 were all reverted. The `param.json` flags are harmless, but without a way to
 read the mode there is no evidence they do anything, so they are not shipped.
 
+**Update 2026-10-22:** that conclusion was about video / PSSR. Bit 22 of
+`attribute3` DOES have an observable effect: on the Pro it raises the direct
+memory pool from 11712 MB to 12928 MB (#143, see
+[memory-budget.md](memory-budget.md)). It is now an opt-in package flag,
+`package-app.sh --pro-memory`, without the `psml` block and without bit 4.
+
 What would reopen this:
 - **Another read-only source for the console model** that works from an app
   module (a sysctl, or a VideoOut or system-service query).
