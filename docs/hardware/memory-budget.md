@@ -200,6 +200,14 @@ re-tested with type 11/12. Do not
 take "11 GB is free" to mean "we can take a gigabyte of it" until that is
 understood.
 
+## Pro memory mode and the caps (#143, decided 2026-10-22)
+
+Bit 22 of `attribute3` grows only the **direct** pool (11.4 → 12.6 GiB). The 4K
+software-decode failures above are **flexible**-pool (`map_fail`) problems, and
+flexible stays 1 GiB, so the extra direct memory does not fix them. The caps
+were left unchanged for the Pro package. Any further 4K / AV1 work is its own
+issue and helps standard and Pro alike.
+
 ## Related
 
 - `media/src/evo_direct_mem.c` — the reporter, and EVO's pool
