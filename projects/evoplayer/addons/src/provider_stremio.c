@@ -1132,7 +1132,46 @@ static void on_streams(int ok, int status, const char *body, size_t len, void *u
     free(r);
 }
 
+static int st_resolve_now(const char *item_id, evo_provider_resolve_cb cb, void *ud);
+
+/* Resume from the home screen right after a start: the addons' manifests have
+ * not been fetched yet (only the catalog screen does that), so every addon
+ * looked like it served no streams. Fetch them, then resolve. */
+typedef struct {
+    ad_set_t *set;
+    char item_id[EVO_PROVIDER_MAX_ITEM_ID];
+    evo_provider_resolve_cb rcb;
+    void *ud;
+} late_resolve_t;
+
+static void late_resolve_go(int ok, const evo_provider_item_t *items, int count, int has_more, void *ud)
+{
+    (void)ok; (void)items; (void)count; (void)has_more;
+    late_resolve_t *l = (late_resolve_t *)ud;
+    S = l->set;
+    st_resolve_now(l->item_id, l->rcb, l->ud);
+    free(l);
+}
+
 static int st_resolve(const char *item_id, evo_provider_resolve_cb cb, void *ud)
+{
+    int unloaded = 0;
+    for (int i = 0; i < S->nad; ++i)
+        if (S->ad[i].loaded == 0) unloaded = 1;
+    if (unloaded && item_id && strlen(item_id) < EVO_PROVIDER_MAX_ITEM_ID) {
+        late_resolve_t *l = (late_resolve_t *)calloc(1, sizeof *l);
+        if (l) {
+            l->set = S;
+            snprintf(l->item_id, sizeof l->item_id, "%s", item_id);
+            l->rcb = cb; l->ud = ud;
+            if (list_root(late_resolve_go, l) == 0) return 0;
+            free(l);
+        }
+    }
+    return st_resolve_now(item_id, cb, ud);
+}
+
+static int st_resolve_now(const char *item_id, evo_provider_resolve_cb cb, void *ud)
 {
     if (!item_id || (strncmp(item_id, "m:", 2) && strncmp(item_id, "e:", 2))) return -1;
     int a;
