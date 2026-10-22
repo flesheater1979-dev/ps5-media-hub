@@ -1559,7 +1559,8 @@ void ProviderHostScreen::openSearch()
     }
 
     evo_feedback(EVO_FB_OPEN);
-    evo_keyboard_open("Search channels...", m_searchQuery.c_str(), 64,
+    const bool live = m_providerId == "iptv" || m_providerId == "xtream";
+    evo_keyboard_open(live ? "Search channels..." : "Search...", m_searchQuery.c_str(), 64,
                       &ProviderHostScreen::OnSearchSubmitted, this);
 }
 

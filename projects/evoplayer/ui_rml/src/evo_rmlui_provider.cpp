@@ -2396,17 +2396,28 @@ bool EvoRmlProviderHost::BeginShelves(const evo_provider_item_t* items, int coun
         ExpandNextServer();
         return true;
     }
+    /* Xtream's root is Live / Movies / Series: open each and make its categories the shelves. */
+    if (m_provider_id == "xtream" && !std::strcmp(items[0].id, "live")) {
+        m_expand_servers.clear();
+        m_expand_items.clear();
+        for (int i = 0; i < count; ++i)
+            if (items[i].is_folder) m_expand_servers.push_back(items[i].id);
+        m_expand_gen = ++m_shelf_gen;
+        m_model.loading = true;
+        ExpandNextServer();
+        return true;
+    }
     BuildShelves(items, count);
     return true;
 }
 
 void EvoRmlProviderHost::ExpandNextServer()
 {
-    struct Ctx { EvoRmlProviderHost* host; unsigned gen; };
+    struct Ctx { EvoRmlProviderHost* host; unsigned gen; std::string section; };
     while (!m_expand_servers.empty()) {
         const std::string id = m_expand_servers.front();
         m_expand_servers.erase(m_expand_servers.begin());
-        Ctx* c = new Ctx{this, m_expand_gen};
+        Ctx* c = new Ctx{this, m_expand_gen, id};
         if (m_provider->list_catalog(id.c_str(), 0, &EvoRmlProviderHost::ExpandCallback, c) == 0) return;
         delete c;
     }
@@ -2415,12 +2426,39 @@ void EvoRmlProviderHost::ExpandNextServer()
 
 void EvoRmlProviderHost::ExpandCallback(int ok, const evo_provider_item_t* items, int count, int, void* ud)
 {
-    struct Ctx { EvoRmlProviderHost* host; unsigned gen; };
+    struct Ctx { EvoRmlProviderHost* host; unsigned gen; std::string section; };
     Ctx* c = static_cast<Ctx*>(ud);
     EvoRmlProviderHost* self = c->host;
     const unsigned gen = c->gen;
+    const std::string section = c->section;
     delete c;
     if (!self->IsOpen() || gen != self->m_expand_gen) return;
+    if (self->m_provider_id == "xtream") {
+        /* The first few categories of each section become channel rows; one closing row
+         * of the section's category cards (with "See all") keeps the rest reachable. */
+        static const int kPerSection = 8;
+        const char* label = section == "live" ? "Live" : section == "vod" ? "Movies" : "Series";
+        int taken = 0;
+        if (ok)
+            for (int i = 0; i < count && taken < kPerSection; ++i) {
+                if (!items[i].is_folder) continue;
+                evo_provider_item_t it = items[i];
+                std::snprintf(it.title, sizeof it.title, "%s: %s", label, items[i].title);
+                self->m_expand_items.push_back(it);
+                ++taken;
+            }
+        if (ok && count > taken) {
+            evo_provider_item_t more;
+            std::memset(&more, 0, sizeof more);
+            std::snprintf(more.id, sizeof more.id, "%s", section.c_str());
+            std::snprintf(more.title, sizeof more.title, "%s: all categories", label);
+            more.is_folder = 1;
+            more.kind = EVO_MEDIA_FOLDER;
+            self->m_expand_items.push_back(more);
+        }
+        self->ExpandNextServer();
+        return;
+    }
     if (ok)
         for (int i = 0; i < count; ++i)
             if (items[i].is_folder) self->m_expand_items.push_back(items[i]);
@@ -2520,7 +2558,12 @@ void EvoRmlProviderHost::LoadNextShelf()
         return n;
     };
     const unsigned gen = m_shelf_gen;
+    /* Xtream has a shelf per category, a request each: fetch only the ones near the focus
+     * (all of them while nothing has landed yet, so an empty run cannot stall the home). */
+    const bool lazy = m_provider_id == "xtream" && ShelvesWithCards() > 0;
+    const int last = m_shelf_row + 3;
     for (int i = 0; i < (int)m_shelves.size() && out() < kShelfFetches; ++i) {
+        if (lazy && i > last) break;
         if (m_shelves[i].fresh || m_shelves[i].loading || m_shelves[i].parent.empty()) continue;
         Ctx* c = new Ctx{this, gen, i};
         m_model.loading = true;
@@ -2679,7 +2722,7 @@ bool EvoRmlProviderHost::ShelfKey(Key k)
     }
     case KeyDown: {
         const int n = NextShelf(m_shelf_row, +1);
-        if (n >= 0) { m_shelf_row = n; SyncShelfFocus(); }
+        if (n >= 0) { m_shelf_row = n; SyncShelfFocus(); LoadNextShelf(); }
         break;
     }
     case KeyLeft:
