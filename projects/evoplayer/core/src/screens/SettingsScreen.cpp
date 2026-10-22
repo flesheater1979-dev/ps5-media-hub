@@ -469,9 +469,11 @@ SettingDef makeDef(SettingKey key, ISettingsService* settings) {
          * goes in the subtitle line, where it is visible. On a Pro in standard
          * mode the line also points at the Pro build (EVO cannot switch itself). */
         static char s_mem_sub[96];
-        if (pool > 0 && pool <= kProMemoryThresholdMb && evo_hw_is_ps5_pro())
+        /* Pro detection misses on the Pro (see Console row), so the hint cannot
+         * wait for evo_hw_is_ps5_pro(); it is worded for a Pro owner instead. */
+        if (pool > 0 && pool <= kProMemoryThresholdMb)
             std::snprintf(s_mem_sub, sizeof s_mem_sub,
-                          "%s - INSTALL THE PRO BUILD FOR +1.2 GIB", s_mem_badge);
+                          "%s - PS5 PRO: GET THE PRO BUILD FOR +1.2 GIB", s_mem_badge);
         else
             std::snprintf(s_mem_sub, sizeof s_mem_sub, "%s", s_mem_badge);
         d = actionDef(key, "MEMORY", s_mem_sub, "../icons/icon_activity.png",
