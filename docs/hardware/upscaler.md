@@ -179,7 +179,9 @@ details in [psml-research.md](psml-research.md#experiment-log)):
 - **Pro-mode `param.json` flags change nothing observable.** Declaring Pro
   mode (`attribute3 |= 0x400000` plus a `psml` block, as Pro-enhanced games
   have) still launches, but EVO has no way to observe whether it took effect.
-  The build flag was removed with the experiment.
+  The build flag was removed with the experiment. (Bit 22 alone is different:
+  it gives a Pro +1.19 GiB of direct memory via `package-app.sh --pro-memory`,
+  see [memory-budget.md](memory-budget.md).)
 
 So "unknown" is the normal state:
 - **Auto** treats unknown as a base PS5 (Standard network).
