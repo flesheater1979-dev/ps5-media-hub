@@ -935,6 +935,17 @@ void draw_settings_preview(DrawList &list, const Context &ctx, const Rect &box, 
         draw_info(list, ctx, box, pv);
         break;
     }
+
+    /* The row's own subtext, in full: the narrower row list cuts it short. Pinned to the
+     * card's foot, below every drawing above. */
+    if (!pv.detail.empty())
+    {
+        const Palette &p = ctx.palette;
+        const float x = box.x + 24.0f, w = box.w - 48.0f, y = box.y + box.h - 104.0f;
+        list.rounded_rect({x, y - 30.0f, w, 1.0f}, 0, p.border);
+        ui::text(list, ctx.fonts.semibold, "DETAILS", x, y, 14, p.text_muted, Align::left, 2.0f);
+        ui::paragraph(list, ctx.fonts.regular, pv.detail, x, y + 28.0f, 18, w, 25, p.text_faint, 3);
+    }
 }
 
 } // namespace evo::kit

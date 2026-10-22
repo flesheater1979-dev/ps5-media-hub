@@ -110,6 +110,7 @@ void SettingsScreen::detect_preview()
     preview_.title = rows_[owner].title;
     preview_.icon = rows_[owner].icon_path;
     preview_.benefit = f.benefit;
+    preview_.detail = rows_[owner].detail;
     preview_.choices = f.choices;
     preview_.choice_bg = f.choice_bg;
     preview_.choice_accent = f.choice_accent;

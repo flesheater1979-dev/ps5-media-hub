@@ -21,6 +21,7 @@ struct SettingsPreview
     bool toggle = false;
     std::string title;
     std::string benefit;
+    std::string detail;                /* the row's subtext in full (the row itself cuts it short) */
     std::string icon;                  /* the setting's icon path */
     std::vector<std::string> choices;  /* empty for a toggle: OFF / ON */
     std::vector<unsigned int> choice_bg;      /* THEME: page background per choice, 0xRRGGBB */
