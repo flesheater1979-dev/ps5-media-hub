@@ -215,15 +215,15 @@ The entire user interface is rendered on the GPU through bare-metal `sceAgc` at 
 |---|---|---|---|
 | **CROSS ✕** | Select / Open | Play / Pause | Type character |
 | **CIRCLE ○** | Back | Stop playback (with prompt) | Cancel |
-| **TRIANGLE △** | Toggle favourite / Web view | Cycle Aspect Ratio (Fit / Fill / Stretch) | Done / Submit |
+| **TRIANGLE △** | Toggle favourite / Web view | Cycle Aspect Ratio (Fit / Fill / Stretch) | Space |
 | **SQUARE □** | File details / Provider settings | Media Info (Codec, Resolution, Decoder) | Backspace |
-| **OPTIONS** | File operations (Copy, Move, Rename, Delete) | Playback settings menu | Space |
-| **D-Pad / Left Stick** | Move focus, hold to scroll | Scrub seek bar (hold for high-speed) | Move cursor |
+| **OPTIONS** | File operations (Copy, Move, Rename, Delete) | Playback settings menu | Done |
+| **D-Pad / Left Stick** | Move focus, hold to scroll | Scrub seek bar (hold for high-speed) | Move between keys (up from the top row: the clear X) |
 | **LEFT** | Open navigation rail | — | — |
 | **UP** | Instant folder filter chips | Toggle OSD overlay | — |
 | **DOWN** | — | Open subtitle track picker | — |
-| **L1 / R1** | Page up / Page down | Chapter skip / ±60 s seek | Shift / Symbols |
-| **L2 / R2** | Jump alphabetically (A–Z) | **L2:** Subtitle sync ±50ms<br>**R2:** Live stream quality & audio picker | — |
+| **L1 / R1** | Page up / Page down | Chapter skip / ±60 s seek | Move the text cursor left / right |
+| **L2 / R2** | Jump alphabetically (A–Z) | **L2:** Subtitle sync ±50ms<br>**R2:** Live stream quality & audio picker | **L2:** Shift (press again: Caps Lock)<br>**R2:** Done |
 | **Trackpad Swipe** | — | Live subtitle sync offset nudge | — |
 | **L3 / R3** | Take screenshot to `/mnt/usb0` | Take screenshot | — |
 

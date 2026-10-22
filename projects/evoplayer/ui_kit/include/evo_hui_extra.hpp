@@ -69,17 +69,19 @@ class KeyboardOverlay
     bool focus(FocusInfo *out) const;
 
   private:
-    void sync_keys();
+    void sync_keys(const evo_keyboard_params_t &p);
     hui::ui::Keyboard keys_;
-    std::string layout_sig_;
+    bool layouts_built_ = false;
     bool keys_ready_ = false;
     bool visible_ = false;
     bool native_only_ = false;
+    bool clear_visible_ = false;
     std::string title_;
     std::string text_;
     std::string mode_label_;
-    std::vector<std::string> rows_[4];
-    std::vector<std::string> action_labels_;
+    const evo_kb_key_t *key_rows_[EVO_KB_LAYERS][EVO_KB_ROWS] = {};
+    int key_row_len_[EVO_KB_LAYERS][EVO_KB_ROWS] = {};
+    int layer_ = 0;
     int len_ = 0;
     int max_len_ = 0;
     int focus_row_ = 0;
@@ -91,8 +93,7 @@ class KeyboardOverlay
 
     hui::tween::Spring enter_scale_;
     hui::tween::Spring enter_fade_;
-    hui::ui::SpringRect ring_;
-    bool ring_snapped_ = false;
+    hui::tween::Spring clear_focus_; /* 0..1: the clear button's focus fill */
 };
 
 } // namespace evo::kit

@@ -825,6 +825,25 @@ void evo_rmlui_render_debug_overlay(uint32_t* framebuffer, int width, int height
  * buffer, layer and D-pad navigation state and pushes it here; this renders it
  * as an RmlUi document in its own context, composited over the screen like the
  * toast. */
+/* One key of the native-style layout. Same order as the kit's ui::KeyKind. */
+enum {
+    EVO_KB_KEY_CHAR = 0,   /* types text, or shifted while shift is on */
+    EVO_KB_KEY_SPACE,
+    EVO_KB_KEY_SHIFT,
+    EVO_KB_KEY_BACKSPACE,
+    EVO_KB_KEY_LAYOUT,     /* switches letters <-> symbols */
+    EVO_KB_KEY_DONE
+};
+typedef struct {
+    int kind;
+    int span;                 /* columns covered */
+    const char* text;
+    const char* shifted;      /* NULL / "" = the same */
+} evo_kb_key_t;
+#define EVO_KB_LAYERS 2       /* 0 = letters, 1 = symbols */
+#define EVO_KB_ROWS 5
+#define EVO_KB_CLEAR_ROW 5    /* focus_row of the clear (X) button in the text field */
+
 typedef struct {
     int visible;
     int native_only;          /* native IME up: just dim, no panel */
@@ -841,6 +860,15 @@ typedef struct {
     int cursor;               /* caret as a byte offset into text */
     int qr_size;              /* phone-link QR: modules per side, 0 = none */
     const unsigned char* qr_modules;   /* qr_size * qr_size, row-major, 1 = dark */
+    /* Native-style layout (the kit draws it). rows / action_labels above are
+     * the old 4-row grid and stay empty; the RmlUi fallback document still
+     * reads them. focus_row 0..4 = key rows, EVO_KB_CLEAR_ROW = clear button. */
+    const evo_kb_key_t* key_rows[EVO_KB_LAYERS][EVO_KB_ROWS];
+    int key_row_len[EVO_KB_LAYERS][EVO_KB_ROWS];
+    int key_columns;
+    int layer;                /* 0 letters, 1 symbols */
+    int shift_state;          /* 0 off, 1 next letter, 2 caps lock */
+    int clear_visible;        /* the text field has something to clear */
 } evo_keyboard_params_t;
 void evo_rmlui_update_keyboard(const evo_keyboard_params_t* params);
 void evo_rmlui_render_keyboard(uint32_t* framebuffer, int width, int height);

@@ -3,7 +3,8 @@
  *
  * Provides a responsive, accessible controller-driven virtual keyboard with
  * layout switching (lowercase, uppercase, numbers/symbols), text editing,
- * shortcuts (Square = Backspace, Triangle = Done, Circle = Cancel), and
+ * shortcuts (Square = Backspace, Triangle = Space, L2 = Shift / Caps Lock,
+ * R2 or Options = Done, Circle = Cancel), and
  * seamless integration with any text entry field across the application.
  */
 #ifndef EVO_KEYBOARD_H

@@ -219,6 +219,29 @@ bool ImageViewer::focus(FocusInfo *out) const
 
 /* -------------------------------------------------------- KeyboardOverlay */
 
+namespace
+{
+/* The card, the text field and the key board, in 1920 x 1080 space. */
+const Rect kCard{340.0f, 440.0f, 1240.0f, 600.0f};
+const Rect kWell{kCard.x + 80.0f, kCard.y + 80.0f, kCard.w - 160.0f, 70.0f};
+const Rect kBoard{kCard.x + 92.0f, kCard.y + 180.0f, 1056.0f, 360.0f};
+const float kClearR = 22.0f;
+const float kClearX = kWell.x + kWell.w - 20.0f - kClearR;
+const float kClearY = kWell.y + kWell.h * 0.5f;
+
+const char *kind_word(int kind)
+{
+    switch (kind) {
+    case EVO_KB_KEY_SPACE: return "Space";
+    case EVO_KB_KEY_SHIFT: return "Shift";
+    case EVO_KB_KEY_BACKSPACE: return "Backspace";
+    case EVO_KB_KEY_LAYOUT: return "Symbols";
+    case EVO_KB_KEY_DONE: return "Done";
+    default: return "";
+    }
+}
+} // namespace
+
 void KeyboardOverlay::set(const evo_keyboard_params_t &p)
 {
     auto str = [](const char *s) { return std::string(s ? s : ""); };
@@ -227,49 +250,65 @@ void KeyboardOverlay::set(const evo_keyboard_params_t &p)
     title_ = str(p.title);
     text_ = str(p.text);
     mode_label_ = str(p.mode_label);
-    for (int i = 0; i < 4; ++i)
-        rows_[i] = split_utf8(str(p.rows[i]));
-    action_labels_.clear();
-    for (int i = 0; i < 6; ++i) {
-        if (p.action_labels[i] && p.action_labels[i][0] != '\0')
-            action_labels_.push_back(p.action_labels[i]);
-    }
     len_ = p.len;
     max_len_ = p.max_len;
     focus_row_ = p.focus_row;
     focus_col_ = p.focus_col;
     show_caret_ = p.show_caret != 0;
     cursor_ = p.cursor;
+    clear_visible_ = p.clear_visible != 0;
+    layer_ = p.layer;
+    for (int l = 0; l < EVO_KB_LAYERS; ++l)
+        for (int r = 0; r < EVO_KB_ROWS; ++r) {
+            key_rows_[l][r] = p.key_rows[l][r];
+            key_row_len_[l][r] = p.key_row_len[l][r];
+        }
     qr_size_ = (p.qr_modules && p.qr_size > 0) ? p.qr_size : 0;
     qr_.assign(p.qr_modules, p.qr_modules + (size_t)qr_size_ * qr_size_);
-    sync_keys();
+    sync_keys(p);
 }
 
-/* The kit's Keyboard only draws here; evo_keyboard.c owns the layout, the
- * focus and the text. Mirror its four rows and its focus into the component. */
-void KeyboardOverlay::sync_keys()
+/* The kit's Keyboard only draws here; evo_keyboard.c owns the layout, the focus,
+ * the shift state and the text. Mirror its two layers and its state into the
+ * component, which draws the keys, the key icons and the shift / caps lock look. */
+void KeyboardOverlay::sync_keys(const evo_keyboard_params_t &p)
 {
-    std::string sig;
-    for (int r = 0; r < 4; ++r) {
-        for (const std::string &k : rows_[r]) sig += k + '|';
-        sig += '/';
-    }
-    if (sig != layout_sig_) {
-        ui::KeyboardLayout layout;
-        layout.columns = 10;
-        for (int r = 0; r < 4; ++r) {
-            std::vector<ui::KeyboardKey> row;
-            for (size_t c = 0; c < rows_[r].size() && c < 10; ++c) {
-                ui::KeyboardKey key;
-                key.text = rows_[r][c];
-                row.push_back(std::move(key));
+    if (!layouts_built_ && p.key_row_len[0][0] > 0) {
+        std::vector<ui::KeyboardLayout> layouts;
+        for (int l = 0; l < EVO_KB_LAYERS; ++l) {
+            ui::KeyboardLayout layout;
+            layout.name = l == 0 ? "ABC" : "&123"; /* a layout key names where it leads */
+            layout.columns = std::max(p.key_columns, 1);
+            for (int r = 0; r < EVO_KB_ROWS; ++r) {
+                std::vector<ui::KeyboardKey> row;
+                for (int c = 0; c < p.key_row_len[l][r]; ++c) {
+                    const evo_kb_key_t &k = p.key_rows[l][r][c];
+                    ui::KeyboardKey key;
+                    key.kind = static_cast<ui::KeyKind>(k.kind);
+                    key.span = k.span;
+                    key.text = k.text ? k.text : "";
+                    key.shifted = k.shifted ? k.shifted : "";
+                    row.push_back(std::move(key));
+                }
+                layout.add_row(std::move(row));
             }
-            if (!row.empty()) layout.add_row(std::move(row));
+            layouts.push_back(std::move(layout));
         }
-        keys_.set_layouts({std::move(layout)});
-        layout_sig_ = sig;
+        keys_.set_layouts(std::move(layouts));
+        /* The pad buttons that do these things, drawn on the keys. Nothing here
+         * calls the kit's own input handling: evo_keyboard.c takes the buttons. */
+        keys_.style.bindings.backspace = ::hui::Action::west;    /* Square */
+        keys_.style.bindings.space = ::hui::Action::north;       /* Triangle */
+        keys_.style.bindings.shift = ::hui::Action::jump_prev;   /* L2 */
+        keys_.style.bindings.done = ::hui::Action::jump_next;    /* R2 */
+        layouts_built_ = true;
     }
-    const bool on_keys = focus_row_ >= 0 && focus_row_ < 4;
+    if (!layouts_built_) return;
+
+    keys_.set_layout(layer_);
+    keys_.set_shift(p.shift_state == 2 ? ui::KeyboardShift::lock
+                    : p.shift_state == 1 ? ui::KeyboardShift::once : ui::KeyboardShift::off);
+    const bool on_keys = focus_row_ >= 0 && focus_row_ < EVO_KB_ROWS;
     keys_.set_active(on_keys);
     if (on_keys) keys_.set_focus(focus_row_, focus_col_, !keys_ready_);
     keys_ready_ = true;
@@ -281,7 +320,7 @@ void KeyboardOverlay::enter()
     enter_scale_.target = 1.0f;
     enter_fade_.snap(0.0f);
     enter_fade_.target = 1.0f;
-    ring_snapped_ = false;
+    clear_focus_.snap(0.0f);
     keys_ready_ = false;
     keys_.enter();
 }
@@ -290,21 +329,9 @@ void KeyboardOverlay::update(float dt)
 {
     enter_scale_.update(dt, 16.0f);
     enter_fade_.update(dt, 20.0f);
+    clear_focus_.target = (focus_row_ == EVO_KB_CLEAR_ROW) ? 1.0f : 0.0f;
+    clear_focus_.update(dt, 24.0f);
     keys_.update(dt);
-
-    Rect target{};
-    if (focus_row_ == 4 && focus_col_ >= 0 && focus_col_ < (int)action_labels_.size()) {
-        float aw = 960.0f / std::max(1, (int)action_labels_.size());
-        target = {340.0f + 140.0f + focus_col_ * aw, 440.0f + 180.0f + 4 * 72.0f + 20.0f, aw, 56.0f};
-    }
-    if (target.w > 0) {
-        if (!ring_snapped_) {
-            ring_.snap(target);
-            ring_snapped_ = true;
-        }
-        ring_.target(target);
-        ring_.update(dt, 24.0f);
-    }
 }
 
 void KeyboardOverlay::draw(DrawList &list, const Context &ctx) const
@@ -321,7 +348,7 @@ void KeyboardOverlay::draw(DrawList &list, const Context &ctx) const
     list.push_transform(enter_scale_.value, 960, 1080, 0, 0); // scale from bottom
     list.push_opacity(alpha);
 
-    Rect card{340.0f, 440.0f, 1240.0f, 600.0f};
+    const Rect card = kCard;
     list.shadow({card.x, card.y + 20, card.w, card.h}, 36, 60, kBlack.with_alpha(0.6f));
     list.rounded_rect(card, 36, p.bg_top.with_alpha(0.97f));
     list.bordered_rect(card, 36, kClear, 1.0f, kWhite.with_alpha(0.12f));
@@ -329,85 +356,60 @@ void KeyboardOverlay::draw(DrawList &list, const Context &ctx) const
     // title
     ui::text(list, fonts.semibold, ui::upper(title_), card.cx(), card.y + 50, 16, p.text_muted, Align::center, 3.0f);
 
-    // mode_label
-    /* The pill is the Shift state, so L2 (Shift) is drawn on it. */
-    const float mg = ui::button_width(ui::Button::l2, 20.0f);
-    const float mt = fonts.semibold.measure(mode_label_, 14, 1.5f);
-    float mw = mg + 8 + mt + 24;
+    // mode pill: the layer and the shift state (the Shift key itself also lights up)
+    float mw = fonts.semibold.measure(mode_label_, 14, 1.5f) + 24;
     Rect mpill{card.x + card.w - 40 - mw, card.y + 34, mw, 28};
     list.rounded_rect(mpill, 14, kWhite.with_alpha(0.08f));
-    ui::draw_button(list, fonts, ui::GlyphStyle::dark(), ui::Button::l2, mpill.x + 12, mpill.cy(), 20.0f);
-    ui::text(list, fonts.semibold, mode_label_, mpill.x + 12 + mg + 8 + mt * 0.5f, mpill.y + 19, 14, p.text_muted, Align::center, 1.5f);
+    ui::text(list, fonts.semibold, mode_label_, mpill.cx(), mpill.y + 19, 14, p.text_muted, Align::center, 1.5f);
 
     // text field
-    Rect well{card.x + 80, card.y + 80, card.w - 160, 70};
+    const Rect well = kWell;
     list.rounded_rect(well, 16, kBlack.with_alpha(0.3f));
     list.bordered_rect(well, 16, kClear, 1.0f, kWhite.with_alpha(0.06f));
-    ui::text(list, fonts.regular, fit(fonts.regular, text_, 28, well.w - 40), well.x + 20, well.cy() + 10, 28, kWhite);
+
+    /* Right side of the field, from the right edge: the clear button (when there
+     * is text), the counter, then the L1 / R1 icons that move the caret. */
+    float right = well.x + well.w - 20.0f;
+    if (clear_visible_) {
+        const float f = clear_focus_.value;
+        list.circle(kClearX, kClearY, kClearR, kWhite.with_alpha(0.10f + 0.90f * f));
+        const Color x = f > 0.5f ? kInk : kWhite.with_alpha(0.75f);
+        const float a = 8.0f;
+        list.line(kClearX - a, kClearY - a, kClearX + a, kClearY + a, 3.0f, x);
+        list.line(kClearX - a, kClearY + a, kClearX + a, kClearY - a, 3.0f, x);
+        right = kClearX - kClearR - 18.0f;
+    }
+    char counter[32];
+    std::snprintf(counter, sizeof(counter), "%d / %d", len_, max_len_);
+    ui::text(list, fonts.regular, counter, right, well.cy() + 10, 16, p.text_faint, Align::right);
+    {
+        const float gs = 22.0f;
+        const float cw = fonts.regular.measure(counter, 16);
+        const float w1 = ui::button_width(ui::Button::l1, gs), w2 = ui::button_width(ui::Button::r1, gs);
+        float gx = right - cw - 20.0f - w1 - 6.0f - w2;
+        ui::draw_button(list, fonts, ui::GlyphStyle::dark(), ui::Button::l1, gx, well.cy() + 3, gs);
+        ui::draw_button(list, fonts, ui::GlyphStyle::dark(), ui::Button::r1, gx + w1 + 6.0f, well.cy() + 3, gs);
+    }
+
+    const float text_room = (right - well.x) - 20.0f - 230.0f;
+    ui::text(list, fonts.regular, fit(fonts.regular, text_, 28, text_room), well.x + 20, well.cy() + 10, 28, kWhite);
     if (show_caret_ && fmod(ctx.time, 1.0f) < 0.5f) {
         /* At the caret, not the end of the text: L1 / R1 move it. */
         const size_t at = (cursor_ < 0 || (size_t)cursor_ > text_.size()) ? text_.size() : (size_t)cursor_;
         float tw = fonts.regular.measure(text_.substr(0, at), 28);
-        tw = std::min(tw, well.w - 44.0f);
+        tw = std::min(tw, text_room - 4.0f);
         list.rounded_rect({well.x + 20 + tw + 2, well.cy() - 16, 2, 32}, 1, p.accent);
-    }
-    
-    char counter[32];
-    std::snprintf(counter, sizeof(counter), "%d / %d", len_, max_len_);
-    ui::text(list, fonts.regular, counter, well.x + well.w - 20, well.cy() + 10, 16, p.text_faint, Align::right);
-
-    /* L1 / R1 move the caret: their icons sit in the text field, left of the counter. */
-    {
-        const float gs = 22.0f;
-        const float cw = fonts.regular.measure(counter, 16);
-        float gx = well.x + well.w - 20 - cw - 20 - ui::button_width(ui::Button::l1, gs) - 6 - ui::button_width(ui::Button::r1, gs);
-        ui::draw_button(list, fonts, ui::GlyphStyle::dark(), ui::Button::l1, gx, well.cy() + 3, gs);
-        gx += ui::button_width(ui::Button::l1, gs) + 6;
-        ui::draw_button(list, fonts, ui::GlyphStyle::dark(), ui::Button::r1, gx, well.cy() + 3, gs);
     }
 
     // keys
-    float kx = card.x + 140.0f;
-    float ky = card.y + 180.0f;
-
     {
         ui::Keyboard &keys = const_cast<ui::Keyboard &>(keys_);
         keys.style.theme = p.kit_theme();
         keys.style.panel = false;
-        keys.style.surfaces = false;
-        keys.set_bounds({kx, ky, 960.0f, 288.0f});
+        keys.style.surfaces = true;
+        keys.set_bounds(kBoard);
         ui::Canvas canvas{list, fonts, 0, ctx.time};
         keys_.draw(canvas);
-    }
-
-    // action bar
-    if (ring_snapped_ && focus_row_ == 4)
-        list.rounded_rect(ring_.value(), 16, kWhite);
-    if (!action_labels_.empty()) {
-        float ay = ky + 4 * 72.0f + 20.0f;
-        float aw = 960.0f / action_labels_.size();
-        for (size_t i = 0; i < action_labels_.size(); ++i) {
-            bool focused = (focus_row_ == 4 && focus_col_ == (int)i);
-            Color txt = focused ? kInk : kWhite;
-            if (!focused) {
-                list.rounded_rect({kx + i * aw + 6, ay, aw - 12, 56.0f}, 28, kWhite.with_alpha(0.1f));
-            }
-            /* The pad button that does the same thing, drawn on the key: Space = Triangle,
-             * Backspace = Square, Cancel = Circle, Done = R2 (order set in evo_keyboard.c). */
-            static const ui::Button kActionButton[] = {ui::Button::none, ui::Button::triangle, ui::Button::square,
-                                                       ui::Button::none, ui::Button::circle, ui::Button::r2};
-            const ui::Button pad = i < 6 ? kActionButton[i] : ui::Button::none;
-            if (pad == ui::Button::none) {
-                ui::text(list, fonts.semibold, action_labels_[i], kx + i * aw + aw * 0.5f, ay + 34.0f, 18, txt, Align::center);
-            } else {
-                const float gs = 24.0f, gap = 8.0f, ts = 16.0f;
-                const float gw = ui::button_width(pad, gs);
-                const float tw = fonts.semibold.measure(action_labels_[i], ts);
-                const float x0 = kx + i * aw + aw * 0.5f - (gw + gap + tw) * 0.5f;
-                ui::draw_button(list, fonts, ui::GlyphStyle::dark(), pad, x0, ay + 28.0f, gs);
-                ui::text(list, fonts.semibold, action_labels_[i], x0 + gw + gap + tw * 0.5f, ay + 34.0f, ts, txt, Align::center);
-            }
-        }
     }
 
     // phone link: a white card with the QR code, right of the keyboard
@@ -436,20 +438,20 @@ bool KeyboardOverlay::focus(FocusInfo *out) const
 {
     if (!visible_ || native_only_) return false;
     out->focusable.clear();
-    if (focus_row_ >= 0 && focus_row_ < 4) {
-        out->id = "key-r" + std::to_string(focus_row_) + "c" + std::to_string(focus_col_);
-        if (focus_col_ >= 0 && focus_col_ < (int)rows_[focus_row_].size())
-            out->text = rows_[focus_row_][focus_col_];
-        out->rect = {340.0f + 140.0f + focus_col_ * 96.0f, 440.0f + 180.0f + focus_row_ * 72.0f, 96.0f, 72.0f};
-        return true;
-    } else if (focus_row_ == 4 && focus_col_ >= 0 && focus_col_ < (int)action_labels_.size()) {
-        out->id = "action-" + std::to_string(focus_col_);
-        out->text = action_labels_[focus_col_];
-        float aw = 960.0f / action_labels_.size();
-        out->rect = {340.0f + 140.0f + focus_col_ * aw, 440.0f + 180.0f + 4 * 72.0f + 20.0f, aw, 56.0f};
+    if (focus_row_ == EVO_KB_CLEAR_ROW) {
+        out->id = "clear";
+        out->text = "Clear";
+        out->rect = {kClearX - kClearR, kClearY - kClearR, kClearR * 2, kClearR * 2};
         return true;
     }
-    return false;
+    if (focus_row_ < 0 || focus_row_ >= EVO_KB_ROWS || focus_col_ < 0 ||
+        focus_col_ >= key_row_len_[layer_][focus_row_] || !key_rows_[layer_][focus_row_])
+        return false;
+    const evo_kb_key_t &k = key_rows_[layer_][focus_row_][focus_col_];
+    out->id = "key-r" + std::to_string(focus_row_) + "c" + std::to_string(focus_col_);
+    out->text = k.kind == EVO_KB_KEY_CHAR ? std::string(k.text ? k.text : "") : kind_word(k.kind);
+    out->rect = keys_.key_rect(focus_row_, focus_col_);
+    return true;
 }
 
 } // namespace evo::kit

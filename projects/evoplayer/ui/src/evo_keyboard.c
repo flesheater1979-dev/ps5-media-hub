@@ -242,46 +242,67 @@ static void utf16_to_utf8(const uint16_t *src, char *dst, size_t max_dst)
 #endif
 
 
-/* Key grids for Virtual Keyboard */
-static const char *const GRID_LOWER[4] = {
-    "1234567890",
-    "qwertyuiop",
-    "asdfghjkl.",
-    "zxcvbnm_-:"
-};
+/*
+ * Key layout, native-IME style: a number row with Backspace at its end, three
+ * letter rows, and a bottom row (symbols switch, @ and :, a wide Space, / and -,
+ * Done). Rows are centred on an 11-column grid; wide keys span several columns.
+ * The kit draws it (ui_kit KeyboardOverlay); this file owns focus and text.
+ */
+#define KB_COLS 11
+#define KB_CH(t, s)  { EVO_KB_KEY_CHAR, 1, t, s }
+#define KB_KIND(k, n) { k, n, "", "" }
 
-static const char *const GRID_UPPER[4] = {
-    "1234567890",
-    "QWERTYUIOP",
-    "ASDFGHJKL.",
-    "ZXCVBNM_-:"
-};
+#define KB_BOTTOM_ROW \
+    KB_KIND(EVO_KB_KEY_LAYOUT, 2), KB_CH("@", ""), KB_CH(":", ""), \
+    KB_KIND(EVO_KB_KEY_SPACE, 3), KB_CH("/", ""), KB_CH("-", ""), KB_KIND(EVO_KB_KEY_DONE, 2)
 
-static const char *const GRID_SYMBOLS[4] = {
-    "!@#$%^&*()",
-    "~`+=[]{}\\|",
-    ";:\"'<>/?,.",
-    "_-@/.:%=+*"
+static const evo_kb_key_t KB_L0[] = {
+    KB_CH("1", ""), KB_CH("2", ""), KB_CH("3", ""), KB_CH("4", ""), KB_CH("5", ""),
+    KB_CH("6", ""), KB_CH("7", ""), KB_CH("8", ""), KB_CH("9", ""), KB_CH("0", ""),
+    KB_KIND(EVO_KB_KEY_BACKSPACE, 1)
 };
-
-/* Actions on Row 4 */
-enum {
-    KB_ACT_MODE = 0,
-    KB_ACT_SPACE,
-    KB_ACT_BACKSPACE,
-    KB_ACT_CLEAR,
-    KB_ACT_CANCEL,
-    KB_ACT_DONE,
-    KB_ACT_COUNT
+static const evo_kb_key_t KB_L1[] = {
+    KB_CH("q", "Q"), KB_CH("w", "W"), KB_CH("e", "E"), KB_CH("r", "R"), KB_CH("t", "T"),
+    KB_CH("y", "Y"), KB_CH("u", "U"), KB_CH("i", "I"), KB_CH("o", "O"), KB_CH("p", "P")
 };
+static const evo_kb_key_t KB_L2[] = {
+    KB_CH("a", "A"), KB_CH("s", "S"), KB_CH("d", "D"), KB_CH("f", "F"), KB_CH("g", "G"),
+    KB_CH("h", "H"), KB_CH("j", "J"), KB_CH("k", "K"), KB_CH("l", "L"), KB_CH("'", "")
+};
+static const evo_kb_key_t KB_L3[] = {
+    KB_KIND(EVO_KB_KEY_SHIFT, 1),
+    KB_CH("z", "Z"), KB_CH("x", "X"), KB_CH("c", "C"), KB_CH("v", "V"), KB_CH("b", "B"),
+    KB_CH("n", "N"), KB_CH("m", "M"), KB_CH(",", ""), KB_CH(".", ""), KB_CH("?", "")
+};
+static const evo_kb_key_t KB_L4[] = { KB_BOTTOM_ROW };
 
-static const char *const ACTION_LABELS[KB_ACT_COUNT] = {
-    "123 / ABC",
-    "SPACE",
-    "BACKSPACE",
-    "CLEAR",
-    "CANCEL",
-    "DONE"
+static const evo_kb_key_t KB_S0[] = {
+    KB_CH("1", ""), KB_CH("2", ""), KB_CH("3", ""), KB_CH("4", ""), KB_CH("5", ""),
+    KB_CH("6", ""), KB_CH("7", ""), KB_CH("8", ""), KB_CH("9", ""), KB_CH("0", ""),
+    KB_KIND(EVO_KB_KEY_BACKSPACE, 1)
+};
+static const evo_kb_key_t KB_S1[] = {
+    KB_CH("!", ""), KB_CH("@", ""), KB_CH("#", ""), KB_CH("$", ""), KB_CH("%", ""),
+    KB_CH("^", ""), KB_CH("&", ""), KB_CH("*", ""), KB_CH("(", ""), KB_CH(")", "")
+};
+static const evo_kb_key_t KB_S2[] = {
+    KB_CH("-", ""), KB_CH("_", ""), KB_CH("=", ""), KB_CH("+", ""), KB_CH("[", ""),
+    KB_CH("]", ""), KB_CH("{", ""), KB_CH("}", ""), KB_CH("<", ""), KB_CH(">", "")
+};
+static const evo_kb_key_t KB_S3[] = {
+    KB_CH("/", ""), KB_CH("\\", ""), KB_CH("|", ""), KB_CH(":", ""), KB_CH(";", ""), KB_CH("\"", ""),
+    KB_CH("'", ""), KB_CH("~", ""), KB_CH("`", ""), KB_CH("?", ""), KB_CH(",", "")
+};
+static const evo_kb_key_t KB_S4[] = { KB_BOTTOM_ROW };
+
+#define KB_N(a) ((int)(sizeof(a) / sizeof((a)[0])))
+static const evo_kb_key_t *const KB_ROWS[EVO_KB_LAYERS][EVO_KB_ROWS] = {
+    { KB_L0, KB_L1, KB_L2, KB_L3, KB_L4 },
+    { KB_S0, KB_S1, KB_S2, KB_S3, KB_S4 },
+};
+static const int KB_ROW_LEN[EVO_KB_LAYERS][EVO_KB_ROWS] = {
+    { KB_N(KB_L0), KB_N(KB_L1), KB_N(KB_L2), KB_N(KB_L3), KB_N(KB_L4) },
+    { KB_N(KB_S0), KB_N(KB_S1), KB_N(KB_S2), KB_N(KB_S3), KB_N(KB_S4) },
 };
 
 typedef struct {
@@ -293,10 +314,11 @@ typedef struct {
     char            title[128];
     char            buffer[KB_MAX_BUF];
     int             max_len;
-    int             mode;        /* 0 = lower, 1 = upper, 2 = symbols */
-    int             shift_once;  /* R2 shift: upper for one letter, then back to lower */
-    int             row;         /* 0..4 */
-    int             col;         /* 0..9 for rows 0..3; 0..5 for row 4 */
+    int             layer;       /* 0 = letters, 1 = symbols */
+    int             shift;       /* 0 = off, 1 = next letter only, 2 = caps lock */
+    int             row;         /* 0..4 key rows, EVO_KB_CLEAR_ROW = the field's clear button */
+    int             col;         /* key index within the row */
+    float           xcol;        /* where the player is, in grid columns: up / down keep it */
     int             cursor;      /* byte offset of the caret in buffer; -1 = the end */
     uint32_t        blink_timer;
     evo_keyboard_cb callback;
@@ -471,10 +493,11 @@ static void kb_open(const char *title, const char *initial_value, int max_len,
     }
 
     g_kb.max_len = (max_len > 0 && max_len < KB_MAX_BUF) ? max_len : (KB_MAX_BUF - 1);
-    g_kb.mode = 0;
-    g_kb.shift_once = 0;
+    g_kb.layer = 0;
+    g_kb.shift = 0;
     g_kb.row = 1;    /* Start on 'q' / first letter row */
     g_kb.col = 0;
+    g_kb.xcol = 0.5f;
     g_kb.blink_timer = 0;
     g_kb.callback = on_submit;
     g_kb.userdata = userdata;
@@ -673,17 +696,115 @@ static void move_cursor(int dir)
     evo_feedback(EVO_FB_MOVE);
 }
 
-static void insert_char(char c)
+static void backspace_char(void);
+static void submit_text(void);
+
+static void insert_str(const char *str)
 {
+    size_t n = strlen(str);
     size_t len = strlen(g_kb.buffer);
-    if ((int)len < g_kb.max_len && len + 1 < sizeof(g_kb.buffer)) {
+    if (n > 0 && (int)(len + n) <= g_kb.max_len && len + n < sizeof(g_kb.buffer)) {
         size_t cur = kb_cursor();
-        memmove(g_kb.buffer + cur + 1, g_kb.buffer + cur, len - cur + 1);
-        g_kb.buffer[cur] = c;
-        g_kb.cursor = (int)cur + 1;
+        memmove(g_kb.buffer + cur + n, g_kb.buffer + cur, len - cur + 1);
+        memcpy(g_kb.buffer + cur, str, n);
+        g_kb.cursor = (int)(cur + n);
         evo_feedback(EVO_FB_MOVE);
     } else {
         evo_feedback(EVO_FB_BOUNDARY);
+    }
+}
+
+static void insert_char(char c)
+{
+    char one[2] = { c, 0 };
+    insert_str(one);
+}
+
+/* ---- grid geometry: rows are centred on KB_COLS columns, wide keys span several ---- */
+
+static int kb_row_len(int row)
+{
+    return (row >= 0 && row < EVO_KB_ROWS) ? KB_ROW_LEN[g_kb.layer][row] : 0;
+}
+
+static const evo_kb_key_t *kb_key(int row, int col)
+{
+    if (row < 0 || row >= EVO_KB_ROWS || col < 0 || col >= kb_row_len(row)) return NULL;
+    return &KB_ROWS[g_kb.layer][row][col];
+}
+
+static float kb_row_start(int row)
+{
+    int cols = 0;
+    for (int c = 0; c < kb_row_len(row); c++) cols += kb_key(row, c)->span;
+    return (KB_COLS - cols) * 0.5f;
+}
+
+static float kb_key_start(int row, int col)
+{
+    float x = kb_row_start(row);
+    for (int c = 0; c < col; c++) x += kb_key(row, c)->span;
+    return x;
+}
+
+static float kb_key_centre(int row, int col)
+{
+    return kb_key_start(row, col) + kb_key(row, col)->span * 0.5f;
+}
+
+/* The key of `row` under grid column `x` (the nearest one when x is in a margin). */
+static int kb_key_under(int row, float x)
+{
+    int best = 0;
+    float best_d = 1e9f;
+    for (int c = 0; c < kb_row_len(row); c++) {
+        float d = x - kb_key_centre(row, c);
+        if (d < 0) d = -d;
+        if (d < best_d) { best_d = d; best = c; }
+    }
+    return best;
+}
+
+static void kb_move_to_row(int row)
+{
+    g_kb.row = row;
+    g_kb.col = kb_key_under(row, g_kb.xcol);
+}
+
+static void kb_shift_cycle(void)
+{
+    if (g_kb.layer != 0) { evo_feedback(EVO_FB_BOUNDARY); return; }
+    g_kb.shift = (g_kb.shift + 1) % 3;   /* off -> next letter -> caps lock -> off */
+    evo_feedback(EVO_FB_TOGGLE);
+}
+
+/* What the key types now: its shifted form under shift, or the capital of a letter. */
+static void kb_press(const evo_kb_key_t *k)
+{
+    switch (k->kind) {
+    case EVO_KB_KEY_CHAR:
+        if (g_kb.shift && k->shifted && k->shifted[0]) insert_str(k->shifted);
+        else insert_str(k->text);
+        if (g_kb.shift == 1) g_kb.shift = 0;
+        break;
+    case EVO_KB_KEY_SPACE:
+        insert_char(' ');
+        break;
+    case EVO_KB_KEY_SHIFT:
+        kb_shift_cycle();
+        break;
+    case EVO_KB_KEY_BACKSPACE:
+        backspace_char();
+        break;
+    case EVO_KB_KEY_LAYOUT:
+        g_kb.layer ^= 1;
+        g_kb.shift = 0;
+        if (g_kb.col >= kb_row_len(g_kb.row)) g_kb.col = kb_row_len(g_kb.row) - 1;
+        evo_feedback(EVO_FB_TOGGLE);
+        break;
+    case EVO_KB_KEY_DONE:
+        submit_text();
+        break;
     }
 }
 
@@ -734,125 +855,61 @@ int evo_keyboard_handle_input(uint32_t pressed)
         return 1; /* Consume all pad events while native IME is active */
     }
 
-    /* D-PAD Navigation */
+    /* D-PAD Navigation. Up from the top row goes to the field's clear button (when
+     * there is text to clear), then wraps to the bottom row. */
     if (pressed & EVO_PAD_UP) {
-        if (g_kb.row > 0) {
-            g_kb.row--;
-            if (g_kb.row < 4 && g_kb.col >= 10) g_kb.col = 9;
-        } else {
-            g_kb.row = 4;
-            if (g_kb.col >= KB_ACT_COUNT) g_kb.col = KB_ACT_COUNT - 1;
-        }
-        evo_feedback(EVO_FB_MOVE);
-        return 1;
-    }
-
-    if (pressed & EVO_PAD_RIGHT) {
-        int max_c = (g_kb.row == 4) ? KB_ACT_COUNT : 10;
-        g_kb.col = (g_kb.col + 1) % max_c;
+        if (g_kb.row == EVO_KB_CLEAR_ROW)  kb_move_to_row(EVO_KB_ROWS - 1);
+        else if (g_kb.row == 0 && g_kb.buffer[0]) { g_kb.row = EVO_KB_CLEAR_ROW; g_kb.col = 0; }
+        else if (g_kb.row == 0)            kb_move_to_row(EVO_KB_ROWS - 1);
+        else                               kb_move_to_row(g_kb.row - 1);
         evo_feedback(EVO_FB_MOVE);
         return 1;
     }
 
     if (pressed & EVO_PAD_DOWN) {
-        if (g_kb.row < 4) {
-            g_kb.row++;
-            if (g_kb.row == 4 && g_kb.col >= KB_ACT_COUNT) {
-                g_kb.col = KB_ACT_COUNT - 1;
-            }
-        } else {
-            g_kb.row = 0;
-        }
+        if (g_kb.row == EVO_KB_CLEAR_ROW)       kb_move_to_row(0);
+        else if (g_kb.row == EVO_KB_ROWS - 1)   kb_move_to_row(0);
+        else                                    kb_move_to_row(g_kb.row + 1);
         evo_feedback(EVO_FB_MOVE);
         return 1;
     }
 
-    if (pressed & EVO_PAD_LEFT) {
-        int max_c = (g_kb.row == 4) ? KB_ACT_COUNT : 10;
-        g_kb.col = (g_kb.col + max_c - 1) % max_c;
+    if (pressed & (EVO_PAD_LEFT | EVO_PAD_RIGHT)) {
+        if (g_kb.row == EVO_KB_CLEAR_ROW) { evo_feedback(EVO_FB_BOUNDARY); return 1; }
+        int n = kb_row_len(g_kb.row);
+        g_kb.col = (g_kb.col + ((pressed & EVO_PAD_RIGHT) ? 1 : n - 1)) % n;
+        g_kb.xcol = kb_key_centre(g_kb.row, g_kb.col);
         evo_feedback(EVO_FB_MOVE);
         return 1;
     }
 
-    /* Shortcuts */
-    if (pressed & EVO_PAD_SQUARE) { /* SQUARE — Quick Backspace */
-        backspace_char();
-        return 1;
-    }
+    /* Shortcuts, the same buttons as the native keyboard */
+    if (pressed & EVO_PAD_SQUARE) { backspace_char(); return 1; }       /* SQUARE: Backspace */
+    if (pressed & EVO_PAD_TRIANGLE) { insert_char(' '); return 1; }     /* TRIANGLE: Space */
+    if (pressed & (EVO_PAD_R2 | EVO_PAD_OPTIONS)) { submit_text(); return 1; }  /* R2 / OPTIONS: Done */
+    if (pressed & EVO_PAD_L2) { kb_shift_cycle(); return 1; }           /* L2: Shift, again = Caps Lock */
 
-    if (pressed & EVO_PAD_TRIANGLE) { /* TRIANGLE — Space, like the native keyboard */
-        insert_char(' ');
-        return 1;
-    }
-
-    if (pressed & EVO_PAD_OPTIONS) { /* OPTIONS — Done, like the native keyboard */
-        submit_text();
-        return 1;
-    }
-
-    if (pressed & EVO_PAD_CIRCLE) { /* CIRCLE — Quick Cancel */
+    if (pressed & EVO_PAD_CIRCLE) { /* CIRCLE: Cancel */
         evo_feedback(EVO_FB_CANCEL);
         g_kb.is_open = 0;
         return 1;
     }
 
-    /* R2 — Done: the right trigger confirms on the PS5 keyboard. */
-    if (pressed & EVO_PAD_R2) {
-        submit_text();
-        return 1;
-    }
-    /* L2 — Shift: the next letter is a capital, then the layer drops back.
-     * Pressed again it cancels. */
-    if (pressed & EVO_PAD_L2) {
-        if (g_kb.shift_once) { g_kb.shift_once = 0; g_kb.mode = 0; }
-        else if (g_kb.mode == 0) { g_kb.shift_once = 1; g_kb.mode = 1; }
-        else { evo_feedback(EVO_FB_BOUNDARY); return 1; }
-        evo_feedback(EVO_FB_TOGGLE);
-        return 1;
-    }
-
-    /* L1 / R1 — move the caret, to fix a typo in the middle of the text. The
-     * layer is switched with the 123 / ABC key. */
+    /* L1 / R1 move the caret, to fix a typo in the middle of the text. */
     if (pressed & EVO_PAD_L1) { move_cursor(-1); return 1; }
     if (pressed & EVO_PAD_R1) { move_cursor(+1); return 1; }
 
-    /* CROSS — Activate focused key */
+    /* CROSS: press the focused key, or clear the field */
     if (pressed & EVO_PAD_CROSS) {
-        if (g_kb.row < 4) {
-            const char *row_chars = (g_kb.mode == 0) ? GRID_LOWER[g_kb.row] :
-                                    (g_kb.mode == 1) ? GRID_UPPER[g_kb.row] :
-                                                       GRID_SYMBOLS[g_kb.row];
-            if (g_kb.col < 10) {
-                insert_char(row_chars[g_kb.col]);
-                if (g_kb.shift_once) { g_kb.shift_once = 0; g_kb.mode = 0; }
-            }
+        if (g_kb.row == EVO_KB_CLEAR_ROW) {
+            g_kb.buffer[0] = '\0';
+            g_kb.cursor = -1;
+            kb_move_to_row(0);
+            evo_feedback(EVO_FB_TOGGLE);
         } else {
-            /* Action Bar */
-            switch (g_kb.col) {
-                case KB_ACT_MODE:
-                    g_kb.shift_once = 0;
-                    g_kb.mode = (g_kb.mode + 1) % 3;
-                    evo_feedback(EVO_FB_TOGGLE);
-                    break;
-                case KB_ACT_SPACE:
-                    insert_char(' ');
-                    break;
-                case KB_ACT_BACKSPACE:
-                    backspace_char();
-                    break;
-                case KB_ACT_CLEAR:
-                    g_kb.buffer[0] = '\0';
-                    g_kb.cursor = -1;
-                    evo_feedback(EVO_FB_TOGGLE);
-                    break;
-                case KB_ACT_CANCEL:
-                    evo_feedback(EVO_FB_CANCEL);
-                    g_kb.is_open = 0;
-                    break;
-                case KB_ACT_DONE:
-                    submit_text();
-                    break;
-            }
+            const evo_kb_key_t *k = kb_key(g_kb.row, g_kb.col);
+            if (k) kb_press(k);
+            if (kb_key(g_kb.row, g_kb.col)) g_kb.xcol = kb_key_centre(g_kb.row, g_kb.col);
         }
         return 1;
     }
@@ -899,14 +956,18 @@ void evo_screen_keyboard(uint32_t *fb)
     p.native_only = g_kb.is_native_active;
     p.title       = g_kb.title;
     p.text        = g_kb.buffer;
-    p.mode_label  = (g_kb.mode == 0) ? "LOWERCASE"
-                  : (g_kb.mode == 1) ? (g_kb.shift_once ? "SHIFT" : "CAPS") : "SYMBOLS";
-    {
-        const char *const *grid = (g_kb.mode == 0) ? GRID_LOWER
-                                : (g_kb.mode == 1) ? GRID_UPPER : GRID_SYMBOLS;
-        for (int i = 0; i < 4; i++) p.rows[i] = grid[i];
-    }
-    for (int i = 0; i < KB_ACT_COUNT; i++) p.action_labels[i] = ACTION_LABELS[i];
+    p.mode_label  = g_kb.layer ? "SYMBOLS"
+                  : g_kb.shift == 1 ? "SHIFT"
+                  : g_kb.shift == 2 ? "CAPS LOCK" : "LOWERCASE";
+    for (int l = 0; l < EVO_KB_LAYERS; l++)
+        for (int r = 0; r < EVO_KB_ROWS; r++) {
+            p.key_rows[l][r]    = KB_ROWS[l][r];
+            p.key_row_len[l][r] = KB_ROW_LEN[l][r];
+        }
+    p.key_columns   = KB_COLS;
+    p.layer         = g_kb.layer;
+    p.shift_state   = g_kb.shift;
+    p.clear_visible = g_kb.buffer[0] != '\0';
     p.len       = (int)strlen(g_kb.buffer);
     p.cursor    = (int)kb_cursor();
     p.max_len   = g_kb.max_len;
