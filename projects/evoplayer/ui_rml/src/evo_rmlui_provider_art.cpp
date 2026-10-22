@@ -503,7 +503,20 @@ extern "C" int evo_provider_art_request(const char* provider_id, const char* url
     auto it = s.by_key.find(key);
     if (it != s.by_key.end()) {
         it->second.last_req = now_ms();
-        if (it->second.failed) return -1;
+        if (it->second.failed) {
+            /* This URL already failed (a series with no poster, asked for by every
+             * season and episode under it). The card still has its other picture:
+             * ask for that one instead of giving up. */
+            static int depth = 0;
+            auto fb = Fallbacks().find(url);
+            if (depth == 0 && fb != Fallbacks().end() && !fb->second.empty() && fb->second != url) {
+                depth++;
+                int rc = evo_provider_art_request(provider_id, fb->second.c_str(), out_key, out_sz);
+                depth--;
+                return rc;
+            }
+            return -1;
+        }
         if (it->second.ready) { touch(key); return 1; }
         /* Bytes are on disk from a previous session or an earlier eviction:
          * queue a decode rather than a download. An entry still in flight has

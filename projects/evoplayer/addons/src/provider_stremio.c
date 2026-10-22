@@ -654,6 +654,23 @@ static int find_meta_addon(int pref, const char *type, const char *id)
     return -1;
 }
 
+/* Art for a season or episode: the series poster, else its backdrop, else `own`
+ * (an episode's still). The backdrop also backs up a poster that 404s. */
+static void level_art(evo_provider_item_t *it, cJSON *meta, const char *own)
+{
+    const char *poster = meta ? jstr(meta, "poster") : "";
+    const char *bg = meta ? jstr(meta, "background") : "";
+    int hp = !strncmp(poster, "http", 4), hb = !strncmp(bg, "http", 4);
+    int ho = own && !strncmp(own, "http", 4);
+    if (hp)      snprintf(it->art_url, sizeof it->art_url, "%s", poster);
+    else if (hb) snprintf(it->art_url, sizeof it->art_url, "%s", bg);
+    else if (ho) snprintf(it->art_url, sizeof it->art_url, "%s", own);
+    if (hp && hb)      snprintf(it->art_alt_url, sizeof it->art_alt_url, "%s", bg);
+    else if (it->art_url[0] && ho && strcmp(own, it->art_url))
+                       snprintf(it->art_alt_url, sizeof it->art_alt_url, "%s", own);
+    if (hb) snprintf(it->backdrop_url, sizeof it->backdrop_url, "%s", bg);
+}
+
 static void emit_seasons(int a, const char *type, const char *id,
                          evo_provider_items_cb cb, void *ud)
 {
@@ -681,7 +698,6 @@ static void emit_seasons(int a, const char *type, const char *id,
         }
     evo_provider_item_t *items = (evo_provider_item_t *)calloc((size_t)ns + 1, sizeof *items);
     if (!items) { if (cb) cb(0, NULL, 0, 0, ud); return; }
-    const char *poster = meta ? jstr(meta, "poster") : "";
     for (int i = 0; i < ns; ++i) {
         evo_provider_item_t *it = &items[i];
         evo_provider_item_clear(it);
@@ -689,7 +705,7 @@ static void emit_seasons(int a, const char *type, const char *id,
         if (seasons[i] == 0) snprintf(it->title, sizeof it->title, "Specials");
         else snprintf(it->title, sizeof it->title, "Season %d", seasons[i]);
         snprintf(it->subtitle, sizeof it->subtitle, "%d episode%s", counts[i], counts[i] == 1 ? "" : "s");
-        if (!strncmp(poster, "http", 4)) snprintf(it->art_url, sizeof it->art_url, "%s", poster);
+        level_art(it, meta, NULL);
         it->is_folder = 1;
         it->kind = EVO_MEDIA_FOLDER;
     }
@@ -705,7 +721,6 @@ static void emit_episodes(int a, const char *type, int season,
     int n = videos ? cJSON_GetArraySize(videos) : 0;
     evo_provider_item_t *items = (evo_provider_item_t *)calloc((size_t)n + 1, sizeof *items);
     if (!items) { if (cb) cb(0, NULL, 0, 0, ud); return; }
-    const char *poster = jstr(meta, "poster");
     int k = 0;
     for (int i = 0; i < n; ++i) {
         cJSON *v = cJSON_GetArrayItem(videos, i);
@@ -725,7 +740,7 @@ static void emit_episodes(int a, const char *type, int season,
         const char *ov = jstr(v, "overview")[0] ? jstr(v, "overview") : jstr(v, "description");
         snprintf(it->overview, sizeof it->overview, "%s", ov);
         /* The poster card wants the series poster, not a 16:9 still. */
-        if (!strncmp(poster, "http", 4)) snprintf(it->art_url, sizeof it->art_url, "%s", poster);
+        level_art(it, meta, jstr(v, "thumbnail"));
         it->kind = EVO_MEDIA_VIDEO;
     }
     /* Episode order, whatever order the addon listed them in. */

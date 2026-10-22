@@ -38,7 +38,7 @@
 
 #define MS_DEVICE_ID   "evo-ps5"      /* only until a device_id is made */
 #define MS_PAGE        96          /* rows per catalog request: twelve 8-card pages */
-#define MS_FIELDS      "Fields=Overview,ProductionYear,ChildCount,Genres,CommunityRating,OfficialRating,Taglines&EnableImageTypes=Primary&ImageTypeLimit=1"
+#define MS_FIELDS      "Fields=Overview,ProductionYear,ChildCount,Genres,CommunityRating,OfficialRating,Taglines,ParentBackdropImageTags,ParentBackdropItemId&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1"
 
 struct ms_client {
     ms_kind_t   kind;
