@@ -47,7 +47,7 @@ timeout 200 ./tools/evo-remote.sh launch   # waits for ShadowMount idle
 docker compose run --rm ps5-dev bash -c 'for k in down down right cross; do ./tools/evo-remote.sh key $k >/dev/null 2>&1; sleep 2; done; ./tools/evo-remote.sh ui --line 2>&1 | tail -1'
 ```
 - `ui --line` = focused element + screen as text; use it to navigate. Keys: up down left right cross circle square triangle l1 r1 l3 ...
-- **Open a provider directly:** `evo-remote.sh provider <iptv|xtream|emby|jellyfin|plex|stremio|nuvio>` (about 10 s to load the shelves); works from any screen. Fill the search keyboard with `key square` then `type --submit <text>` instead of walking the grid.
+- **Jump to any screen by name:** `evo-remote.sh go <home|browse|internal|favorites|recent|providers|settings[-audio|-playback|...]|about|changelog|themes|devtools|<provider id>|<ScreenId>>`; works from any screen, no key walk. A provider (about 10 s to load its shelves) can also be opened with `evo-remote.sh provider <id>`. Fill the search keyboard with `key square` then `type --submit <text>` instead of walking the grid.
 - Home -> PROVIDERS by keys (only if you need the chooser itself): `down down right right right cross`. `r1`/`l1` flip pages.
 - **Screenshot** (`key l3` writes `/mnt/usb0/evo_shot_NNN.bmp`, 3840x2160, numbers wrap at 32). `shot.sh grab` often fails (needs the web server); use FTP:
   `tools/grab_shot.sh <name>` (presses l3, waits, fetches the newest BMP by FTP time, writes `output/screenshots/<name>.png` at 1920x1080), then Read the PNG. Only for pixel questions; use `ui` for focus/text.

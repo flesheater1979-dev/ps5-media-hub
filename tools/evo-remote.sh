@@ -40,6 +40,12 @@
 #   play <path>                             open <path> from the start
 #   seek <sec> | seek +<sec> | seek -<sec>  seek
 #   stop                                    end playback, back to the browser
+#   go <name>                               jump to any screen by name: home browse
+#                                           internal favorites recent providers
+#                                           settings[-playback|-subtitles|-interface|
+#                                           -system|-audio|-experimental] about
+#                                           changelog themes surround devtools, a
+#                                           provider id, or a ScreenId number
 #   provider <id>                           open a provider's own screen directly
 #                                           (iptv xtream emby jellyfin plex stremio
 #                                           nuvio), no D-pad walk from home
@@ -397,6 +403,30 @@ key)    [[ -n "${1:-}" ]] || die "usage: evo-remote.sh key <button>...  (e.g. cr
         else evo_ui key "$@"; fi ;;
 ui)     evo_ui show "$@" ;;
 screen) [[ "${1:-}" =~ ^[0-9]+$ ]] || die "usage: evo-remote.sh screen <id>  (an evo::ScreenId number)"; put_cmd "screen $1" ;;
+# go <name>: one door to any screen, by name instead of a ScreenId number.
+go)     case "${1:-}" in
+          home)                put_cmd "screen 0" ;;
+          browse|usb)          put_cmd "source 0" ;;
+          internal)            put_cmd "source 1" ;;
+          favorites)           put_cmd "source 2" ;;
+          recent)              put_cmd "source 3" ;;
+          providers|chooser)   put_cmd "screen 23" ;;
+          iptv|xtream|emby|jellyfin|plex|stremio|nuvio) put_cmd "provider $1" ;;
+          settings)            put_cmd "screen 10" ;;
+          settings-playback)   put_cmd "screen 24" ;;
+          settings-subtitles)  put_cmd "screen 25" ;;
+          settings-interface)  put_cmd "screen 26" ;;
+          settings-system)     put_cmd "screen 27" ;;
+          settings-audio)      put_cmd "screen 33" ;;
+          settings-experimental) put_cmd "screen 34" ;;
+          about)               put_cmd "screen 14" ;;
+          changelog)           put_cmd "screen 19" ;;
+          themes)              put_cmd "screen 29" ;;
+          surround)            put_cmd "screen 28" ;;
+          devtools)            put_cmd "screen 15" ;;
+          [0-9]*)              put_cmd "screen $1" ;;
+          *) die "usage: evo-remote.sh go <home|browse|internal|favorites|recent|providers|iptv|xtream|emby|jellyfin|plex|stremio|nuvio|settings[-playback|-subtitles|-interface|-system|-audio|-experimental]|about|changelog|themes|surround|devtools|<ScreenId>>" ;;
+        esac ;;
 provider) [[ -n "${1:-}" ]] || die "usage: evo-remote.sh provider <id>  (iptv xtream emby jellyfin plex stremio nuvio)"; put_cmd "provider $1" ;;
 source) [[ "${1:-}" =~ ^[0-9]+$ ]] || die "usage: evo-remote.sh source <n>  (0 USB, 1 Internal, 2 Favorites, 3 Recent)"; put_cmd "source $1" ;;
 iobench) put_cmd "iobench ${1:-}" ;;
