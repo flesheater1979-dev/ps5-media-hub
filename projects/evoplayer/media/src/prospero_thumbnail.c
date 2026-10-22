@@ -23,6 +23,8 @@
 
 #include "evo_blend.h"
 #include "evo_metrics.h"
+#include "evo_stream_io.h"
+#include "evo_boot_log.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -516,6 +518,7 @@ void prospero_thumbnail_close_context(void)
  * and must not be cut short.
  */
 #define PROSPERO_THUMB_OPEN_DEADLINE_SEC 8.0
+#define PROSPERO_THUMB_OPEN_DEADLINE_NET_SEC 20.0
 
 static double prospero_thumb_deadline_at = 0.0;
 
@@ -554,19 +557,37 @@ static int prospero_thumbnail_ensure_context(const char *path)
         return 0;
     prospero_thumb_fmt->interrupt_callback.callback = prospero_thumb_interrupt;
     prospero_thumb_fmt->interrupt_callback.opaque   = NULL;
-    prospero_thumb_deadline_at = prospero_thumb_now() + PROSPERO_THUMB_OPEN_DEADLINE_SEC;
+    /* A provider stream needs the same headers / User-Agent as the playing one
+     * (a plain open is refused or crawls), and a cold connection to a debrid
+     * host plus the container index of a huge file takes longer than a disk. */
+    const int is_net = strncmp(path, "http://", 7) == 0 || strncmp(path, "https://", 8) == 0;
+    AVDictionary *opts = NULL;
+    if (is_net)
+        evo_stream_io_apply_network_options(&opts, path);
+    prospero_thumb_deadline_at = prospero_thumb_now() +
+        (is_net ? PROSPERO_THUMB_OPEN_DEADLINE_NET_SEC : PROSPERO_THUMB_OPEN_DEADLINE_SEC);
 
-    if (avformat_open_input(&prospero_thumb_fmt, path, NULL, NULL) < 0) {
+    const int open_rc = avformat_open_input(&prospero_thumb_fmt, path, NULL, is_net ? &opts : NULL);
+    av_dict_free(&opts);
+    if (open_rc < 0) {
         /* Freed and NULLed by avformat_open_input on failure. */
+        char err[64];
+        av_strerror(open_rc, err, sizeof err);
+        evo_boot_log("thumb: open failed (%s) net=%d", err, is_net);
         prospero_thumb_deadline_at = 0.0;
         prospero_thumb_fmt = NULL;
         return 0;
     }
-    if (avformat_find_stream_info(prospero_thumb_fmt, NULL) < 0) {
+    const int info_rc = avformat_find_stream_info(prospero_thumb_fmt, NULL);
+    if (info_rc < 0) {
+        char err[64];
+        av_strerror(info_rc, err, sizeof err);
+        evo_boot_log("thumb: stream info failed (%s) net=%d", err, is_net);
         prospero_thumb_deadline_at = 0.0;
         prospero_thumbnail_close_context();
         return 0;
     }
+    evo_boot_log("thumb: opened %s", is_net ? "network source" : "file");
     prospero_thumb_deadline_at = 0.0;
 
     for (i = 0; i < prospero_thumb_fmt->nb_streams; i++) {
@@ -876,12 +897,15 @@ static void *prospero_thumbnail_worker(
             continue;
         }
 
+        const double decode_t0 = prospero_thumb_now();
         int decoded =
             prospero_thumbnail_decode(
                 path,
                 target,
                 local_pixels
             );
+        evo_boot_log("thumb: decode at %.0fs -> %s in %.0f ms", target, decoded ? "ok" : "FAILED",
+                     (prospero_thumb_now() - decode_t0) * 1000.0);
 
         pthread_mutex_lock(
             &prospero_thumbnail_mutex

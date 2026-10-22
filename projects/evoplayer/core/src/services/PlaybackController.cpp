@@ -1676,7 +1676,21 @@ void PlaybackController::updateScrubHold(uint32_t heldButtons) {
 
 void PlaybackController::tickScrubAutoCommit() {
     if (isScrubbing() && m_scrubAutoCommitDeadlineMs > 0) {
-        if (GetCurrentTimeMs() >= m_scrubAutoCommitDeadlineMs) {
+        const uint64_t now = GetCurrentTimeMs();
+        if (now >= m_scrubAutoCommitDeadlineMs) {
+            /* A preview frame is still being decoded (a streamed file takes 1-2 s):
+             * wait for it, up to 3 s, then leave it up half a second so it is
+             * seen. Otherwise the scrub is over before the frame can show. */
+            static bool sawPreviewLoading = false;
+            if (prospero_thumbnail_is_loading() && now < m_scrubAutoCommitDeadlineMs + 3000ULL) {
+                sawPreviewLoading = true;
+                return;
+            }
+            if (sawPreviewLoading) {
+                sawPreviewLoading = false;
+                m_scrubAutoCommitDeadlineMs = now + 500ULL;
+                return;
+            }
             confirmScrub();
         }
     }

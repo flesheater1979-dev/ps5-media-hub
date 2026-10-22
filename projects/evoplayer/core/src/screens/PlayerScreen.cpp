@@ -17,6 +17,8 @@
 #include "evo_hw.h"
 #include "pp_playback.h"   /* g_pp_pb.seek_discarding - the LOADING badge */
 #include "evo_parallel_io.h"
+#include "prospero_thumbnail.h"
+#include <vector>
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -64,7 +66,13 @@ static uint64_t NowMs() {
 static bool readerStalled() {
     evo_pio_stats_t st;
     evo_pio_get_stats(&st);
-    return st.active && st.stall_ms > 1500 && packet_queue_count(&video_packet_queue) < 3;
+    /* A seek empties the queue and the new range takes seconds to start on a
+     * debrid/torrent host. That is a slow seek, not a lost connection (hardware
+     * 2026-10-22: 5 s and 12 s seeks, no failed chunk), so stay quiet until it
+     * settles. */
+    if (g_pp_pb.seek_discarding)
+        return false;
+    return st.active && st.stall_ms > 3000 && packet_queue_count(&video_packet_queue) < 3;
 }
 
 PlayerScreen::PlayerScreen()
@@ -820,6 +828,43 @@ void PlayerScreen::render(uint32_t* framebuffer, int width, int height) {
         p.loading = (!playback->isMusicMode() &&
                      (!video_frame_loaded || g_pp_pb.seek_discarding)) ? 1 : 0;
         p.scrub_target = playback->getScrubTargetSeconds();
+        /* Scrub preview: ask the worker for the frame under the cursor and hand
+         * on whatever it has published since this scrub began (the baseline
+         * keeps the last scrub's frame from flashing up first). */
+        {
+            static std::vector<uint32_t> thumbPixels;
+            static unsigned long long thumbBaseline = 0, thumbSerial = 0;
+            /* current_media_path is empty for a provider stream; its URL is the file path. */
+            const char *thumbPath = current_media_path[0] ? current_media_path : playback->getCurrentFilePath().c_str();
+            if (p.scrub_active && thumbPath[0] && !playback->isMusicMode()) {
+                if (!m_scrubThumbActive) {
+                    m_scrubThumbActive = true;
+                    thumbBaseline = prospero_thumbnail_serial();
+                    thumbSerial = 0;
+                }
+                prospero_thumbnail_request(thumbPath, p.scrub_target, 1);
+                const int words = PROSPERO_THUMB_W * PROSPERO_THUMB_H;
+                if (static_cast<int>(thumbPixels.size()) < words)
+                    thumbPixels.resize(static_cast<size_t>(words));
+                const unsigned long long now = prospero_thumbnail_serial();
+                if (now && now != thumbSerial && now != thumbBaseline) {
+                    const unsigned long long got = prospero_thumbnail_snapshot(thumbPixels.data(), words);
+                    if (got) {
+                        if (!thumbSerial)
+                            evo_boot_log("thumb: first preview frame of this scrub at %.0fs", p.scrub_target);
+                        thumbSerial = got;
+                    }
+                }
+                if (thumbSerial) {
+                    p.scrub_thumb = thumbPixels.data();
+                    p.scrub_thumb_w = PROSPERO_THUMB_W;
+                    p.scrub_thumb_h = PROSPERO_THUMB_H;
+                    p.scrub_thumb_serial = thumbSerial;
+                }
+            } else {
+                m_scrubThumbActive = false;
+            }
+        }
         p.view_mode = static_cast<int>(playback->getViewMode());
         p.show_stats = m_showStatsForNerds ? 1 : 0;
         p.alpha = m_osdVisibilityAlpha;

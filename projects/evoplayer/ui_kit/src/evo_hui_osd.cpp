@@ -406,6 +406,19 @@ void OsdScreen::draw_centre(DrawList &list, const Context &ctx) const
     {
         list.push_opacity(scrub_.value);
         const Rect cap{960 - 170, 470, 340, scrub_chapter_title_.empty() ? 110.0f : 150.0f};
+        /* The frame at the cursor, above the time card. The tag is the worker's
+         * serial: each new frame is a new texture. */
+        if (raw_.scrub_thumb && raw_.scrub_thumb_w > 0 && raw_.scrub_thumb_h > 0)
+        {
+            const std::uint32_t tex = ctx.textures.pixels(raw_.scrub_thumb, raw_.scrub_thumb_w, raw_.scrub_thumb_h,
+                                                          0x5300000000ull ^ raw_.scrub_thumb_serial);
+            if (tex)
+            {
+                const Rect frame{960 - 160.0f, cap.y - 196.0f, 320, 180};
+                list.rounded_rect(frame.inset(-4), 14, kBlack.with_alpha(0.7f));
+                list.image(tex, frame, ::hui::gfx::kFullUv, kWhite);
+            }
+        }
         list.rounded_rect(cap, 28, kBlack.with_alpha(0.6f));
         ui::text(list, fonts.semibold, "SEEK TO", 960, cap.y + 38, 16, p.accent, Align::center, 3.0f);
         ui::text(list, fonts.mono, clock_text(raw_.scrub_target), 960, cap.y + 86, 40, kWhite, Align::center);

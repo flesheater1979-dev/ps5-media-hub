@@ -56,6 +56,11 @@ typedef struct {
     const uint32_t* subtitle_image;
     int subtitle_image_x, subtitle_image_y, subtitle_image_w, subtitle_image_h;
     int subtitle_image_canvas_w, subtitle_image_canvas_h;
+    /* The frame under the scrub cursor (RGBA words), NULL until one has
+     * decoded. scrub_thumb_serial changes with each new frame (texture tag). */
+    const uint32_t* scrub_thumb;
+    int scrub_thumb_w, scrub_thumb_h;
+    unsigned long long scrub_thumb_serial;
     int subtitle_face;
     int subtitle_raised;
     /* #110: the secondary caption. subtitle_text2 is drawn directly above the
