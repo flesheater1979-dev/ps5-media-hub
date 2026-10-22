@@ -330,10 +330,14 @@ void KeyboardOverlay::draw(DrawList &list, const Context &ctx) const
     ui::text(list, fonts.semibold, ui::upper(title_), card.cx(), card.y + 50, 16, p.text_muted, Align::center, 3.0f);
 
     // mode_label
-    float mw = fonts.semibold.measure(mode_label_, 14, 1.5f) + 24;
+    /* The pill is the Shift state, so L2 (Shift) is drawn on it. */
+    const float mg = ui::button_width(ui::Button::l2, 20.0f);
+    const float mt = fonts.semibold.measure(mode_label_, 14, 1.5f);
+    float mw = mg + 8 + mt + 24;
     Rect mpill{card.x + card.w - 40 - mw, card.y + 34, mw, 28};
     list.rounded_rect(mpill, 14, kWhite.with_alpha(0.08f));
-    ui::text(list, fonts.semibold, mode_label_, mpill.cx(), mpill.y + 19, 14, p.text_muted, Align::center, 1.5f);
+    ui::draw_button(list, fonts, ui::GlyphStyle::dark(), ui::Button::l2, mpill.x + 12, mpill.cy(), 20.0f);
+    ui::text(list, fonts.semibold, mode_label_, mpill.x + 12 + mg + 8 + mt * 0.5f, mpill.y + 19, 14, p.text_muted, Align::center, 1.5f);
 
     // text field
     Rect well{card.x + 80, card.y + 80, card.w - 160, 70};
@@ -352,7 +356,15 @@ void KeyboardOverlay::draw(DrawList &list, const Context &ctx) const
     std::snprintf(counter, sizeof(counter), "%d / %d", len_, max_len_);
     ui::text(list, fonts.regular, counter, well.x + well.w - 20, well.cy() + 10, 16, p.text_faint, Align::right);
 
-    ui::text(list, fonts.regular, "L1 / R1  MOVE CURSOR     L2  .     R2  :     SQUARE  BACKSPACE", card.cx(), card.y + card.h - 22.0f, 14, p.text_faint, Align::center, 1.0f);
+    /* L1 / R1 move the caret: their icons sit in the text field, left of the counter. */
+    {
+        const float gs = 22.0f;
+        const float cw = fonts.regular.measure(counter, 16);
+        float gx = well.x + well.w - 20 - cw - 20 - ui::button_width(ui::Button::l1, gs) - 6 - ui::button_width(ui::Button::r1, gs);
+        ui::draw_button(list, fonts, ui::GlyphStyle::dark(), ui::Button::l1, gx, well.cy() + 3, gs);
+        gx += ui::button_width(ui::Button::l1, gs) + 6;
+        ui::draw_button(list, fonts, ui::GlyphStyle::dark(), ui::Button::r1, gx, well.cy() + 3, gs);
+    }
 
     // keys
     float kx = card.x + 140.0f;
@@ -380,7 +392,21 @@ void KeyboardOverlay::draw(DrawList &list, const Context &ctx) const
             if (!focused) {
                 list.rounded_rect({kx + i * aw + 6, ay, aw - 12, 56.0f}, 28, kWhite.with_alpha(0.1f));
             }
-            ui::text(list, fonts.semibold, action_labels_[i], kx + i * aw + aw * 0.5f, ay + 34.0f, 18, txt, Align::center);
+            /* The pad button that does the same thing, drawn on the key: Space = Triangle,
+             * Backspace = Square, Cancel = Circle, Done = R2 (order set in evo_keyboard.c). */
+            static const ui::Button kActionButton[] = {ui::Button::none, ui::Button::triangle, ui::Button::square,
+                                                       ui::Button::none, ui::Button::circle, ui::Button::r2};
+            const ui::Button pad = i < 6 ? kActionButton[i] : ui::Button::none;
+            if (pad == ui::Button::none) {
+                ui::text(list, fonts.semibold, action_labels_[i], kx + i * aw + aw * 0.5f, ay + 34.0f, 18, txt, Align::center);
+            } else {
+                const float gs = 24.0f, gap = 8.0f, ts = 16.0f;
+                const float gw = ui::button_width(pad, gs);
+                const float tw = fonts.semibold.measure(action_labels_[i], ts);
+                const float x0 = kx + i * aw + aw * 0.5f - (gw + gap + tw) * 0.5f;
+                ui::draw_button(list, fonts, ui::GlyphStyle::dark(), pad, x0, ay + 28.0f, gs);
+                ui::text(list, fonts.semibold, action_labels_[i], x0 + gw + gap + tw * 0.5f, ay + 34.0f, ts, txt, Align::center);
+            }
         }
     }
 

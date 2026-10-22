@@ -294,6 +294,7 @@ typedef struct {
     char            buffer[KB_MAX_BUF];
     int             max_len;
     int             mode;        /* 0 = lower, 1 = upper, 2 = symbols */
+    int             shift_once;  /* R2 shift: upper for one letter, then back to lower */
     int             row;         /* 0..4 */
     int             col;         /* 0..9 for rows 0..3; 0..5 for row 4 */
     int             cursor;      /* byte offset of the caret in buffer; -1 = the end */
@@ -471,6 +472,7 @@ static void kb_open(const char *title, const char *initial_value, int max_len,
 
     g_kb.max_len = (max_len > 0 && max_len < KB_MAX_BUF) ? max_len : (KB_MAX_BUF - 1);
     g_kb.mode = 0;
+    g_kb.shift_once = 0;
     g_kb.row = 1;    /* Start on 'q' / first letter row */
     g_kb.col = 0;
     g_kb.blink_timer = 0;
@@ -709,6 +711,7 @@ static void submit_text(void)
     g_kb.is_open = 0;
 }
 
+#define EVO_PAD_OPTIONS   0x0008
 #define EVO_PAD_UP        0x0010
 #define EVO_PAD_RIGHT     0x0020
 #define EVO_PAD_DOWN      0x0040
@@ -777,7 +780,12 @@ int evo_keyboard_handle_input(uint32_t pressed)
         return 1;
     }
 
-    if (pressed & EVO_PAD_TRIANGLE) { /* TRIANGLE — Quick Done */
+    if (pressed & EVO_PAD_TRIANGLE) { /* TRIANGLE — Space, like the native keyboard */
+        insert_char(' ');
+        return 1;
+    }
+
+    if (pressed & EVO_PAD_OPTIONS) { /* OPTIONS — Done, like the native keyboard */
         submit_text();
         return 1;
     }
@@ -788,15 +796,18 @@ int evo_keyboard_handle_input(uint32_t pressed)
         return 1;
     }
 
-    /* L2 / R2 — '.' and ':'. A server address is mostly digits, dots and
-     * one colon, and the two keys sit at the far right of rows 2 and 3:
-     * typing 192.168.0.14:8096 took 103 D-pad presses on hardware. */
-    if (pressed & EVO_PAD_L2) {
-        insert_char('.');
+    /* R2 — Done: the right trigger confirms on the PS5 keyboard. */
+    if (pressed & EVO_PAD_R2) {
+        submit_text();
         return 1;
     }
-    if (pressed & EVO_PAD_R2) {
-        insert_char(':');
+    /* L2 — Shift: the next letter is a capital, then the layer drops back.
+     * Pressed again it cancels. */
+    if (pressed & EVO_PAD_L2) {
+        if (g_kb.shift_once) { g_kb.shift_once = 0; g_kb.mode = 0; }
+        else if (g_kb.mode == 0) { g_kb.shift_once = 1; g_kb.mode = 1; }
+        else { evo_feedback(EVO_FB_BOUNDARY); return 1; }
+        evo_feedback(EVO_FB_TOGGLE);
         return 1;
     }
 
@@ -813,11 +824,13 @@ int evo_keyboard_handle_input(uint32_t pressed)
                                                        GRID_SYMBOLS[g_kb.row];
             if (g_kb.col < 10) {
                 insert_char(row_chars[g_kb.col]);
+                if (g_kb.shift_once) { g_kb.shift_once = 0; g_kb.mode = 0; }
             }
         } else {
             /* Action Bar */
             switch (g_kb.col) {
                 case KB_ACT_MODE:
+                    g_kb.shift_once = 0;
                     g_kb.mode = (g_kb.mode + 1) % 3;
                     evo_feedback(EVO_FB_TOGGLE);
                     break;
@@ -887,7 +900,7 @@ void evo_screen_keyboard(uint32_t *fb)
     p.title       = g_kb.title;
     p.text        = g_kb.buffer;
     p.mode_label  = (g_kb.mode == 0) ? "LOWERCASE"
-                  : (g_kb.mode == 1) ? "UPPERCASE" : "SYMBOLS";
+                  : (g_kb.mode == 1) ? (g_kb.shift_once ? "SHIFT" : "CAPS") : "SYMBOLS";
     {
         const char *const *grid = (g_kb.mode == 0) ? GRID_LOWER
                                 : (g_kb.mode == 1) ? GRID_UPPER : GRID_SYMBOLS;
