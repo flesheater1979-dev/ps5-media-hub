@@ -470,7 +470,7 @@ void ProviderGridScreen::draw_poster_card(DrawList &list, const Context &ctx, co
 
 bool ProviderGridScreen::details_mode() const
 {
-    return shelves_active_ && has_selected_ && variant_ == EVO_HUI_PROVIDER_MEDIASERVER && !sel_overview_.empty();
+    return shelves_active_ && has_selected_ && variant_ == EVO_HUI_PROVIDER_MEDIASERVER;   /* no description keeps the same block (#154) */
 }
 
 /* The Details block over the focused shelf: title or logo, rating and facts as pills, the description, the cast. */
@@ -513,7 +513,9 @@ void ProviderGridScreen::draw_details(DrawList &list, const Context &ctx) const
     y += 70.0f;
 
     /* the description, three lines */
-    y = ui::paragraph(list, fonts.regular, sel_overview_, x, y, 22, w, 32.0f, kWhite.with_alpha(0.86f), 3);
+    if (!sel_overview_.empty())
+        ui::paragraph(list, fonts.regular, sel_overview_, x, y, 22, w, 32.0f, kWhite.with_alpha(0.86f), 3);
+    y += 3 * 32.0f;     /* the block is the same height with or without a description (#154) */
 
     /* who is in it */
     if (!sel_cast_.empty())

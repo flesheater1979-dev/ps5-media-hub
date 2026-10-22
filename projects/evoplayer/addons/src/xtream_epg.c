@@ -6,9 +6,12 @@
  * address instead. This module downloads it once, scans it for the current and
  * next programme of every channel, and answers lookups by epg_channel_id.
  *
- * Same approach as the IPTV guide: a byte scan, not an XML parse, so a guide of
- * tens of megabytes costs two short strings per channel. An oversized guide is
- * refused by evo_net (EVO_NET_MAX_BODY) and then simply stays empty.
+ * Same approach as the IPTV guide: a byte scan, not an XML parse, so a guide
+ * costs two short strings per channel. A full panel guide is bigger than
+ * evo_net's body cap (64 MB, #159), so it is not downloaded into memory: a
+ * worker thread streams it through FFmpeg's HTTP client (evo_avio_stream) and
+ * scans each programme as it arrives. Memory stays flat whatever the file size.
+ * Where FFmpeg is not linked (host test builds) the old whole-body request runs.
  *
  * The caller passes a log label (the host, never the URL): the xmltv.php address
  * carries the account password and must not reach evo.log.
@@ -18,6 +21,7 @@
 #include <string.h>
 #include <time.h>
 #include <stdint.h>
+#include <pthread.h>
 
 #include "addon_xtream.h"
 #include "evo_net.h"
@@ -31,25 +35,30 @@ typedef struct {
     int64_t next_start;
 } ent_t;
 
+typedef struct {
+    ent_t   *tab;               /* open addressing */
+    size_t   cap, used;
+} tbl_t;
+
 static struct {
     int      state;
     int      gen;               /* bumped per load: drops stale downloads */
-    ent_t   *tab;               /* open addressing */
-    size_t   cap, used;
+    tbl_t    cur;               /* the table lookups read; swapped in under E_mx */
     int      with_data;         /* guide channels that have a now or next */
     char     label[96];
     int      seen, hit;         /* lookups from the channel lists */
 } E;
 
-static void free_table(void)
+static pthread_mutex_t E_mx = PTHREAD_MUTEX_INITIALIZER;
+
+static void tbl_free(tbl_t *t)
 {
-    for (size_t i = 0; i < E.cap; ++i) {
-        free(E.tab[i].id); free(E.tab[i].now); free(E.tab[i].next);
+    for (size_t i = 0; i < t->cap; ++i) {
+        free(t->tab[i].id); free(t->tab[i].now); free(t->tab[i].next);
     }
-    free(E.tab);
-    E.tab = NULL;
-    E.cap = E.used = 0;
-    E.with_data = 0;
+    free(t->tab);
+    t->tab = NULL;
+    t->cap = t->used = 0;
 }
 
 static char *dup_n(const char *s, size_t n)
@@ -68,17 +77,17 @@ static uint32_t hash_str(const char *s)
     return h;
 }
 
-static ent_t *tab_find(const char *id, int create);
+static ent_t *tab_find(tbl_t *t, const char *id, int create);
 
-static int tab_grow(void)
+static int tab_grow(tbl_t *t)
 {
-    size_t ncap = E.cap ? E.cap * 2 : 1024;
+    size_t ncap = t->cap ? t->cap * 2 : 1024;
     ent_t *nt = (ent_t *)calloc(ncap, sizeof *nt);
     if (!nt) return -1;
-    ent_t *old = E.tab;
-    size_t ocap = E.cap;
-    E.tab = nt;
-    E.cap = ncap;
+    ent_t *old = t->tab;
+    size_t ocap = t->cap;
+    t->tab = nt;
+    t->cap = ncap;
     for (size_t i = 0; i < ocap; ++i) {
         if (!old[i].id) continue;
         size_t j = hash_str(old[i].id) % ncap;
@@ -89,25 +98,25 @@ static int tab_grow(void)
     return 0;
 }
 
-static ent_t *tab_find(const char *id, int create)
+static ent_t *tab_find(tbl_t *t, const char *id, int create)
 {
-    if (!E.cap) {
-        if (!create || tab_grow() != 0) return NULL;
+    if (!t->cap) {
+        if (!create || tab_grow(t) != 0) return NULL;
     }
-    size_t j = hash_str(id) % E.cap;
-    while (E.tab[j].id) {
-        if (strcmp(E.tab[j].id, id) == 0) return &E.tab[j];
-        j = (j + 1) % E.cap;
+    size_t j = hash_str(id) % t->cap;
+    while (t->tab[j].id) {
+        if (strcmp(t->tab[j].id, id) == 0) return &t->tab[j];
+        j = (j + 1) % t->cap;
     }
     if (!create) return NULL;
-    if ((E.used + 1) * 10 > E.cap * 7) {
-        if (tab_grow() != 0) return NULL;
-        return tab_find(id, create);
+    if ((t->used + 1) * 10 > t->cap * 7) {
+        if (tab_grow(t) != 0) return NULL;
+        return tab_find(t, id, create);
     }
-    E.tab[j].id = dup_n(id, strlen(id));
-    if (!E.tab[j].id) return NULL;
-    E.used++;
-    return &E.tab[j];
+    t->tab[j].id = dup_n(id, strlen(id));
+    if (!t->tab[j].id) return NULL;
+    t->used++;
+    return &t->tab[j];
 }
 
 /* "20260924123000 +0000" -> unix seconds, or -1. */
@@ -193,91 +202,212 @@ static void set_str(char **dst, const char *s)
     *dst = dup_n(s, strlen(s));
 }
 
-static void parse_guide(const char *body, size_t len)
+/* One scan of one guide: the table it fills, the unparsed tail, and the count. */
+typedef struct {
+    tbl_t   tbl;
+    char   *buf;
+    size_t  used, cap;
+    int64_t now;
+    int     progs;
+} scan_t;
+
+/* One "<programme ...>...</programme>" block, already NUL-ended at its close. */
+static void scan_block(scan_t *sc, const char *op, const char *pe)
 {
-    const int64_t now = (int64_t)time(NULL);
-    const char *end = body + len;
-    const char *p = body;
-    int progs = 0;
+    const char *hdr_end = memchr(op, '>', (size_t)(pe - op));
+    if (!hdr_end) return;
 
-    while (p < end) {
-        const char *op = strstr(p, "<programme");
-        if (!op || op >= end) break;
-        const char *close = strstr(op, "</programme>");
-        const char *pe = close ? close : end;
-        const char *hdr_end = memchr(op, '>', (size_t)(pe - op));
-        if (!hdr_end) break;
+    char start[32] = {0}, stop[32] = {0}, chan[96] = {0};
+    tag_attr(op, hdr_end, "start",   start, sizeof start);
+    tag_attr(op, hdr_end, "stop",    stop,  sizeof stop);
+    tag_attr(op, hdr_end, "channel", chan,  sizeof chan);
+    xml_decode(chan);
+    trim(chan);
 
-        char start[32] = {0}, stop[32] = {0}, chan[96] = {0};
-        tag_attr(op, hdr_end, "start",   start, sizeof start);
-        tag_attr(op, hdr_end, "stop",    stop,  sizeof stop);
-        tag_attr(op, hdr_end, "channel", chan,  sizeof chan);
-        xml_decode(chan);
-        trim(chan);
+    const int64_t now = sc->now;
+    int64_t ts = start[0] ? xmltv_time(start) : -1;
+    if (!chan[0] || ts <= 0) return;
+    int64_t te = stop[0] ? xmltv_time(stop) : ts + 1800;
+    const char *tb = strstr(hdr_end, "<title");
+    const char *tg = (tb && tb < pe) ? memchr(tb, '>', (size_t)(pe - tb)) : NULL;
+    const char *tc = tg ? strstr(tg, "</title>") : NULL;
+    if (!(tg && tc && tc > tg + 1 && tc <= pe && te > now)) return;
 
-        int64_t ts = start[0] ? xmltv_time(start) : -1;
-        if (chan[0] && ts > 0) {
-            int64_t te = stop[0] ? xmltv_time(stop) : ts + 1800;
-            const char *tb = strstr(hdr_end, "<title");
-            const char *tg = (tb && tb < pe) ? memchr(tb, '>', (size_t)(pe - tb)) : NULL;
-            const char *tc = tg ? strstr(tg, "</title>") : NULL;
-            if (tg && tc && tc > tg + 1 && tc <= pe && te > now) {
-                char title[128];
-                size_t n = (size_t)(tc - tg - 1);
-                if (n >= sizeof title) n = sizeof title - 1;
-                memcpy(title, tg + 1, n);
-                title[n] = '\0';
-                xml_decode(title);
-                trim(title);
-                ent_t *e = title[0] ? tab_find(chan, 1) : NULL;
-                if (e) {
-                    if (ts <= now) {
-                        set_str(&e->now, title);
-                        e->now_stop = te;
-                        progs++;
-                    } else if (!e->next || ts < e->next_start) {
-                        set_str(&e->next, title);
-                        e->next_start = ts;
-                        progs++;
-                    }
-                }
-            }
-        }
-        p = close ? close + 12 : end;
+    char title[128];
+    size_t n = (size_t)(tc - tg - 1);
+    if (n >= sizeof title) n = sizeof title - 1;
+    memcpy(title, tg + 1, n);
+    title[n] = '\0';
+    xml_decode(title);
+    trim(title);
+    ent_t *e = title[0] ? tab_find(&sc->tbl, chan, 1) : NULL;
+    if (!e) return;
+    if (ts <= now) {
+        set_str(&e->now, title);
+        e->now_stop = te;
+        sc->progs++;
+    } else if (!e->next || ts < e->next_start) {
+        set_str(&e->next, title);
+        e->next_start = ts;
+        sc->progs++;
     }
-
-    E.with_data = 0;
-    for (size_t i = 0; i < E.cap; ++i)
-        if (E.tab[i].id && (E.tab[i].now || E.tab[i].next)) E.with_data++;
-    E.state = E.with_data ? XT_EPG_OK : XT_EPG_EMPTY;
-    PROV_LOG("xtream: guide from %s: %d programmes, %d channels have now/next",
-             E.label, progs, E.with_data);
 }
 
+/* Takes the next piece of the file; scans every programme that is now complete and
+ * keeps only the unfinished tail. Returns 0, or -1 when out of memory. */
+static int scan_feed(scan_t *sc, const char *chunk, size_t n)
+{
+    if (sc->used + n + 1 > sc->cap) {
+        size_t ncap = sc->cap ? sc->cap : 65536;
+        while (sc->used + n + 1 > ncap) ncap *= 2;
+        char *nb = (char *)realloc(sc->buf, ncap);
+        if (!nb) return -1;
+        sc->buf = nb;
+        sc->cap = ncap;
+    }
+    memcpy(sc->buf + sc->used, chunk, n);
+    sc->used += n;
+    sc->buf[sc->used] = '\0';
+
+    char *p = sc->buf;
+    char *end = sc->buf + sc->used;
+    const char *keep = NULL;
+    for (;;) {
+        char *op = strstr(p, "<programme");
+        if (!op) break;
+        char *cl = strstr(op, "</programme>");
+        if (!cl) { keep = op; break; }
+        *cl = '\0';
+        scan_block(sc, op, cl);
+        p = cl + 12;
+        if (p >= end) { p = end; break; }
+    }
+    if (!keep) {                        /* keep a possible half "<programme" at the end */
+        size_t tail = (size_t)(end - p);
+        keep = tail > 10 ? end - 10 : p;
+    }
+    size_t rest = (size_t)(end - keep);
+    if (rest > (1u << 20)) { keep = end - 10; rest = 10; }   /* a single absurd block */
+    memmove(sc->buf, keep, rest);
+    sc->used = rest;
+    sc->buf[rest] = '\0';
+    return 0;
+}
+
+/* The scan is done: publish its table, or drop it if a newer load replaced it. */
+static void scan_finish(scan_t *sc, int gen, int ok)
+{
+    int with = 0;
+    for (size_t i = 0; i < sc->tbl.cap; ++i)
+        if (sc->tbl.tab[i].id && (sc->tbl.tab[i].now || sc->tbl.tab[i].next)) with++;
+
+    pthread_mutex_lock(&E_mx);
+    if (gen == E.gen) {
+        tbl_t old = E.cur;
+        E.cur = sc->tbl;
+        sc->tbl = old;                  /* freed below */
+        E.with_data = with;
+        E.state = !ok ? XT_EPG_FAILED : with ? XT_EPG_OK : XT_EPG_EMPTY;
+        PROV_LOG("xtream: guide from %s: %d programmes, %d channels have now/next",
+                 E.label, sc->progs, with);
+    }
+    pthread_mutex_unlock(&E_mx);
+    tbl_free(&sc->tbl);
+    free(sc->buf);
+}
+
+/* Whole-body fallback (host builds without FFmpeg). */
 static void on_guide(int success, int status, const char *body, size_t len, void *ud)
 {
-    if ((int)(intptr_t)ud != E.gen) return;     /* a newer load replaced this one */
+    const int gen = (int)(intptr_t)ud;
+    if (gen != E.gen) return;           /* a newer load replaced this one */
     if (!success || status < 200 || status >= 300 || !body || !len) {
         PROV_LOG("xtream: guide from %s failed (success=%d status=%d len=%zu)",
                  E.label, success, status, len);
         E.state = XT_EPG_FAILED;
         return;
     }
-    parse_guide(body, len);
+    scan_t sc;
+    memset(&sc, 0, sizeof sc);
+    sc.now = (int64_t)time(NULL);
+    int ok = 1;
+    for (size_t off = 0; off < len && ok; off += 65536) {
+        size_t n = len - off < 65536 ? len - off : 65536;
+        ok = scan_feed(&sc, body + off, n) == 0;
+    }
+    scan_finish(&sc, gen, ok);
+}
+
+/* FFmpeg's HTTP client, streaming (evo_http_avio.c). Weak: absent in host builds. */
+extern int evo_avio_stream(const char *url, int (*sink)(const char *, size_t, void *),
+                           void *ud, int *out_status) __attribute__((weak));
+
+typedef struct {
+    char   url[EVO_NET_MAX_URL];
+    int    gen;
+    scan_t sc;
+} job_t;
+
+static int job_sink(const char *chunk, size_t n, void *ud)
+{
+    job_t *j = (job_t *)ud;
+    if (j->gen != E.gen) return -1;     /* a newer load replaced this one: stop reading */
+    return scan_feed(&j->sc, chunk, n);
+}
+
+static void *guide_thread(void *arg)
+{
+    job_t *j = (job_t *)arg;
+    j->sc.now = (int64_t)time(NULL);
+    int status = 0;
+    const int rc = evo_avio_stream(j->url, job_sink, j, &status);
+    if (j->gen == E.gen) {
+        if (rc != EVO_NET_OK)
+            PROV_LOG("xtream: guide from %s failed (rc=%d status=%d)", E.label, rc, status);
+        scan_finish(&j->sc, j->gen, rc == EVO_NET_OK);
+    } else {
+        tbl_free(&j->sc.tbl);
+        free(j->sc.buf);
+    }
+    free(j);
+    return NULL;
 }
 
 void xtream_epg_load(const char *url, const char *label)
 {
-    free_table();
+    pthread_mutex_lock(&E_mx);
+    tbl_free(&E.cur);
+    E.with_data = 0;
     E.gen++;
     E.seen = E.hit = 0;
     snprintf(E.label, sizeof E.label, "%s", label ? label : "the panel");
-    if (!url || !url[0]) { E.state = XT_EPG_NONE; return; }
-
+    const int gen = E.gen;
+    if (!url || !url[0]) { E.state = XT_EPG_NONE; pthread_mutex_unlock(&E_mx); return; }
     E.state = XT_EPG_LOADING;
+    pthread_mutex_unlock(&E_mx);
+
     PROV_LOG("xtream: loading guide from %s", E.label);
+
+    if (evo_avio_stream && strlen(url) < EVO_NET_MAX_URL) {
+        job_t *j = (job_t *)calloc(1, sizeof *j);
+        if (j) {
+            snprintf(j->url, sizeof j->url, "%s", url);
+            j->gen = gen;
+            pthread_t th;
+            pthread_attr_t at;
+            pthread_attr_init(&at);
+            pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+            pthread_attr_setstacksize(&at, 512 * 1024);
+            const int prc = pthread_create(&th, &at, guide_thread, j);
+            pthread_attr_destroy(&at);
+            if (prc == 0) return;
+            free(j);
+        }
+        PROV_LOG("xtream: guide thread could not start, using the plain request");
+    }
+
     if (evo_net_request_async("GET", url, NULL, NULL, 0, on_guide,
-                              (void *)(intptr_t)E.gen) != 0) {
+                              (void *)(intptr_t)gen) != 0) {
         PROV_LOG("xtream: guide request from %s could not start", E.label);
         E.state = XT_EPG_FAILED;
     }
@@ -293,14 +423,16 @@ int xtream_epg_lookup(const char *epg_id, char *now, size_t now_sz,
     if (!epg_id || !epg_id[0]) return 0;
     E.seen++;
     if (E.state != XT_EPG_OK) return 0;
-    ent_t *e = tab_find(epg_id, 0);
-    if (!e) return 0;
+    pthread_mutex_lock(&E_mx);
+    ent_t *e = tab_find(&E.cur, epg_id, 0);
+    if (!e) { pthread_mutex_unlock(&E_mx); return 0; }
 
     const char *n = e->now, *x = e->next;
     if (n && e->now_stop <= (int64_t)time(NULL)) n = NULL;   /* ended since the scan */
-    if (!n && !x) return 0;
+    if (!n && !x) { pthread_mutex_unlock(&E_mx); return 0; }
     if (n) snprintf(now, now_sz, "%s", n);
     if (x) snprintf(next, next_sz, "%s", x);
+    pthread_mutex_unlock(&E_mx);
     E.hit++;
     return 1;
 }

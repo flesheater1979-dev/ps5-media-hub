@@ -24,6 +24,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef EVO_PLAYER_VERSION
+#define EVO_PLAYER_VERSION "v0.12.5"
+#endif
+
 #define AVIO_TIMEOUT_S   15
 #define AVIO_MAX_BODY    (16u << 20)   /* a wrong address that serves something huge */
 
@@ -128,4 +132,50 @@ int evo_avio_execute(const char *method, const char *url, const char *post_data,
     if (out_len) *out_len = used;
     if (out_status) *out_status = 200;   /* avio exposes no 2xx detail: a 204 is an empty 200 */
     return EVO_NET_OK;
+}
+
+/*
+ * A GET whose body goes to sink() piece by piece instead of into one buffer, for a
+ * reply too big to hold (the Xtream guide, #159). sink returns non-zero to stop.
+ * No size cap: the caller keeps its own memory flat. The read timeout still applies
+ * between pieces, so a stalled panel ends the request.
+ */
+int evo_avio_stream(const char *url, int (*sink)(const char *, size_t, void *),
+                    void *ud, int *out_status)
+{
+    if (out_status) *out_status = 0;
+
+    AVDictionary *opts = NULL;
+    av_dict_set_int(&opts, "timeout", (int64_t)AVIO_TIMEOUT_S * 1000000, 0);
+    av_dict_set_int(&opts, "rw_timeout", (int64_t)AVIO_TIMEOUT_S * 1000000, 0);
+    av_dict_set(&opts, "method", "GET", 0);
+    av_dict_set(&opts, "reconnect", "0", 0);
+    /* evo_net's own User-Agent: panels refuse FFmpeg's default "Lavf" one (HTTP 4xx). */
+    av_dict_set(&opts, "user_agent", "EVOPlayer-PS5/" EVO_PLAYER_VERSION, 0);
+
+    AVIOContext *io = NULL;
+    const int rc = avio_open2(&io, url, AVIO_FLAG_READ, NULL, &opts);
+    av_dict_free(&opts);
+    if (rc < 0) {
+        char err[128];
+        av_strerror(rc, err, sizeof err);
+        const int st = status_of_error(rc);
+        PROV_LOG("avio stream failed: %s (rc=%d http=%d)", err, rc, st);
+        if (out_status) *out_status = st;
+        return st ? EVO_NET_ERR_HTTP : EVO_NET_ERR_CONNECT;
+    }
+
+    int result = EVO_NET_OK;
+    const size_t chunk_sz = 65536;      /* heap: a worker thread's stack is small */
+    unsigned char *chunk = (unsigned char *)malloc(chunk_sz);
+    if (!chunk) { avio_closep(&io); return EVO_NET_ERR_MEM; }
+    int n;
+    while ((n = avio_read(io, chunk, (int)chunk_sz)) > 0) {
+        if (sink((const char *)chunk, (size_t)n, ud) != 0) { result = EVO_NET_ERR_MEM; break; }
+    }
+    free(chunk);
+    if (result == EVO_NET_OK && n < 0 && n != AVERROR_EOF) result = EVO_NET_ERR_CONNECT;
+    avio_closep(&io);
+    if (out_status) *out_status = 200;
+    return result;
 }
