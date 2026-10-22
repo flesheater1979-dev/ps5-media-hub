@@ -12,11 +12,11 @@ the build configuration.
 
 | Codec | Decoder | Max | Verified |
 |---|---|---|---|
-| H.264 / AVC High | hardware | 4K30 real time; 4K60 ~14 fps | yes |
+| H.264 / AVC High | hardware | 4K60 real time (#162) | yes |
 | HEVC Main (8-bit) | hardware | 4K, real time | yes |
 | HEVC Main10 (10-bit) | hardware; software if the hardware declines a stream | 4K (`ae4df99`) | yes |
 | VP9 Profile 0 | hardware | 4K | yes |
-| VP9 Profile 2 (10-bit) | hardware | 1080p | no |
+| VP9 Profile 2 (10-bit) | hardware | 4K, real time (#162) | yes |
 | AV1 | software (libdav1d) | 4K 10-bit, real time (#94/#95) | yes |
 | MPEG-2 | software | 1080p | yes |
 | MPEG-4 Part 2 | software | 1080p | no |
@@ -26,8 +26,19 @@ the build configuration.
 | Theora | none | — | — |
 | ProRes / DNxHD | none | — | — |
 
-Five resident hardware decoders, one per hardware row, created once at
-start-up.
+Five resident hardware decoders (AVC, HEVC, VP9, HEVC Main10, VP9 Profile 2) are
+created once at start-up.
+
+**#162, measured on the console 2026-10-22.** The old "4K60 H.264 reaches ~14
+fps" was a misread number: the codec sweep's `dec_fps` divides decoded frames by
+the whole wall-clock window, which includes idle time after the clip ends
+(474 frames / 32 s = 14.7). Real playback of `EVO_TEST_h264_4k60.mp4` is native,
+0.80 ms per frame, 474 frames, 0 late drops. VP9 Profile 2 used to
+fall back to FFmpeg because boot skipped the VP9-2 slot (a flexible-memory saving
+from when the pool was 448 MB), and software 4K reached only about 9 fps. Boot
+now creates the slot at 1080p and grows it to 4K on demand (level 5.1, was 4.1).
+Hardware-verified: 1080p native 3.8 ms per frame, 4K native at the full 24 fps,
+0 late drops, `map_fail=0`, same colour signature as the software decode.
 
 Software decode above 1080p is **allowed by default since #95** (it used to
 need `/mnt/usb0/evo_sw_4k`). Memory was the only reason it was refused, and #94
