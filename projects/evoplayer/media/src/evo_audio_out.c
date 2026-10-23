@@ -10,6 +10,7 @@
  * façade at A8.
  */
 #include "evo_audio_out.h"
+#include "evo_playback.h"
 
 #include <math.h>
 #include <string.h>
@@ -234,8 +235,24 @@ void *audio_output_thread(void *arg) {
                 video_rel_at_wait = video_rel;
                 video_stuck_iters = 0;
             }
+            /*
+             * The 45 ms lead assumes a frame is shorter than that (24 fps and up).
+             * Below ~22 fps one frame lasts longer than 45 ms and the displayed
+             * position only moves once per frame, so audio sat parked here for
+             * most of every frame interval until the 250 ms escape fired: 8 fps
+             * and 12 fps video played at 0.65x with cut-up audio (hardware,
+             * 2026-10-23: 30 fps 1.00x, 24 fps 1.01x, 12 fps 0.68x, 8 fps 0.65x,
+             * same AAC audio; introduced with the constant in d6f6077). Allow a
+             * whole frame on top of the base lead for slow sources.
+             */
+            double lead_max = EVO_AV_AUDIO_LEAD_MAX_SEC;
+            {
+                const double fps = evo_pb_video_fps();
+                if (fps > 1.0 && (1.0 / fps) > EVO_AV_AUDIO_LEAD_MAX_SEC)
+                    lead_max = (1.0 / fps) + EVO_AV_AUDIO_LEAD_MAX_SEC;
+            }
             if (video_rel >= EVO_AV_SYNC_SETTLE_SEC &&
-                audio_clock_seconds > video_rel + EVO_AV_AUDIO_LEAD_MAX_SEC &&
+                audio_clock_seconds > video_rel + lead_max &&
                 video_stuck_iters < 125) {
                 video_stuck_iters++;
                 usleep(2000);
