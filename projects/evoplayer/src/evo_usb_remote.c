@@ -113,6 +113,14 @@ static void run_command(const char *line)
         evo_remote_goto_screen(atoi(buf + 7));
         return;
     }
+    if (strncmp(buf, "set ", 4) == 0) {
+        evo_remote_set(buf + 4);
+        return;
+    }
+    if (strncmp(buf, "focus ", 6) == 0) {
+        evo_remote_focus(buf + 6);
+        return;
+    }
     if (strncmp(buf, "provider ", 9) == 0) {
         evo_remote_open_provider(buf + 9);
         return;

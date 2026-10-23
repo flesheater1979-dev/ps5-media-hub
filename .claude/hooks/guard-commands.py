@@ -16,6 +16,7 @@ import time
 
 SRC_EXT = (".c", ".cpp", ".h", ".hpp", ".rml", ".rcss")
 STATE = os.path.join(os.environ.get("TEMP", "/tmp"), "evo-hooks-state.json")
+CHECKS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "tools", "checks"))
 SEGMENT_SPLIT = re.compile(r"&&|\|\||;|\||\n")
 MAKE = re.compile(r"^(?:docker\s+compose\s+run\s+(?:--?\S+\s+)*ps5-dev\s+)?make(?:\s|$)")
 REMOTE = re.compile(r"evo-remote\.sh\s+(launch|quit|close|cycle)\b")
@@ -57,9 +58,19 @@ def pre(cmd):
                          "`evo-remote.sh close`. If EVO crashed (already closed), repeat with --force.")
     if re.search(r"\bgit\s+commit\b", cmd) and "# verified" not in cmd:
         if st.get("dirty"):
+            checks = []
+            if os.path.isdir(CHECKS_DIR):
+                try:
+                    checks = [f for f in sorted(os.listdir(CHECKS_DIR)) if f.endswith(".sh")]
+                except OSError:
+                    pass
+            extra = ""
+            if checks:
+                checks_list = ", ".join(f"tools/checks/{f}" for f in checks)
+                extra = f" Matching hardware check scripts (suggested, not run): {checks_list}."
             return block("Blocked: source files changed since the last passing build/test. CLAUDE.md: no "
                          "commits until verified. Run the build/tests (and the hardware check if it "
-                         "applies), then commit; or add `# verified` to the command if you checked another way.")
+                         f"applies), then commit; or add `# verified` to the command if you checked another way.{extra}")
     return 0
 
 

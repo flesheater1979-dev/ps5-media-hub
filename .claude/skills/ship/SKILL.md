@@ -40,6 +40,16 @@ timeout 200 ./tools/evo-remote.sh launch   # waits for ShadowMount idle
 - Adding a source file: list it in `projects/evoplayer/Makefile` (media/*.c and ui_kit/*.cpp are listed by hand, not globbed).
 - Assets under `projects/evoplayer/assets/{rml,fonts,icons,wallpaper,hui}` are embedded automatically at package time.
 
+## 2b. Issue to done (checklist)
+
+1. State "agy: yes/no, because ..." in the first reply on the issue (CLAUDE.md).
+2. Mechanical parts go to agy (`tools/agy-run.sh`); review its report and `git diff`, re-run its checks.
+3. Build: compile check, then `package-app.sh --ffpfsc --usb-remote` when the change needs the console.
+4. Host tests: `docker compose run --rm ps5-dev ./tests/run_tests.sh`. A new setting also extends the settings round-trip test.
+5. Console check: `evo-remote.sh verify --check <name>` (add a script in `tools/checks/` if the feature has none), or the manual loop in section 2.
+6. One commit, only after 3-5 pass. Bump `contentVersion` on a release.
+7. Close the issue with the evidence: the PASS line, the commit hash, and what was not verified.
+
 ## 3. Drive and look (no user needed)
 
 ```bash
@@ -48,6 +58,8 @@ docker compose run --rm ps5-dev bash -c 'for k in down down right cross; do ./to
 ```
 - `ui --line` = focused element + screen as text; use it to navigate. Keys: up down left right cross circle square triangle l1 r1 l3 ...
 - **Jump to any screen by name:** `evo-remote.sh go <home|browse|internal|favorites|recent|providers|settings[-audio|-playback|...]|about|changelog|themes|devtools|<provider id>|<ScreenId>>`; works from any screen, no key walk. A provider (about 10 s to load its shelves) can also be opened with `evo-remote.sh provider <id>`. Fill the search keyboard with `key square` then `type --submit <text>` instead of walking the grid.
+- **Change a setting without the D-pad walk (#201, `--usb-remote` builds):** `evo-remote.sh set <name> <value>` writes it, applies it live and prints it back (`set audio-delay +100`); `set --list` shows every name and its values; `focus <row>` opens the section and puts the cursor on the row.
+- **Whole check in one command:** `evo-remote.sh verify [--check <name>]` = soft close, close, deploy, launch, run `tools/checks/<name>.sh`, quit, close, then PASS/FAIL with the evidence line. No `--check` runs every script in `tools/checks/`. Use `--no-build` to reuse the last `.ffpfsc`.
 - Home -> PROVIDERS by keys (only if you need the chooser itself): `down down right right right cross`. `r1`/`l1` flip pages.
 - **Screenshot** (`key l3` writes `/mnt/usb0/evo_shot_NNN.bmp`, 3840x2160, numbers wrap at 32). `shot.sh grab` often fails (needs the web server); use FTP:
   `tools/grab_shot.sh <name>` (presses l3, waits, fetches the newest BMP by FTP time, writes `output/screenshots/<name>.png` at 1920x1080), then Read the PNG. Only for pixel questions; use `ui` for focus/text.

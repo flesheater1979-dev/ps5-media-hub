@@ -88,6 +88,14 @@ void evo_remote_goto_screen(int screen_id);
 void evo_remote_browser_source(int sidebar_index);
 void evo_remote_open_provider(const char *id);   /* "provider <id>": iptv xtream emby jellyfin plex stremio nuvio */
 
+/* #201: `set <setting> <value>` writes a setting through the settings service,
+ * applies it live and writes the new value (or ERR ...) to /mnt/usb0/evo_set.txt.
+ * `set --list` writes every name with its valid values. `focus <row>` puts the
+ * settings cursor on that row, opening its section first. Names are the row
+ * title in lower case with dashes (audio-delay). Both live in SettingsScreen.cpp. */
+void evo_remote_set(const char *args);
+void evo_remote_focus(const char *row);
+
 /*
  * Open a file in the image viewer / text reader.
  *

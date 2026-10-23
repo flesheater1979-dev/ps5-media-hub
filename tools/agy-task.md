@@ -8,6 +8,8 @@ HARD RULES
 - Only edit the files the task names. If a change needs another file, stop and say why in the report.
 - Match the surrounding code: comment density, naming, formatting. No new dependencies. No `#include <iostream>`; the app module crashes at load with it.
 - Framebuffer colour is 0xAABBGGRR in memory; RmlUi rgba() alpha is 0-255.
+- Any change that adds or changes a setting must also extend the settings save/load round-trip in tests/run_tests.sh
+  (every enum/int setting, and a load of an old file that lacks the newest line).
 
 HOW TO WORK
 1. Read the files the task lists, in full where short, by range where long.

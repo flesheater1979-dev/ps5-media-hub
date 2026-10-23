@@ -33,9 +33,9 @@
 #include "evo_audio_gain.h"
 
 /* Test runner assertion tracking */
-static int g_tests_run = 0;
-static int g_tests_passed = 0;
-static int g_tests_failed = 0;
+int g_tests_run = 0;
+int g_tests_passed = 0;
+int g_tests_failed = 0;
 
 #define TEST_START(name) do { \
     g_tests_run++; \
@@ -1029,6 +1029,10 @@ static void test_audio_volume_boost(void)
     TEST_PASS();
 }
 
+/* Settings service save/load and backward compatibility host tests */
+extern void test_settings_save_load_roundtrip(void);
+extern void test_settings_legacy_compat(void);
+
 /* ==========================================================================
  * Main Test Runner Entrypoint
  * ========================================================================== */
@@ -1056,6 +1060,8 @@ int main(void)
     test_frame_interpolation();
     test_error_reporting();
     test_audio_volume_boost();
+    test_settings_save_load_roundtrip();
+    test_settings_legacy_compat();
 
     printf("\n----------------------------------------------------------------------\n");
     printf("  Results: %d/%d passed (%d failed)\n",

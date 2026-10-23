@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #ifndef EVO_PLAYER_VERSION
@@ -881,6 +882,9 @@ void saveSettings() {
     }
 }
 
+/* #201: `focus <row>` asks the open section page to put its cursor on this key. */
+int s_pendingFocus = -1;
+
 } // namespace
 
 // =============================================================================
@@ -1149,6 +1153,206 @@ void SettingsSectionScreen::render(uint32_t* framebuffer, int width, int height)
 
 void SettingsSectionScreen::update(double deltaMs) {
     (void)deltaMs;
+    if (s_pendingFocus < 0) return;
+    SettingDef d[kMaxDefs];
+    const int n = buildSectionDefs(m_section, d);
+    for (int i = 0; i < n; ++i) {
+        if (static_cast<int>(d[i].key) == s_pendingFocus) {
+            m_selectedIndex = i;
+            m_expandedIndex = -1;
+            s_pendingFocus = -1;
+            return;
+        }
+    }
 }
+
+#if defined(EVO_USB_REMOTE)
+// =============================================================================
+// Dev remote (#201): `set <setting> <value>`, `set --list`, `focus <row>`.
+// A setting is named by its row title in lower case with dashes, so the name is
+// whatever the screen shows ("AUDIO DELAY" -> audio-delay). The answer goes to
+// /mnt/usb0/evo_set.txt, which evo-remote.sh reads back.
+// =============================================================================
+
+namespace {
+
+constexpr const char* kSetResultPath = "/mnt/usb0/evo_set.txt";
+
+/* "AUDIO DELAY" -> "audio-delay"; any run of non-alphanumerics becomes one dash. */
+void slugOf(const char* title, char* out, std::size_t n) {
+    std::size_t o = 0;
+    bool dash = false;
+    for (const char* p = title; *p && o + 2 < n; ++p) {
+        char c = *p;
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+            if (dash && o > 0) out[o++] = '-';
+            dash = false;
+            out[o++] = c;
+        } else {
+            dash = true;
+        }
+    }
+    out[o] = 0;
+}
+
+/* Lower case, no spaces, no trailing "ms": "+100 ms" and "+100" compare equal. */
+void normValue(const char* s, char* out, std::size_t n) {
+    std::size_t o = 0;
+    for (; *s && o + 1 < n; ++s) {
+        char c = *s;
+        if (c == ' ') continue;
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        out[o++] = c;
+    }
+    out[o] = 0;
+    if (o >= 3 && out[o - 2] == 'm' && out[o - 1] == 's' && out[o - 3] >= '0' && out[o - 3] <= '9')
+        out[o - 2] = 0;
+}
+
+void writeSetResult(const char* text) {
+    if (FILE* fp = std::fopen(kSetResultPath, "w")) {
+        std::fputs(text, fp);
+        std::fputc('\n', fp);
+        std::fclose(fp);
+    }
+    evo_boot_log("remote set: %s", text);
+}
+
+/* Finds a settable (toggle or value) row by name. */
+bool findSetting(const char* name, ISettingsService* st, SettingDef& def) {
+    for (int s = 0; s < kSectionCount; ++s) {
+        for (int i = 0; i < kSections[s].count; ++i) {
+            SettingDef d = makeDef(kSections[s].keys[i], st);
+            if (d.kind != EVO_RMLUI_ROW_TOGGLE && d.kind != EVO_RMLUI_ROW_VALUE) continue;
+            char slug[64];
+            slugOf(d.title, slug, sizeof slug);
+            if (std::strcmp(slug, name) == 0) {
+                def = d;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/* The row's current value as the screen shows it. */
+const char* currentLabel(const SettingDef& d) {
+    if (d.kind == EVO_RMLUI_ROW_TOGGLE) return d.toggle_on ? "on" : "off";
+    return (d.opt_current >= 0 && d.opt_current < d.opt_count) ? d.opt_label[d.opt_current] : "?";
+}
+
+void listSettings(ISettingsService* st) {
+    static char list[4096];
+    std::size_t len = 0;
+    list[0] = 0;
+    auto put = [&](const char* fmt, const char* a, const char* b) {
+        if (len < sizeof list)
+            len += std::snprintf(list + len, sizeof list - len, fmt, a, b);
+    };
+    for (int s = 0; s < kSectionCount; ++s) {
+        for (int i = 0; i < kSections[s].count; ++i) {
+            const SettingDef d = makeDef(kSections[s].keys[i], st);
+            if (d.kind != EVO_RMLUI_ROW_TOGGLE && d.kind != EVO_RMLUI_ROW_VALUE) continue;
+            char slug[64];
+            slugOf(d.title, slug, sizeof slug);
+            put("%s: %s", slug, "");
+            if (d.kind == EVO_RMLUI_ROW_TOGGLE) {
+                put("%s%s", "on|off", "");
+            } else if (d.key == SettingKey::AudioDelay) {
+                put("%s%s", "-500..+500 (step 50)", "");
+            } else {
+                for (int o = 0; o < d.opt_count; ++o)
+                    put("%s%s", o ? "|" : "", d.opt_label[o]);
+            }
+            put("%s%s", "\n", "");
+        }
+    }
+    writeSetResult(list);
+}
+
+} // namespace
+
+extern "C" void evo_remote_set(const char* args) {
+    ISettingsService* st = Application::getInstance().getSettingsService();
+    if (!st) { writeSetResult("ERR no settings service"); return; }
+
+    char name[64] = {0}, value[64] = {0};
+    std::sscanf(args ? args : "", "%63s %63[^\n]", name, value);
+
+    if (std::strcmp(name, "--list") == 0) {
+        listSettings(st);
+        return;
+    }
+
+    SettingDef def{};
+    if (!name[0] || !findSetting(name, st, def)) {
+        writeSetResult("ERR unknown setting (set --list shows every name)");
+        return;
+    }
+    char reply[128];
+    if (!value[0]) {
+        std::snprintf(reply, sizeof reply, "%s=%s", name, currentLabel(def));
+        writeSetResult(reply);
+        return;
+    }
+
+    char want[64];
+    normValue(value, want, sizeof want);
+
+    if (def.kind == EVO_RMLUI_ROW_TOGGLE) {
+        bool on;
+        if (!std::strcmp(want, "on") || !std::strcmp(want, "1")) on = true;
+        else if (!std::strcmp(want, "off") || !std::strcmp(want, "0")) on = false;
+        else { writeSetResult("ERR value must be on or off"); return; }
+        if (on != def.toggle_on) toggleSetting(def.key);
+    } else {
+        int opt = -1;
+        if (def.key == SettingKey::AudioDelay) {
+            const int ms = std::atoi(want);
+            if (ms < -500 || ms > 500 || ms % 50 != 0) {
+                writeSetResult("ERR audio-delay is -500..+500 in steps of 50");
+                return;
+            }
+            opt = ms / 50 + 10;
+        } else {
+            for (int o = 0; o < def.opt_count && opt < 0; ++o) {
+                char lab[64];
+                normValue(def.opt_label[o], lab, sizeof lab);
+                if (!std::strcmp(lab, want)) opt = o;
+            }
+        }
+        if (opt < 0) { writeSetResult("ERR no such value (set --list shows them)"); return; }
+        applyOption(def.key, opt);
+    }
+    saveSettings();
+
+    /* Print back what the settings service now holds, not what was asked. */
+    if (findSetting(name, st, def)) {
+        std::snprintf(reply, sizeof reply, "%s=%s", name, currentLabel(def));
+        writeSetResult(reply);
+    }
+}
+
+extern "C" void evo_remote_focus(const char* row) {
+    ISettingsService* st = Application::getInstance().getSettingsService();
+    auto sm = Application::getInstance().getScreenManager();
+    if (!st || !sm || !row) return;
+    for (int s = 0; s < kSectionCount; ++s) {
+        for (int i = 0; i < kSections[s].count; ++i) {
+            const SettingDef d = makeDef(kSections[s].keys[i], st);
+            char slug[64];
+            slugOf(d.title, slug, sizeof slug);
+            if (std::strcmp(slug, row) != 0) continue;
+            s_pendingFocus = static_cast<int>(kSections[s].keys[i]);
+            if (sm->getCurrentScreenId() != kSections[s].screen)
+                sm->navigateTo(kSections[s].screen);
+            writeSetResult("focus ok");
+            return;
+        }
+    }
+    writeSetResult("ERR unknown row");
+}
+#endif // EVO_USB_REMOTE
 
 } // namespace evo

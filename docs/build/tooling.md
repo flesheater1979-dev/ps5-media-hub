@@ -461,6 +461,67 @@ highlighted element a `*-focused` class, even with no RCSS rule (see
 Use `ui` / `key` for navigation and test automation. Keep `key l3` +
 `shot.sh grab` for visual checks: layout, colour, rendering.
 
+### Navigating and changing settings: `go`, `set`, and `focus`
+
+In addition to synthetic key presses, `evo-remote.sh` provides direct screen jumps and settings manipulation:
+
+```bash
+./tools/evo-remote.sh go settings-playback   # jump to any screen by name
+./tools/evo-remote.sh set audio-delay +100   # write setting, apply live, print back
+./tools/evo-remote.sh set audio-delay        # prints current value
+./tools/evo-remote.sh set --list             # print every name with its valid values
+./tools/evo-remote.sh focus audio-delay      # open section and put cursor on the row
+```
+
+- `go <name>`: jump to any screen by name (`home`, `browse`, `internal`,
+  `favorites`, `recent`, `providers`, `settings[-playback|-subtitles|-interface|-system|-audio|-experimental]`,
+  `about`, `changelog`, `themes`, `surround`, `devtools`, a provider ID, or a
+  `ScreenId` number).
+- `set <setting> <value>`: writes a setting through the settings service,
+  applies it live, and prints it back (`set audio-delay +100`). A name with no
+  value prints the current value; `set --list` prints every name with its valid
+  values. Names are the row title in lower case with dashes (e.g. `audio-delay`).
+  Answer file: `/mnt/usb0/evo_set.txt`. Exits 1 on ERR.
+- `focus <row>`: opens the row's settings section and puts the cursor on it (row
+  name from `set --list`).
+
+---
+
+## Hardware checks and verification: `evo-remote.sh verify` and `tools/checks/`
+
+Automated hardware verification runs dedicated check scripts on the console
+instead of a timed wait:
+
+```bash
+./tools/evo-remote.sh verify                  # run all checks in tools/checks/
+./tools/evo-remote.sh verify --check <name>   # run one check: tools/checks/<name>.sh
+./tools/evo-remote.sh verify --no-build --clip "/mnt/usb0/media/x.mkv"   # reuse the last .ffpfsc, pick the clip
+```
+
+The checks default to `/mnt/usb0/test.mkv`; pass `--clip <usb path>` when that
+file is not on the stick.
+
+- `evo-remote.sh verify [--check <name>]`: soft-closes, closes at `parked=1`,
+  deploys the `.ffpfsc`, launches, runs the check, prints PASS/FAIL and the
+  evidence line; stops at the first anomaly, never retries (same rules as
+  `cycle`). No `--check` runs every script in `tools/checks/`.
+- `tools/checks/<feature>.sh`: per-feature hardware checks, listed in
+  [`tools/checks/README.md`](../../tools/checks/README.md).
+
+---
+
+## Pruning agent scratch files: `tools/agy-prune.sh`
+
+```bash
+./tools/agy-prune.sh         # deletes matching files older than 14 days (default)
+./tools/agy-prune.sh 7       # deletes matching files older than 7 days
+```
+
+`tools/agy-prune.sh [days]` deletes files in `scratch/agy/` older than `[days]`
+(default 14) that match `task-*`, `*-result.json`, `*-stderr.txt`,
+`*-report.md`, or `*-run.log`. It must KEEP `usage.log` and any other file.
+Prints each deleted file and a count.
+
 ---
 
 ## `tools/shot.sh` — screenshots, and measuring them

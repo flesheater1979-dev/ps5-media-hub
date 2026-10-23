@@ -36,6 +36,15 @@
 #                                           appended to output/cycles/ledger.txt.
 #                                           Stops at the first anomaly, never
 #                                           retries, never chains
+#   verify [--check <name>]... [--no-build] [--clip <path>]  #201: one cycle that ends in a hardware
+#                                           check (tools/checks/<name>.sh) instead
+#                                           of a timed wait: soft close, close at
+#                                           parked=1, package + deploy, launch, run
+#                                           the check(s), quit + close, print
+#                                           PASS/FAIL and the evidence line. No
+#                                           --check = every script in tools/checks/.
+#                                           Same rules as cycle: first anomaly stops
+#                                           it, never retries
 #   kill                                    = quit + close
 #   play <path>                             open <path> from the start
 #   seek <sec> | seek +<sec> | seek -<sec>  seek
@@ -46,6 +55,14 @@
 #                                           -system|-audio|-experimental] about
 #                                           changelog themes surround devtools, a
 #                                           provider id, or a ScreenId number
+#   set <setting> <value>                   #201: write a setting, apply it live, print it
+#                                           back (set audio-delay +100). A name with
+#                                           no value prints the current one;
+#                                           `set --list` prints every name and its
+#                                           valid values. Names = the row title,
+#                                           lower case, dashes (volume-boost)
+#   focus <row>                             open the row's settings section and put
+#                                           the cursor on it (a name from set --list)
 #   provider <id>                           open a provider's own screen directly
 #                                           (iptv xtream emby jellyfin plex stremio
 #                                           nuvio), no D-pad walk from home
@@ -164,6 +181,22 @@ with FTP() as f:
 PY
 }
 
+# ask_set "<set|focus ...>": send it, then wait (max ~10 s) for the app to write
+# its answer to evo_set.txt and print it. Exits 1 on an ERR answer or no answer.
+ask_set() {
+    local out="" i
+    del_files /mnt/usb0/evo_set.txt >/dev/null 2>&1 || true
+    put_cmd "$1" >/dev/null
+    for i in $(seq 1 20); do
+        sleep 0.5
+        out="$(get_file /mnt/usb0/evo_set.txt 2>/dev/null)" && [[ -n "${out}" ]] && break
+        out=""
+    done
+    [[ -n "${out}" ]] || die "no answer from EVO (running? built with --usb-remote?)"
+    echo "${out}"
+    [[ "${out}" != ERR* ]]
+}
+
 USB_STATUS="/mnt/usb0/evo_status"
 USB_LOG="/mnt/usb0/evo.log"
 USB_UI="/mnt/usb0/evo_ui.json"
@@ -268,14 +301,15 @@ do_close() {
 # One bounded cycle (ps5-homebrew-dev-protocol docs/RUNBOOK.md, section 3).
 # Every exit path writes result.json + one ledger line. Never retries.
 do_cycle() {
-    local secs=60 play="" build=1 pkg=()
+    local secs=60 play="" build=1 pkg=() checks=() check_fail="" check_pass=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --secs)     secs="$2"; shift 2 ;;
             --play)     play="$2"; shift 2 ;;
             --no-build) build=0; shift ;;
+            --check)    checks+=("$2"); shift 2 ;;
             --)         shift; pkg=("$@"); break ;;
-            *) die "usage: evo-remote.sh cycle [--secs n] [--play <path>] [--no-build] [-- package-app args]" ;;
+            *) die "usage: evo-remote.sh cycle [--secs n] [--play <path>] [--no-build] [--check <name>]... [-- package-app args]" ;;
         esac
     done
     local stamp dir commit dirty img sha="" base stage="none" klog_pid=""
@@ -355,8 +389,21 @@ PY
     fi
     stage="started"
     [[ "$(lc heartbeat)" =~ RUNNING|PARKED ]] && stage="app-checkpoint"
-    [[ -n "${play}" ]] && { sleep 5; put_cmd "play ${play}" > /dev/null; }
-    sleep "${secs}"
+    if (( ${#checks[@]} )); then
+        # #201: a hardware check replaces the fixed wait. A FAIL is an outcome,
+        # not an anomaly: the teardown below still runs, so the slot is left clean.
+        local c line
+        for c in "${checks[@]}"; do
+            [[ -x "${REPO_ROOT}/tools/checks/${c}.sh" ]] || { check_fail="no such check: ${c}"; break; }
+            line="$(timeout 180 "${REPO_ROOT}/tools/checks/${c}.sh" 2>&1 | tee -a "${dir}/check.log" | tail -1)" || true
+            echo "${line}"
+            if [[ "${line}" == PASS* ]]; then check_pass="${check_pass:+${check_pass}; }${line}"
+            else check_fail="${line:-${c}: no output (timed out?)}"; break; fi
+        done
+    else
+        [[ -n "${play}" ]] && { sleep 5; put_cmd "play ${play}" > /dev/null; }
+        sleep "${secs}"
+    fi
     get_file "${USB_STATUS}" > "${dir}/evo_status.txt" 2>/dev/null || true
     get_file "${USB_LOG}"    > "${dir}/evo.log"        2>/dev/null || true
 
@@ -379,7 +426,29 @@ PY
         && finish failed "crash in klog.log despite a clean teardown"
     grep -q 'fatal=1' "${dir}/evo_status.txt" 2>/dev/null \
         && finish failed "decoder fatal=1 - see evo.log"
-    finish pass "-"
+    [[ -n "${check_fail}" ]] && finish failed "check ${check_fail}"
+    finish pass "${check_pass:--}"
+}
+
+# verify [--check <name>]: the whole hardware loop for one change, ending in a
+# check's PASS/FAIL line. No --check runs every script in tools/checks/.
+do_verify() {
+    local args=() named=0 f
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --check)    args+=(--check "$2"); named=1; shift 2 ;;
+            --no-build) args+=(--no-build); shift ;;
+            --clip)     export EVO_CHECK_CLIP="$2"; shift 2 ;;
+            *) die "usage: evo-remote.sh verify [--check <name>]... [--no-build] [--clip <usb path>]" ;;
+        esac
+    done
+    if (( ! named )); then
+        for f in "${REPO_ROOT}"/tools/checks/*.sh; do
+            [[ -e "${f}" ]] && args+=(--check "$(basename "${f}" .sh)")
+        done
+        (( ${#args[@]} )) || die "no checks in tools/checks/"
+    fi
+    do_cycle "${args[@]}"
 }
 
 case "${SUB}" in
@@ -395,6 +464,7 @@ quit)   do_quit ;;
 close)  do_close "${1:-}" ;;
 kill)   do_quit; do_close ;;
 cycle)  do_cycle "$@" ;;
+verify) do_verify "$@" ;;
 play)   [[ -n "${1:-}" ]] || die "usage: evo-remote.sh play <path>"; put_cmd "play $1" ;;
 seek)   [[ -n "${1:-}" ]] || die "usage: evo-remote.sh seek <sec|+sec|-sec>"; put_cmd "seek $1" ;;
 stop)   put_cmd "stop" ;;
@@ -402,6 +472,10 @@ key)    [[ -n "${1:-}" ]] || die "usage: evo-remote.sh key <button>...  (e.g. cr
         if [[ "${1}" == --no-wait ]]; then shift; put_cmd "key $1"
         else evo_ui key "$@"; fi ;;
 ui)     evo_ui show "$@" ;;
+set)    [[ -n "${1:-}" ]] || die "usage: evo-remote.sh set <setting> <value> | set --list   (a name with no value prints the current one)"
+        ask_set "set $*" ;;
+focus)  [[ -n "${1:-}" ]] || die "usage: evo-remote.sh focus <row>   (a name from set --list)"
+        ask_set "focus $1" ;;
 screen) [[ "${1:-}" =~ ^[0-9]+$ ]] || die "usage: evo-remote.sh screen <id>  (an evo::ScreenId number)"; put_cmd "screen $1" ;;
 # go <name>: one door to any screen, by name instead of a ScreenId number.
 go)     case "${1:-}" in

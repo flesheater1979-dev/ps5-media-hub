@@ -10,10 +10,13 @@ UI="${REPO_ROOT}/projects/evoplayer/ui"
 MEDIA="${REPO_ROOT}/projects/evoplayer/media"
 ADDONS="${REPO_ROOT}/projects/evoplayer/addons"
 EVO="${REPO_ROOT}/projects/evoplayer"
+CORE="${REPO_ROOT}/projects/evoplayer/core"
+UI_RML="${REPO_ROOT}/projects/evoplayer/ui_rml"
 OUT="${REPO_ROOT}/output/tests"
 COV_OUT="${REPO_ROOT}/output/coverage"
 
 mkdir -p "${OUT}" "${COV_OUT}"
+rm -f "${OUT}"/*.gcda
 
 echo "==> Building EVO Player Test Suite with Coverage Instrumentation..."
 
@@ -25,8 +28,18 @@ else
     CC="gcc"
 fi
 
+if [ -x "/usr/bin/g++" ]; then
+    CXX="/usr/bin/g++"
+elif [ -x "/usr/bin/clang++" ]; then
+    CXX="/usr/bin/clang++"
+else
+    CXX="g++"
+fi
+
 SRCS=(
     "${REPO_ROOT}/tests/test_runner.c"
+    "${REPO_ROOT}/tests/test_settings.c"
+    "${CORE}/src/services/SettingsService.cpp"
     "${MEDIA}/src/evo_direct_mem.c"
     "${MEDIA}/src/evo_textreader.c"
     "${MEDIA}/src/evo_playlist_sniff.c"
@@ -67,22 +80,40 @@ EVO_VER="$(tr -d '[:space:]' < "${EVO}/VERSION")"
 
 OBJS=()
 for src in "${SRCS[@]}"; do
-    obj="${OUT}/$(basename "${src}" .c).o"
-    $CC -O0 -g -coverage -Wall -Wextra -std=gnu11 -Wno-format-truncation \
-        -DNO_OPENSSL=1 \
-        -DEVO_PLAYER_VERSION="\"${EVO_VER}\"" \
-        -DEVO_THEME_DIR='"/tmp/evo_themes"' \
-        -I"${PP}/include" \
-        -I"${UI}/include" \
-        -I"${MEDIA}/include" \
-        -I"${ADDONS}/include" \
-        -I"${EVO}/include" \
-        -I"${EVO}" \
-        -c "${src}" -o "${obj}"
+    fname="$(basename "${src}")"
+    obj="${OUT}/${fname%.*}.o"
+    if [[ "${src}" == *.cpp || "${src}" == *"test_settings.c" ]]; then
+        $CXX -O0 -g -coverage -Wall -Wextra -std=c++17 -Wno-format-truncation \
+            -DNO_OPENSSL=1 \
+            -DEVO_PLAYER_VERSION="\"${EVO_VER}\"" \
+            -DEVO_THEME_DIR='"/tmp/evo_themes"' \
+            -I"${PP}/include" \
+            -I"${UI}/include" \
+            -I"${UI_RML}/include" \
+            -I"${MEDIA}/include" \
+            -I"${ADDONS}/include" \
+            -I"${EVO}/include" \
+            -I"${EVO}" \
+            -I"${CORE}/include" \
+            -I/opt/ps5-payload-sdk/target/user/homebrew/include \
+            -c "${src}" -o "${obj}"
+    else
+        $CC -O0 -g -coverage -Wall -Wextra -std=gnu11 -Wno-format-truncation \
+            -DNO_OPENSSL=1 \
+            -DEVO_PLAYER_VERSION="\"${EVO_VER}\"" \
+            -DEVO_THEME_DIR='"/tmp/evo_themes"' \
+            -I"${PP}/include" \
+            -I"${UI}/include" \
+            -I"${MEDIA}/include" \
+            -I"${ADDONS}/include" \
+            -I"${EVO}/include" \
+            -I"${EVO}" \
+            -c "${src}" -o "${obj}"
+    fi
     OBJS+=("${obj}")
 done
 
-$CC -coverage "${OBJS[@]}" -pthread -lm -o "${OUT}/test_runner"
+$CXX -coverage "${OBJS[@]}" -pthread -lm -o "${OUT}/test_runner"
 
 echo "==> Running Test Suite..."
 "${OUT}/test_runner"
