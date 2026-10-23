@@ -13,6 +13,8 @@
 #include "evo_feedback.h"
 #include "evo_boot_log.h"
 #include "evo_dovi.h"
+#include "evo_pt.h"
+#include "evo_data_path.h"
 #include "evo_agc_runtime.h"
 #include "evo_hw.h"
 #include "pp_playback.h"   /* g_pp_pb.seek_discarding - the LOADING badge */
@@ -80,6 +82,12 @@ PlayerScreen::PlayerScreen()
     , m_playerFsm(PlayerScreenState::NormalPlayback, "PlayerPresenterFSM")
 {
     initPlayerStateMachine();
+    /* #167: the diagnostics panel stays the way the user left it. */
+    if (FILE* f = std::fopen(evo_data_path("evo_stats_hud.cfg"), "r")) {
+        int on = 0;
+        if (std::fscanf(f, "%d", &on) == 1) m_showStatsForNerds = (on != 0);
+        std::fclose(f);
+    }
 }
 
 void PlayerScreen::initPlayerStateMachine() {
@@ -104,6 +112,10 @@ void PlayerScreen::initPlayerStateMachine() {
 void PlayerScreen::toggleStatsForNerds() {
     m_showStatsForNerds = !m_showStatsForNerds;
     m_playerFsm.postEvent(PlayerScreenEvent::ToggleStats);
+    if (FILE* f = std::fopen(evo_data_path("evo_stats_hud.cfg"), "w")) {
+        std::fprintf(f, "%d\n", m_showStatsForNerds ? 1 : 0);
+        std::fclose(f);
+    }
 }
 
 /*
@@ -483,8 +495,10 @@ void PlayerScreen::update(double deltaMs) {
 void PlayerScreen::feedPerformanceHud() {
     static char l_video[192], l_audio[192], l_subs[128];
     static char l_perf[160], l_queues[160], l_clocks[160];
+    static char l_source[160], l_pipeline[160];
 
     char vcodec[48] = "NONE", acodec[48] = "NONE", alang[24] = "und";
+    const char *hdrName = "SDR";
     int vw = 0, vh = 0, ach = 0, arate = detected_audio_rate;
 
     if (play_fmt && video_stream_index >= 0 && video_stream_index < (int)play_fmt->nb_streams) {
@@ -493,6 +507,9 @@ void PlayerScreen::feedPerformanceHud() {
             std::snprintf(vcodec, sizeof(vcodec), "%s", avcodec_get_name(cp->codec_id));
             vw = cp->width;
             vh = cp->height;
+            if (evo_dovi_stream_profile(cp) > 0)                hdrName = "DOLBY VISION";
+            else if (cp->color_trc == AVCOL_TRC_SMPTE2084)      hdrName = "HDR10";
+            else if (cp->color_trc == AVCOL_TRC_ARIB_STD_B67)   hdrName = "HLG";
         }
     }
     if (play_fmt && audio_stream_index >= 0 && audio_stream_index < (int)play_fmt->nb_streams) {
@@ -509,21 +526,48 @@ void PlayerScreen::feedPerformanceHud() {
     }
 
     const char *backend = (evo_pb_active_backend() == EVO_VDEC_BACKEND_NATIVE)
-                              ? "Hardware (sceVideodec2)" : "Software (FFmpeg)";
+                              ? "HARDWARE" : "SOFTWARE";
 
-    std::snprintf(l_video, sizeof(l_video), "VIDEO  %s  %dx%d  %.3f fps  (%s)",
-                  vcodec, vw, vh, evo_pb_video_fps(), backend);
-    std::snprintf(l_audio, sizeof(l_audio), "AUDIO  %s  %s  %dch  %d Hz",
-                  acodec, alang, ach, arate);
+    std::snprintf(l_video, sizeof(l_video), "VIDEO  %s  %dx%d  %.3f fps  %s  %s",
+                  vcodec, vw, vh, evo_pb_video_fps(), hdrName, backend);
+    std::snprintf(l_audio, sizeof(l_audio), "AUDIO  %s  %s  %dch  %d Hz  %s",
+                  acodec, alang, ach, arate, evo_pt_is_active() ? "BITSTREAM" : "PCM");
+
+    /* Container and where it plays from: the demuxer's first name ("mov,mp4,..." reads
+     * as MP4), then the provider, or LOCAL FILE. */
+    char container[24] = "?";
+    if (play_fmt && play_fmt->iformat && play_fmt->iformat->name) {
+        const char *n = play_fmt->iformat->name;
+        if (std::strstr(n, "mp4")) {
+            std::snprintf(container, sizeof(container), "MP4");
+        } else {
+            std::snprintf(container, sizeof(container), "%.*s",
+                          static_cast<int>(std::strcspn(n, ",")), n);
+            for (char *c = container; *c; ++c)
+                if (*c >= 'a' && *c <= 'z') *c = static_cast<char>(*c - 'a' + 'A');
+        }
+    }
+    char where[48] = "LOCAL FILE";
+    if (auto pb = Application::getInstance().getPlaybackController()) {
+        const PlaybackSource &srcInfo = pb->getSource();
+        if (srcInfo.isProvider()) {
+            std::snprintf(where, sizeof(where), "%s", srcInfo.provider.c_str());
+            for (char *c = where; *c; ++c)
+                if (*c >= 'a' && *c <= 'z') *c = static_cast<char>(*c - 'a' + 'A');
+        }
+    }
+    std::snprintf(l_source, sizeof(l_source), "SOURCE  %s  /  %s", container, where);
     std::snprintf(l_subs, sizeof(l_subs), "SUBS  %s  /  %s%s",
                   prospero_subtitle_enabled ? "ON" : "OFF",
                   prospero_subtitle_use_external ? "EXTERNAL"
                       : (prospero_embedded_subtitle_stream_index >= 0 ? "EMBEDDED" : "NONE"),
                   (prospero_subtitle_enabled && prospero_secondary_subtitle_active())
                       ? "  +  2ND TRACK" : "");
-    std::snprintf(l_perf, sizeof(l_perf), "RENDER %d fps  /  DECODE %d fps  /  UPSCALER %s  /  SMOOTH %s  /  %s",
-                  perf_render_fps, perf_decode_fps, evo_agc_upscale_label(),
-                  evo_agc_motion_smoothing_label(),
+    std::snprintf(l_perf, sizeof(l_perf), "RENDER %d fps  /  DECODE %d fps  /  DROPPED %llu",
+                  perf_render_fps, perf_decode_fps,
+                  static_cast<unsigned long long>(g_pp_pb.stats.frames_late_dropped));
+    std::snprintf(l_pipeline, sizeof(l_pipeline), "UPSCALER %s  /  SMOOTH %s  /  %s",
+                  evo_agc_upscale_label(), evo_agc_motion_smoothing_label(),
                   evo_hw_model_name());
     std::snprintf(l_queues, sizeof(l_queues), "QUEUES  video %d/96  audio %d/96  pcm %d",
                   packet_queue_count(&video_packet_queue),
@@ -544,6 +588,8 @@ void PlayerScreen::feedPerformanceHud() {
     hud.line_perf = l_perf;
     hud.line_queues = l_queues;
     hud.line_clocks = l_clocks;
+    hud.line_source = l_source;
+    hud.line_pipeline = l_pipeline;
     hud.hist_len = EVO_PERF_HIST;
     hud.gpu_hist = s.gpu_hist;
     hud.ram_hist = s.ram_hist;

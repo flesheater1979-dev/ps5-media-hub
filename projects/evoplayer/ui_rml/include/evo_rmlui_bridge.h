@@ -103,6 +103,10 @@ typedef struct {
     const char* line_perf;
     const char* line_queues;
     const char* line_clocks;
+    /* #167: container + where it plays from, and the picture-processing row (the
+     * kit HUD only; NULL is fine and the row is left out). */
+    const char* line_source;
+    const char* line_pipeline;
     int          hist_len;
     const float* gpu_hist;
     const float* ram_hist;

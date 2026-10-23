@@ -48,7 +48,7 @@ class OsdScreen
     std::vector<std::string> sub_lines_, sub2_lines_;
 
     bool hud_on_ = false;
-    std::string hud_lines_[6];
+    std::string hud_lines_[8];
     std::vector<float> gpu_hist_, ram_hist_, cpu_hist_;
     float gpu_pct_ = 0, ram_mb_ = 0, ram_total_ = 0, cpu_pct_ = 0;
 

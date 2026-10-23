@@ -172,9 +172,11 @@ void OsdScreen::set_hud(const evo_perf_hud_t &h)
     hud_lines_[0] = str(h.line_video);
     hud_lines_[1] = str(h.line_audio);
     hud_lines_[2] = str(h.line_subs);
-    hud_lines_[3] = str(h.line_perf);
-    hud_lines_[4] = str(h.line_queues);
-    hud_lines_[5] = str(h.line_clocks);
+    hud_lines_[3] = str(h.line_source);
+    hud_lines_[4] = str(h.line_perf);
+    hud_lines_[5] = str(h.line_pipeline);
+    hud_lines_[6] = str(h.line_queues);
+    hud_lines_[7] = str(h.line_clocks);
     auto hist = [&](const float *src, std::vector<float> &dst) {
         dst.clear();
         for (int i = 0; src && i < h.hist_len; ++i)
