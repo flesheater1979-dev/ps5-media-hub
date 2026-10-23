@@ -66,31 +66,51 @@ for c in projects/evoplayer/addons/src/cJSON.c \
 done
 
 echo "--- building uiview_playback_rml"
+# One g++ over every source took ~95 s, serial. Compile each file on its own, all at
+# once, through ccache (the container's /ccache volume, same as package-app.sh), then
+# link: an unchanged file costs nothing on the next run.
+CXX_CACHE=""
+if [[ "${EVO_NO_CCACHE:-}" != "1" ]] && command -v ccache >/dev/null 2>&1; then CXX_CACHE="ccache"; fi
+CXX_SRCS=(
+    tools/uiview_playback_rml.cpp
+    projects/evoplayer/ui_rml/src/rmlui_patch/GeometryBackgroundBorder.cpp
+    projects/evoplayer/ui_rml/src/evo_rmlui_render.cpp
+    projects/evoplayer/ui_rml/src/evo_rmlui_system.cpp
+    projects/evoplayer/ui_rml/src/evo_rmlui_app.cpp
+    projects/evoplayer/ui_rml/src/evo_rmlui_bridge.cpp
+    projects/evoplayer/ui_rml/src/evo_rmlui_fileinterface.cpp
+    projects/evoplayer/ui_rml/src/evo_rmlui_bundle.cpp
+    projects/evoplayer/ui_rml/src/evo_rmlui_bundle_data.cpp
+    projects/evoplayer/ui_rml/src/evo_rmlui_provider.cpp
+    projects/evoplayer/ui_rml/src/evo_rmlui_provider_art.cpp
+)
+CXX_OBJS=()
+CXX_PIDS=()
+for c in "${CXX_SRCS[@]}"; do
+    o="output/uiview/obj/cxx_$(basename "${c%.cpp}").o"
+    CXX_OBJS+=("$o")
+    ${CXX_CACHE} g++ -O2 -std=c++17 \
+        -Iprojects/evoplayer \
+        -Iprojects/evoplayer/ui_rml/include \
+        -Iprojects/evoplayer/ui/include \
+        -Iprojects/evoplayer/ui_rml/src \
+        -Iprojects/evoplayer/pp/include \
+        -Iprojects/evoplayer/include \
+        -Ibuild/rmlui-host/RmlUi/Include \
+        -Ibuild/rmlui-host-dist/include/freetype2 \
+        -Iprojects/evoplayer/addons/include \
+        -Iprojects/evoplayer/core/include \
+        -Iprojects/evoplayer/media/include \
+        -DNO_OPENSSL=1 -DEVO_PROVIDER_ART_NO_DECODE=1 \
+        -c "$c" -o "$o" &
+    CXX_PIDS+=($!)
+done
+cxx_fail=0
+for p in "${CXX_PIDS[@]}"; do wait "$p" || cxx_fail=1; done
+(( cxx_fail == 0 )) || { echo "uiview: a source failed to compile" >&2; exit 1; }
 g++ -O2 -std=c++17 \
-    -Iprojects/evoplayer \
-    -Iprojects/evoplayer/ui_rml/include \
-    -Iprojects/evoplayer/ui/include \
-    -Iprojects/evoplayer/ui_rml/src \
-    -Iprojects/evoplayer/pp/include \
-    -Iprojects/evoplayer/include \
-    -Ibuild/rmlui-host/RmlUi/Include \
-    -Ibuild/rmlui-host-dist/include/freetype2 \
-    -Iprojects/evoplayer/addons/include \
-    -Iprojects/evoplayer/core/include \
-    -Iprojects/evoplayer/media/include \
-    -DNO_OPENSSL=1 -DEVO_PROVIDER_ART_NO_DECODE=1 \
     -o output/uiview/uiview_playback_rml \
-    tools/uiview_playback_rml.cpp \
-    projects/evoplayer/ui_rml/src/rmlui_patch/GeometryBackgroundBorder.cpp \
-    projects/evoplayer/ui_rml/src/evo_rmlui_render.cpp \
-    projects/evoplayer/ui_rml/src/evo_rmlui_system.cpp \
-    projects/evoplayer/ui_rml/src/evo_rmlui_app.cpp \
-    projects/evoplayer/ui_rml/src/evo_rmlui_bridge.cpp \
-    projects/evoplayer/ui_rml/src/evo_rmlui_fileinterface.cpp \
-    projects/evoplayer/ui_rml/src/evo_rmlui_bundle.cpp \
-    projects/evoplayer/ui_rml/src/evo_rmlui_bundle_data.cpp \
-    projects/evoplayer/ui_rml/src/evo_rmlui_provider.cpp \
-    projects/evoplayer/ui_rml/src/evo_rmlui_provider_art.cpp \
+    "${CXX_OBJS[@]}" \
     "${PROVIDER_OBJS[@]}" \
     -Lbuild/rmlui-host-dist/lib \
     -Lbuild/rmlui-host/RmlUi/build \
@@ -125,7 +145,9 @@ cleanup_provider() {
 }
 trap cleanup_provider EXIT
 
-if [[ -d assets/providers/iptv ]]; then
+if [[ -n "${EVO_UIVIEW_ONLY:-}" && ",${EVO_UIVIEW_ONLY}," != *",provider,"* ]]; then
+    echo "--- provider fixture: not needed for EVO_UIVIEW_ONLY=${EVO_UIVIEW_ONLY}, skipping"
+elif [[ -d assets/providers/iptv ]]; then
     python3 tools/gen_provider_manifest.py assets/providers/iptv >/dev/null 2>&1 || true
     cp -r assets/providers/iptv "${PROVIDER_SERVE}/ui/iptv"
 
@@ -247,10 +269,11 @@ rm -f output/uiview/rml_*.bmp   # stale from a prior run
 echo "--- rendering all launch + settings screenshots (CPU rasteriser)"
 ./output/uiview/uiview_playback_rml
 
-for b in output/uiview/rml_*.bmp; do
-    s="$(basename "${b%.bmp}")"
-    python3 tools/shot.py png "$b" "output/uiview/$s.png"
+# One python start per picture was ~0.3 s each, in a row: convert them side by side.
+export KEEP_BMP
+printf '%s\n' output/uiview/rml_*.bmp | xargs -P "$(nproc)" -I{} bash -c '
+    b="{}"; s="$(basename "${b%.bmp}")"
+    python3 tools/shot.py png "$b" "output/uiview/$s.png" >/dev/null
     if [[ "${KEEP_BMP:-0}" != "1" ]]; then rm -f "$b"; fi
-    echo "  ok -> output/uiview/$s.png"
-done
+    echo "  ok -> output/uiview/$s.png"'
 

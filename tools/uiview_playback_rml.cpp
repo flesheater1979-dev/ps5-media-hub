@@ -2374,28 +2374,42 @@ int main(int argc, char** argv) {
         return rc;
     }
 
-    if (const char* only = std::getenv("EVO_UIVIEW_ONLY")) {
-        if (std::strcmp(only, "surround") == 0) {
-            render_surround_screen(fb, width, height);
-            evo_rmlui_shutdown();
-            return 0;
+    /* EVO_UIVIEW_ONLY=playback,toast renders only those groups (a full run is ~90
+     * pictures and takes minutes). Unset = everything. Groups: launch list browser
+     * playback changelog reader surround dialog toast debug mediainfo subtitles
+     * stress provider misc (the keyboard, image viewer and the rest below). */
+    const char* only_env = std::getenv("EVO_UIVIEW_ONLY");
+    auto want = [&](const char* group) {
+        if (!only_env) return true;
+        const size_t n = std::strlen(group);
+        for (const char* p = only_env; *p;) {
+            const char* e = std::strchr(p, ',');
+            const size_t len = e ? (size_t)(e - p) : std::strlen(p);
+            if (len == n && std::strncmp(p, group, n) == 0) return true;
+            if (!e) break;
+            p = e + 1;
         }
-    }
+        return false;
+    };
 
-    render_launch_screens(fb, width, height);
-    render_list_screens(fb, width, height);
-    render_browser_screen(fb, width, height);
-    render_playback_screen(fb, width, height);
-    render_changelog_screen(fb, width, height);
-    render_reader_screen(fb, width, height);
-    render_surround_screen(fb, width, height);
-    render_dialog_screens(fb, width, height);
-    render_toast_screens(fb, width, height);
-    render_debug_overlay_screen(fb, width, height);
-    render_mediainfo_screen(fb, width, height);
-    render_subtitles_screen(fb, width, height);
-    render_stress_screens(fb, width, height);
-    render_provider_screens(fb, width, height);
+    if (want("launch"))     render_launch_screens(fb, width, height);
+    if (want("list"))       render_list_screens(fb, width, height);
+    if (want("browser"))    render_browser_screen(fb, width, height);
+    if (want("playback"))   render_playback_screen(fb, width, height);
+    if (want("changelog"))  render_changelog_screen(fb, width, height);
+    if (want("reader"))     render_reader_screen(fb, width, height);
+    if (want("surround"))   render_surround_screen(fb, width, height);
+    if (want("dialog"))     render_dialog_screens(fb, width, height);
+    if (want("toast"))      render_toast_screens(fb, width, height);
+    if (want("debug"))      render_debug_overlay_screen(fb, width, height);
+    if (want("mediainfo"))  render_mediainfo_screen(fb, width, height);
+    if (want("subtitles"))  render_subtitles_screen(fb, width, height);
+    if (want("stress"))     render_stress_screens(fb, width, height);
+    if (want("provider"))   render_provider_screens(fb, width, height);
+    if (!want("misc")) {
+        evo_rmlui_shutdown();
+        return 0;
+    }
 
     /* #81: virtual keyboard modal over a screen */
     {

@@ -2,7 +2,8 @@
 # =============================================================================
 # tools/uiview.sh - render the player's UI on the host and convert to PNG.
 #
-#   ./tools/uiview.sh --all           every screen
+#   ./tools/uiview.sh --all           every screen (~2.5 min)
+#   ./tools/uiview.sh --only playback,toast   just those groups (seconds)
 #
 # Since the RmlUi migration (#44) this is a thin wrapper around
 # tools/uiview_playback_rml.sh: that harness links the real RmlUi documents,
@@ -17,7 +18,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/../scripts/common.sh"
 
 case "${1:-}" in
     ""|--all|-a) ;;
-    -h|--help) sed -n '3,16p' "$0"; exit 0 ;;
+    --only)
+        # ./tools/uiview.sh --only playback,toast : just those groups, no provider server
+        # (groups are listed above main() in tools/uiview_playback_rml.cpp). Minutes -> seconds.
+        export EVO_UIVIEW_ONLY="${2:?--only needs a comma list, e.g. playback,toast}" ;;
+    -h|--help) sed -n "3,18p" "$0"; exit 0 ;;
     *)
         echo "uiview.sh: per-screen selection was removed with the legacy"
         echo "renderer (#44). Rendering the full RmlUi set instead."
