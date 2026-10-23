@@ -44,6 +44,43 @@ int favorites_is_favorite(const char* path)
     return 0;
 }
 
+int evo_plex_art_auth_header(const char *url, char *out, size_t cap)
+{
+    (void)url; (void)out; (void)cap;
+    return 0;
+}
+
+void xtream_epg_load(const char *url, const char *label) { (void)url; (void)label; }
+int xtream_epg_state(void) { return 0; }
+int xtream_epg_lookup(const char *epg_id, char *now, size_t now_sz,
+                      char *next, size_t next_sz, int *pct)
+{
+    (void)epg_id; (void)now; (void)now_sz; (void)next; (void)next_sz; (void)pct;
+    return 0;
+}
+const char *xtream_epg_status(void) { return ""; }
+static int plex_stub_init(void) { return 0; }
+static void plex_stub_shutdown(void) {}
+static int plex_stub_configured(void) { return 0; }
+static const char* plex_get_source(void) { return ""; }
+static int plex_set_source(const char*) { return 0; }
+static evo_provider_t make_plex_stub() {
+    evo_provider_t p{};
+    p.id = "plex";
+    p.name = "Plex";
+    p.icon = "brand_plex.png";
+    p.caps = EVO_PROVIDER_CAP_CONFIG;
+    p.api_version = EVO_PROVIDER_API_VERSION;
+    p.init = plex_stub_init;
+    p.shutdown = plex_stub_shutdown;
+    p.is_configured = plex_stub_configured;
+    p.get_source = plex_get_source;
+    p.set_source = plex_set_source;
+    return p;
+}
+extern const evo_provider_t evo_provider_plex;
+const evo_provider_t evo_provider_plex = make_plex_stub();
+
 static double s_stub_thumb_time = -1.0;
 static unsigned long long s_stub_thumb_serial = 0;
 
