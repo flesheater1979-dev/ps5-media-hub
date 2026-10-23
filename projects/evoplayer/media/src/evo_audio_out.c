@@ -30,6 +30,7 @@
 #include "pp_playback.h"
 #include "evo_boot_log.h"
 #include "evo_speaker_cal.h"
+#include "evo_audio_gain.h"
 
 #ifndef SCREEN_PLAYER
 #define SCREEN_PLAYER 2
@@ -137,6 +138,30 @@ static void audio_queue_push(int16_t *buf) {
     /* #106: the Surround Studio's measured per-speaker level + delay trims.
      * A no-op unless the port is 8-channel and a profile was applied. */
     evo_speaker_cal_process(buf, AUDIO_BLOCK_SAMPLES, evo_audio_channels);
+
+    /* #166: volume boost, after the trims so a boosted loud passage clips here,
+     * once, cleanly. Decoded PCM only: bitstream passthrough (evo_pt) never
+     * reaches this queue. A no-op while the boost is Off. */
+    if (evo_audio_gain_get_boost() > 0) {
+        static unsigned gain_blocks;
+        const size_t n_samples = (size_t)AUDIO_BLOCK_SAMPLES * evo_audio_channels;
+        int peak_in = 0;
+        if ((gain_blocks++ & 255u) == 0) {
+            for (size_t i = 0; i < n_samples; ++i) {
+                const int a = buf[i] < 0 ? -(int)buf[i] : (int)buf[i];
+                if (a > peak_in) peak_in = a;
+            }
+        }
+        evo_audio_gain_process(buf, n_samples);
+        if (peak_in > 0 || (gain_blocks & 255u) == 1) {
+            int peak_out = 0;
+            for (size_t i = 0; i < n_samples; ++i) {
+                const int a = buf[i] < 0 ? -(int)buf[i] : (int)buf[i];
+                if (a > peak_out) peak_out = a;
+            }
+            evo_boot_log("audio gain: +%d%% block peak %d -> %d", evo_audio_gain_get_boost(), peak_in, peak_out);
+        }
+    }
 
     memcpy(audio_queue[audio_queue_write], buf,
            (size_t)AUDIO_BLOCK_SAMPLES * evo_audio_channels * sizeof(int16_t));

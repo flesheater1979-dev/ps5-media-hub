@@ -51,6 +51,8 @@ SRCS=(
     "${ADDONS}/src/evo_provider_bundle.c"
     "${ADDONS}/src/provider_iptv.c"
     "${ADDONS}/src/provider_xtream.c"
+    "${ADDONS}/src/xtream_epg.c"
+    "${MEDIA}/src/evo_audio_gain.c"
     "${ADDONS}/src/provider_emby.c"
     "${ADDONS}/src/provider_jellyfin.c"
     "${ADDONS}/src/provider_plex.c"
