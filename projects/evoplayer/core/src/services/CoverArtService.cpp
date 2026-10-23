@@ -24,6 +24,19 @@ extern "C" {
 #include <algorithm>
 
 namespace evo {
+
+/*
+ * "Can this file be read": an open, not access(R_OK). On the dev console after a
+ * fresh jailbreak, access() failed for every file under /mnt/usb0 while opendir and
+ * fopen on the same paths worked, so every Home tile was cached as "missing" at
+ * the first frame and showed the placeholder clock for the whole session.
+ */
+static bool pathReadable(const char* path) {
+    FILE* f = std::fopen(path, "rb");
+    if (!f) return false;
+    std::fclose(f);
+    return true;
+}
 #ifdef EVO_APP_MODULE
 /*
  * Flexible memory is what actually runs out here.
@@ -512,7 +525,7 @@ std::string CoverArtService::resolveSidecarPath(const std::string& mediaPath, bo
     if (isDirectory) {
         for (int i = 0; folderNames[i]; ++i) {
             std::string candidate = mediaPath + "/" + folderNames[i];
-            if (access(candidate.c_str(), R_OK) == 0) {
+            if (pathReadable(candidate.c_str())) {
                 return candidate;
             }
         }
@@ -531,13 +544,13 @@ std::string CoverArtService::resolveSidecarPath(const std::string& mediaPath, bo
 
     for (int i = 0; sidecarExts[i]; ++i) {
         std::string candidate = dir + "/" + base + sidecarExts[i];
-        if (access(candidate.c_str(), R_OK) == 0) {
+        if (pathReadable(candidate.c_str())) {
             return candidate;
         }
     }
     for (int i = 0; folderNames[i]; ++i) {
         std::string candidate = dir + "/" + folderNames[i];
-        if (access(candidate.c_str(), R_OK) == 0) {
+        if (pathReadable(candidate.c_str())) {
             return candidate;
         }
     }
@@ -656,7 +669,7 @@ bool CoverArtService::extractVideoFrame(const std::string& videoPath, uint32_t* 
     if (videoPath.empty() || !outPixels || targetWidth < 2 || targetHeight < 2) {
         return false;
     }
-    if (access(videoPath.c_str(), R_OK) != 0) {
+    if (!pathReadable(videoPath.c_str())) {
         evo_bt("extractVideoFrame: access failed: %s", videoPath.c_str());
         evo_boot_log_flush();
         return false;
@@ -1134,7 +1147,7 @@ const uint32_t* CoverArtService::getCoverArt(const std::string& mediaPath, bool 
     slot->tried = true;
     slot->valid = false;
 
-    if (access(mediaPath.c_str(), R_OK) != 0) {
+    if (!pathReadable(mediaPath.c_str())) {
         evo_bt("getCoverArt: access fail len=%zu -> cached as missing", mediaPath.length());
         evo_boot_log_flush();
         return nullptr;
@@ -1143,7 +1156,7 @@ const uint32_t* CoverArtService::getCoverArt(const std::string& mediaPath, bool 
     std::string sidecar = resolveSidecarPath(mediaPath, isDirectory);
     evo_bt("getCoverArt: sidecar='%s'", sidecar.c_str());
     evo_boot_log_flush();
-    if (!sidecar.empty() && access(sidecar.c_str(), R_OK) == 0) {
+    if (!sidecar.empty() && pathReadable(sidecar.c_str())) {
         int w = 0, h = 0, ch = 0;
         unsigned char* data = stbi_load(sidecar.c_str(), &w, &h, &ch, 4);
         if (data && w >= 2 && h >= 2) {
@@ -1200,7 +1213,7 @@ void CoverArtService::ensureHeroArt(const std::string& mediaPath) {
     m_heroArtPath = mediaPath;
     m_heroArtValid = false;
 
-    if (access(mediaPath.c_str(), R_OK) != 0) {
+    if (!pathReadable(mediaPath.c_str())) {
         return;
     }
 
@@ -1212,7 +1225,7 @@ void CoverArtService::ensureHeroArt(const std::string& mediaPath) {
     }
 
     std::string sidecar = resolveSidecarPath(mediaPath, false);
-    if (!sidecar.empty() && access(sidecar.c_str(), R_OK) == 0) {
+    if (!sidecar.empty() && pathReadable(sidecar.c_str())) {
         int w = 0, h = 0, ch = 0;
         unsigned char* data = stbi_load(sidecar.c_str(), &w, &h, &ch, 4);
         if (data && w >= 2 && h >= 2) {
@@ -1294,7 +1307,7 @@ const uint32_t* CoverArtService::getBrowserPreviewPixels() const {
  * itself if it is an image. Touches no member state, so the worker can run it. */
 bool CoverArtService::loadArtInto(const std::string& mediaPath, bool isDirectory,
                                   uint32_t* out, int w, int h) {
-    if (access(mediaPath.c_str(), R_OK) != 0)
+    if (!pathReadable(mediaPath.c_str()))
         return false;
 
     std::string sidecar = resolveSidecarPath(mediaPath, isDirectory);
