@@ -1261,12 +1261,15 @@ bool PlaybackController::startPlaybackSource(const PlaybackSource& source,
                     bool forceStereo = false;
                     bool passthroughEnabled = false;
                     VolumeBoost volumeBoost = VolumeBoost::Off;
+                    int audioDelayMs = 0;
                     if (ISettingsService *settings = Application::getInstance().getSettingsService()) {
                         forceStereo = settings->getAudioOutputChannels() == AudioOutputChannels::Stereo;
                         passthroughEnabled = settings->isAudioPassthroughEnabled();
                         volumeBoost = settings->getVolumeBoost();
+                        audioDelayMs = settings->getAudioDelayMs();
                     }
                     evo_audio_gain_set_boost(getVolumeBoostPercent(volumeBoost));
+                    evo_av_set_audio_delay_ms(audioDelayMs);
 
                     if (passthroughEnabled && !forceStereo && evo_pt_probe_sink_support(aStream->codecpar->codec_id)) {
                         handle = evo_pt_open(aStream->codecpar->codec_id);
@@ -1302,10 +1305,10 @@ bool PlaybackController::startPlaybackSource(const PlaybackSource& source,
                     }
 
                     audio_handle = handle;
-                    evo_boot_log("audio: source %dch -> port %dch (output=%s, pt=%d, boost=%d%%) handle=%d",
+                    evo_boot_log("audio: source %dch -> port %dch (output=%s, pt=%d, boost=%d%%, delay=%dms) handle=%d",
                                  chCount, evo_audio_channels,
                                  forceStereo ? "stereo" : "auto", evo_pt_is_active(),
-                                 evo_audio_gain_get_boost(), handle);
+                                 evo_audio_gain_get_boost(), evo_av_get_audio_delay_ms(), handle);
 
                     if (audio_handle < 1) {
                         toast("AUDIO OUTPUT ERROR",

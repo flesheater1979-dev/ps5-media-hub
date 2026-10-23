@@ -51,6 +51,10 @@ int    evo_pb_active_backend(void);   /* evo_vdec_backend of the live decoder */
 double prospero_media_clock_seconds(void);
 int64_t evo_audio_master_media_us(void *user);
 
+/* Audio delay / lip-sync compensation (#170). Positive = sound heard later. */
+void evo_av_set_audio_delay_ms(int delay_ms);
+int  evo_av_get_audio_delay_ms(void);
+
 /* ---- the video thread (spawned / joined by start/stop_video_playback,
  *      mirroring how main.c drives evo_demux's thread) ---- */
 void *video_decode_thread_func(void *arg);

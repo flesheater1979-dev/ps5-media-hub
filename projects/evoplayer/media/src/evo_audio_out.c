@@ -277,7 +277,7 @@ void *audio_output_thread(void *arg) {
                     lead_max = (1.0 / fps) + EVO_AV_AUDIO_LEAD_MAX_SEC;
             }
             if (video_rel >= EVO_AV_SYNC_SETTLE_SEC &&
-                audio_clock_seconds > video_rel + lead_max &&
+                audio_clock_seconds + (double)evo_av_get_audio_delay_ms() / 1000.0 > video_rel + lead_max &&
                 video_stuck_iters < 125) {
                 video_stuck_iters++;
                 usleep(2000);

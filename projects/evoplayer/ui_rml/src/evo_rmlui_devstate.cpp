@@ -10,6 +10,8 @@
 #include <RmlUi/Core/ElementText.h>
 #if defined(EVO_AGC_DEVICE)
 #include "evo_hui.h"
+#include "evo_audio_out.h"
+#include "evo_playback.h"
 #endif
 
 #include <chrono>
@@ -429,8 +431,10 @@ extern "C" const char* evo_rmlui_dev_ui_json(int screen_id, int paused)
     o += ",\"native_player\":";
     if (screen_id == 2) {
         const bool osd = g_osd_chrome_ms >= 0 && now_ms() - g_osd_chrome_ms < 500;
-        std::snprintf(b, sizeof b, "{\"osd_visible\":%s,\"paused\":%s,\"active_overlay\":",
-                      osd ? "true" : "false", paused ? "true" : "false");
+        std::snprintf(b, sizeof b, "{\"osd_visible\":%s,\"paused\":%s,\"av_delta_ms\":%.0f,\"audio_delay_ms\":%d,\"active_overlay\":",
+                      osd ? "true" : "false", paused ? "true" : "false",
+                      (evo_pb_video_clock_s() - audio_clock_seconds) * 1000.0,
+                      evo_av_get_audio_delay_ms());
         o += b;
         if (osd && g_osd_scrub)      o += "\"scrub\"";
         else if (osd && g_osd_stats) o += "\"stats\"";

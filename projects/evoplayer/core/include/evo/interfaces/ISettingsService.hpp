@@ -103,6 +103,9 @@ public:
     virtual void setVolumeBoost(VolumeBoost boost) = 0;
     virtual const char* getVolumeBoostName(VolumeBoost boost) const = 0;
 
+    virtual int getAudioDelayMs() const = 0;
+    virtual void setAudioDelayMs(int delayMs) = 0;
+
     virtual bool isAudioPassthroughEnabled() const = 0;
     virtual void setAudioPassthroughEnabled(bool enabled) = 0;
     // Experimental: drive the panel at the video's own rate during playback

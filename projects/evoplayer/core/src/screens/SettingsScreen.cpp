@@ -23,7 +23,8 @@ namespace evo {
 namespace {
 
 constexpr int kMaxDefs    = 16;
-constexpr int kMaxOptions = EVO_THEME_MAX;   /* themes are the longest list */
+constexpr int kMaxOptions = 21 > EVO_THEME_MAX ? 21 : EVO_THEME_MAX;
+constexpr int kMaxSlots   = kMaxDefs + kMaxOptions;
 
 /*
  * Every setting the screen can show, by name rather than by position (#118).
@@ -42,6 +43,7 @@ enum class SettingKey : int {
     HdrOutput,
     /* AUDIO */
     VolumeBoost,
+    AudioDelay,
     NetworkBuffer,
     OutputChannels,
     AudioPassthrough,
@@ -118,6 +120,8 @@ const PreviewSpec kPreviews[] = {
      "Highlights like the sun and lamps get brighter without clipping. Needs an HDR10 TV."},
     {SettingKey::VolumeBoost, EVO_RMLUI_PREVIEW_INFO,
      "Makes quiet files louder. Very loud passages are cut off cleanly instead of wrapping into noise. Has no effect on Dolby/DTS passthrough."},
+    {SettingKey::AudioDelay, EVO_RMLUI_PREVIEW_INFO,
+     "Shifts sound against picture to fix lip-sync on a TV, soundbar or Bluetooth speaker. Positive = sound later."},
     {SettingKey::NetworkBuffer, EVO_RMLUI_PREVIEW_INFO,
      "How far ahead network streams load. A bigger buffer rides out Wi-Fi drops but uses more memory, and very high bitrate files get less than you pick. Applies from the next file."},
     {SettingKey::OutputChannels, EVO_RMLUI_PREVIEW_CHANNELS,
@@ -158,7 +162,7 @@ const SettingKey kVideoKeys[] = {
     SettingKey::HdrOutput, SettingKey::NetworkBuffer,
 };
 const SettingKey kAudioKeys[] = {
-    SettingKey::VolumeBoost,
+    SettingKey::VolumeBoost, SettingKey::AudioDelay,
     SettingKey::OutputChannels, SettingKey::AudioPassthrough, SettingKey::SurroundTest, SettingKey::NavigationSounds,
 };
 const SettingKey kSubtitleKeys[] = {
@@ -353,6 +357,25 @@ SettingDef makeDef(SettingKey key, ISettingsService* settings) {
         for (int i = 0; i < 5; ++i)
             d.opt_label[i] = settings->getVolumeBoostName(static_cast<VolumeBoost>(i));
         break;
+
+    case SettingKey::AudioDelay: {
+        static const char* const kLabels[21] = {
+            "-500 ms", "-450 ms", "-400 ms", "-350 ms", "-300 ms",
+            "-250 ms", "-200 ms", "-150 ms", "-100 ms", "-50 ms",
+            "0 ms",
+            "+50 ms", "+100 ms", "+150 ms", "+200 ms", "+250 ms",
+            "+300 ms", "+350 ms", "+400 ms", "+450 ms", "+500 ms"
+        };
+        int delay = settings->getAudioDelayMs();
+        int opt = (delay / 50) + 10;
+        if (opt < 0) opt = 0;
+        if (opt > 20) opt = 20;
+        d = valueDef(key, "AUDIO DELAY", "SHIFTS SOUND AGAINST PICTURE TO FIX LIP-SYNC",
+                     "../icons/icon_volume.png", 21, opt);
+        for (int i = 0; i < 21; ++i)
+            d.opt_label[i] = kLabels[i];
+        break;
+    }
 
     /* #117: read when a file opens, so it applies from the next file. */
     case SettingKey::OutputChannels:
@@ -602,10 +625,10 @@ struct DisplaySlot { int def; int opt; };   /* opt < 0 = the setting row itself 
 
 int buildSlots(const SettingDef* d, int n, int expanded, DisplaySlot* out) {
     int m = 0;
-    for (int i = 0; i < n && m < EVO_RMLUI_SETTINGS_ROWS; ++i) {
+    for (int i = 0; i < n && m < kMaxSlots; ++i) {
         out[m].def = i; out[m].opt = -1; ++m;
         if (i == expanded && d[i].kind == EVO_RMLUI_ROW_VALUE && !d[i].disabled) {
-            for (int o = 0; o < d[i].opt_count && m < EVO_RMLUI_SETTINGS_ROWS; ++o) {
+            for (int o = 0; o < d[i].opt_count && m < kMaxSlots; ++o) {
                 out[m].def = i; out[m].opt = o; ++m;
             }
         }
@@ -617,18 +640,31 @@ int buildSlots(const SettingDef* d, int n, int expanded, DisplaySlot* out) {
  * so nothing in the detail pane is highlighted. */
 int fillSection(int section, int expanded, int cursor, evo_rmlui_settings_params_t& p) {
     SettingDef d[kMaxDefs];
-    DisplaySlot slots[EVO_RMLUI_SETTINGS_ROWS];
+    DisplaySlot all_slots[kMaxSlots];
     const int n = buildSectionDefs(section, d);
-    const int m = buildSlots(d, n, expanded, slots);
+    const int total = buildSlots(d, n, expanded, all_slots);
 
     if (section >= 0 && section < kSectionCount) {
         p.title = kSections[section].title;
         p.subtitle = kSections[section].subtitle;
     }
 
-    for (int i = 0; i < m; ++i) {
-        const SettingDef& def = d[slots[i].def];
-        const int opt = slots[i].opt;
+    int window_start = 0;
+    if (total > EVO_RMLUI_SETTINGS_ROWS) {
+        if (cursor >= 0) {
+            window_start = cursor - (EVO_RMLUI_SETTINGS_ROWS / 2);
+            if (window_start + EVO_RMLUI_SETTINGS_ROWS > total)
+                window_start = total - EVO_RMLUI_SETTINGS_ROWS;
+            if (window_start < 0)
+                window_start = 0;
+        }
+    }
+    const int visible_count = (total < EVO_RMLUI_SETTINGS_ROWS) ? total : EVO_RMLUI_SETTINGS_ROWS;
+
+    for (int i = 0; i < visible_count; ++i) {
+        const int slot_idx = window_start + i;
+        const SettingDef& def = d[all_slots[slot_idx].def];
+        const int opt = all_slots[slot_idx].opt;
         evo_rmlui_settings_row_t& row = p.rows[i];
         row.preview = def.preview;
         row.benefit = def.benefit ? def.benefit : "";
@@ -664,14 +700,14 @@ int fillSection(int section, int expanded, int cursor, evo_rmlui_settings_params
             p.rows[i].toggle_on = (opt == def.opt_current) ? 1 : 0;
             p.rows[i].has_chevron = 0;
         }
-        p.rows[i].is_focused = (i == cursor) ? 1 : 0;
+        p.rows[i].is_focused = (slot_idx == cursor) ? 1 : 0;
     }
 
     static char s_counter[32];
     std::snprintf(s_counter, sizeof s_counter, "%d SETTING%s", n, n == 1 ? "" : "S");
     p.counter = s_counter;
-    p.row_count = m;
-    return m;
+    p.row_count = visible_count;
+    return visible_count;
 }
 
 void toggleSetting(SettingKey key) {
@@ -705,6 +741,7 @@ void applyOption(SettingKey key, int opt) {
     case SettingKey::HdrOutput:      st->setHdrOutputMode(static_cast<HdrOutputMode>(opt)); break;
     case SettingKey::NetworkBuffer:  st->setNetworkBuffer(static_cast<NetworkBuffer>(opt)); break;
     case SettingKey::VolumeBoost:    st->setVolumeBoost(static_cast<VolumeBoost>(opt)); break;
+    case SettingKey::AudioDelay:     st->setAudioDelayMs((opt - 10) * 50); break;
     case SettingKey::OutputChannels: st->setAudioOutputChannels(static_cast<AudioOutputChannels>(opt)); break;
     case SettingKey::SubtitleFont:   st->setSubtitleFontFace(opt); break;
     case SettingKey::SecondaryPosition: st->setSecondarySubtitlePosition(opt); break;
@@ -979,7 +1016,7 @@ void SettingsSectionScreen::onEnter() {
 
 void SettingsSectionScreen::navigate(int delta) {
     SettingDef d[kMaxDefs];
-    DisplaySlot slots[EVO_RMLUI_SETTINGS_ROWS];
+    DisplaySlot slots[kMaxSlots];
     const int total = buildSlots(d, buildSectionDefs(m_section, d), m_expandedIndex, slots);
     if (total <= 0) return;
     m_selectedIndex += delta;
@@ -996,7 +1033,7 @@ void SettingsSectionScreen::navigate(int delta) {
 
 void SettingsSectionScreen::activateSelection() {
     SettingDef d[kMaxDefs];
-    DisplaySlot slots[EVO_RMLUI_SETTINGS_ROWS];
+    DisplaySlot slots[kMaxSlots];
     const int m = buildSlots(d, buildSectionDefs(m_section, d), m_expandedIndex, slots);
     if (m_selectedIndex < 0 || m_selectedIndex >= m) return;
     const int def = slots[m_selectedIndex].def;
@@ -1061,7 +1098,7 @@ bool SettingsSectionScreen::handleInput(uint32_t pressed, uint32_t held, uint32_
     }
     if (pressed & PadButtons::Right) {
         SettingDef d[kMaxDefs];
-        DisplaySlot slots[EVO_RMLUI_SETTINGS_ROWS];
+        DisplaySlot slots[kMaxSlots];
         const int m = buildSlots(d, buildSectionDefs(m_section, d), m_expandedIndex, slots);
         if (m_selectedIndex >= 0 && m_selectedIndex < m && slots[m_selectedIndex].opt < 0) {
             const int def = slots[m_selectedIndex].def;

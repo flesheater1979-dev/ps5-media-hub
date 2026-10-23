@@ -93,6 +93,9 @@ public:
     void setVolumeBoost(VolumeBoost boost) override { m_volumeBoost = boost; }
     const char* getVolumeBoostName(VolumeBoost boost) const override;
 
+    int getAudioDelayMs() const override { return m_audioDelayMs; }
+    void setAudioDelayMs(int delayMs) override;
+
     bool isAudioPassthroughEnabled() const override { return m_audioPassthroughEnabled; }
     void setAudioPassthroughEnabled(bool enabled) override { m_audioPassthroughEnabled = enabled; }
     bool isMatchVideoRateEnabled() const override { return m_matchVideoRate; }
@@ -126,6 +129,7 @@ private:
     HdrOutputMode m_hdrOutputMode = HdrOutputMode::Auto;
     AudioOutputChannels m_audioOutputChannels = AudioOutputChannels::Auto;
     VolumeBoost m_volumeBoost = VolumeBoost::Off;
+    int m_audioDelayMs = 0;
     NetworkBuffer m_networkBuffer = NetworkBuffer::Sec30;
     bool m_audioPassthroughEnabled = false;
     bool m_matchVideoRate = false;

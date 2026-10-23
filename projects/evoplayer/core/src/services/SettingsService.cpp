@@ -109,6 +109,12 @@ const char* SettingsService::getVolumeBoostName(VolumeBoost boost) const {
     }
 }
 
+void SettingsService::setAudioDelayMs(int delayMs) {
+    if (delayMs < -500) delayMs = -500;
+    else if (delayMs > 500) delayMs = 500;
+    m_audioDelayMs = (delayMs / 50) * 50;
+}
+
 const char* SettingsService::getRefreshRateModeName(RefreshRateMode mode) const {
     switch (mode) {
         case RefreshRateMode::Off:          return "OFF";
@@ -173,7 +179,7 @@ bool SettingsService::saveSettings() {
     }
 
     std::fprintf(file,
-        "%d\n%d\n%d\n%d\n%d\n%d\n%s\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n",
+        "%d\n%d\n%d\n%d\n%d\n%d\n%s\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n",
         0, // legacy dummy profile
         m_resumePlaybackEnabled ? 1 : 0,
         static_cast<int>(m_defaultViewMode),
@@ -200,7 +206,8 @@ bool SettingsService::saveSettings() {
         m_audioPassthroughEnabled ? 1 : 0,   // line 24 (HDMI bitstream passthrough)
         m_matchVideoRate ? 1 : 0,            // line 25 (experimental: match video frame rate)
         static_cast<int>(m_volumeBoost),     // line 26 (#166 volume boost)
-        static_cast<int>(m_networkBuffer)    // line 27 (#199 network buffer)
+        static_cast<int>(m_networkBuffer),   // line 27 (#199 network buffer)
+        m_audioDelayMs                       // line 28 (#170 audio delay ms)
     );
 
     std::fclose(file);
@@ -241,9 +248,10 @@ bool SettingsService::loadSettings() {
     int rawMatchVideoRate = 0;
     int rawVolumeBoost = 0;
     int rawNetworkBuffer = 0;
+    int rawAudioDelay = 0;
 
     int readCount = std::fscanf(file,
-        "%d\n%d\n%d\n%d\n%d\n%d\n%127[^\n]\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d",
+        "%d\n%d\n%d\n%d\n%d\n%d\n%127[^\n]\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d",
         &rawProfile,
         &rawResume,
         &rawViewMode,
@@ -270,7 +278,8 @@ bool SettingsService::loadSettings() {
         &rawAudioPassthrough,
         &rawMatchVideoRate,
         &rawVolumeBoost,
-        &rawNetworkBuffer
+        &rawNetworkBuffer,
+        &rawAudioDelay
     );
 
     std::fclose(file);
@@ -348,6 +357,9 @@ bool SettingsService::loadSettings() {
     }
     if (readCount >= 27 && rawNetworkBuffer >= 0 && rawNetworkBuffer <= 3) {
         m_networkBuffer = static_cast<NetworkBuffer>(rawNetworkBuffer);
+    }
+    if (readCount >= 28 && rawAudioDelay >= -500 && rawAudioDelay <= 500) {
+        m_audioDelayMs = (rawAudioDelay / 50) * 50;
     }
 
     syncThemeToRmlUi();

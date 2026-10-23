@@ -210,6 +210,20 @@ double prospero_media_clock_seconds(void)
     return video_rel;
 }
 
+static volatile int s_audio_delay_ms = 0;
+
+void evo_av_set_audio_delay_ms(int delay_ms)
+{
+    if (delay_ms < -500) delay_ms = -500;
+    else if (delay_ms > 500) delay_ms = 500;
+    s_audio_delay_ms = delay_ms;
+}
+
+int evo_av_get_audio_delay_ms(void)
+{
+    return s_audio_delay_ms;
+}
+
 int64_t evo_audio_master_media_us(void *user)
 {
     (void)user;
@@ -217,8 +231,10 @@ int64_t evo_audio_master_media_us(void *user)
         return -1;
     if (first_video_pts_seconds < 0.0)
         return -1;
-    return (int64_t)(first_video_pts_seconds * 1000000.0) +
-           (int64_t)(audio_clock_seconds * 1000000.0);
+    int64_t us = (int64_t)(first_video_pts_seconds * 1000000.0) +
+                 (int64_t)(audio_clock_seconds * 1000000.0) +
+                 ((int64_t)s_audio_delay_ms * 1000);
+    return (us < 0) ? 0 : us;
 }
 
 
@@ -540,7 +556,8 @@ int decode_next_video_frame(void)
             if (video_rel < 0.0)
                 video_rel = 0.0;
             audio_rel = audio_clock_seconds;
-            behind = audio_rel - video_rel; /* >0 => video late; <0 => video early */
+            /* #170: the audio delay moves the target, so video leads (or lags) audio on purpose. */
+            behind = audio_rel + (double)s_audio_delay_ms / 1000.0 - video_rel; /* >0 => video late; <0 => video early */
 
             if (seek_discarding) {
                 /* no pacing - the frame is about to be thrown away */
@@ -569,7 +586,7 @@ int decode_next_video_frame(void)
                         sleep_us = 500;
                     usleep(sleep_us);
                     audio_rel = audio_clock_seconds;
-                    behind = audio_rel - video_rel;
+                    behind = audio_rel + (double)s_audio_delay_ms / 1000.0 - video_rel;
                     wait_iters++;
                     if (audio_rel <= audio_at_wait + 0.0005)
                         stuck_iters++;
