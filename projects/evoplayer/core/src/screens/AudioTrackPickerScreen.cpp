@@ -57,6 +57,8 @@ void AudioTrackPickerScreen::refreshTracks() {
         a.label = "AUTO";
         a.detail = "EVO picks the best quality available";
         a.badge = pinned ? "" : "PLAYING";
+        a.pills = pinned ? "BEST QUALITY" : "+PLAYING\tBEST QUALITY";
+        a.facts = {{"Mode", "Automatic"}, {"Behaviour", "EVO picks the best quality available"}};
         if (!pinned) m_activeIndex = static_cast<int>(m_tracks.size());
         m_tracks.push_back(std::move(a));
 
@@ -92,6 +94,33 @@ void AudioTrackPickerScreen::refreshTracks() {
             e.detail = d;
             e.badge = (v.streamIndex == activeVideo) ? "PLAYING" : "";
 
+            {
+                std::string codec = v.codecName;
+                std::transform(codec.begin(), codec.end(), codec.begin(),
+                               [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+                char b[48];
+                std::snprintf(b, sizeof(b), "%dx%d", v.width, v.height);
+                e.pills = (v.streamIndex == activeVideo) ? "+PLAYING\t" : "";
+                e.pills += std::string("+") + label;
+                if (!codec.empty()) e.pills += "\t" + codec;
+                e.pills += "\t";
+                e.pills += b;
+                e.facts.emplace_back("Resolution", b);
+                if (!codec.empty()) e.facts.emplace_back("Codec", codec);
+                if (v.bitrate > 0) {
+                    std::snprintf(b, sizeof(b), "%.1f Mbps", static_cast<double>(v.bitrate) / 1e6);
+                    e.pills += "\t";
+                    e.pills += b;
+                    e.facts.emplace_back("Bitrate", b);
+                }
+                if (v.fps > 0.5) {
+                    std::snprintf(b, sizeof(b), "%.0f fps", v.fps);
+                    e.pills += "\t";
+                    e.pills += b;
+                    e.facts.emplace_back("Frame rate", b);
+                }
+            }
+
             if (pinned && v.streamIndex == activeVideo)
                 m_activeIndex = static_cast<int>(m_tracks.size());
             m_tracks.push_back(std::move(e));
@@ -120,6 +149,46 @@ void AudioTrackPickerScreen::refreshTracks() {
         else if (t.channels == 2)std::snprintf(badge, sizeof(badge), "STEREO");
         else                     std::snprintf(badge, sizeof(badge), "MONO");
         e.badge = badge;
+
+        {
+            /* Chips for the row and the facts for the card. Only what the file says:
+             * language, codec, channels, sample rate. */
+            std::string codec = t.codecName;
+            std::transform(codec.begin(), codec.end(), codec.begin(),
+                           [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+            std::string codec_full = codec;
+            if (codec == "AC3")        { codec = "DD";    codec_full = "Dolby Digital"; }
+            else if (codec == "EAC3")  { codec = "DD+";   codec_full = "Dolby Digital Plus"; }
+            else if (codec == "TRUEHD"){ codec_full = "Dolby TrueHD"; }
+            else if (codec == "DTS")   { codec_full = "DTS"; }
+            else if (codec == "AAC")   { codec_full = "AAC"; }
+            std::string layout;
+            if (t.channels == 1)      layout = "Mono";
+            else if (t.channels == 2) layout = "Stereo";
+            else if (t.channels == 6) layout = "5.1";
+            else if (t.channels == 8) layout = "7.1";
+            else if (t.channels > 0)  layout = std::to_string(t.channels) + " ch";
+            char rate[24] = "";
+            if (t.sampleRate > 0) std::snprintf(rate, sizeof(rate), "%g kHz", t.sampleRate / 1000.0);
+
+            const bool live = (t.streamIndex == active);
+            if (live) e.pills = "+PLAYING";
+            auto chip = [&e](const std::string& s) {
+                if (s.empty()) return;
+                if (!e.pills.empty()) e.pills += "\t";
+                e.pills += s;
+            };
+            chip(codec);
+            chip(layout);
+            chip(rate);
+
+            e.facts.emplace_back("Language", native ? native : (t.language.empty() ? "Unknown" : t.language));
+            if (!t.title.empty()) e.facts.emplace_back("Track title", t.title);
+            if (!codec_full.empty()) e.facts.emplace_back("Codec", codec_full);
+            if (!layout.empty()) e.facts.emplace_back("Channels", layout);
+            if (rate[0]) e.facts.emplace_back("Sample rate", rate);
+            if (live) e.facts.emplace_back("Status", "Playing now");
+        }
 
         if (t.streamIndex == active) {
             e.detail += "  -  PLAYING";
@@ -238,12 +307,30 @@ void AudioTrackPickerScreen::render(uint32_t* framebuffer, int width, int height
             int idx = m_scrollOffset + i;
             params.rows[i].title = m_tracks[idx].label.c_str();
             params.rows[i].detail = m_tracks[idx].detail.c_str();
-            params.rows[i].badge = m_tracks[idx].badge.c_str();
+            params.rows[i].pills = m_tracks[idx].pills.c_str();
+            /* Chips say it all; a badge only when there are none (the PLAYING of a quality row). */
+            params.rows[i].badge = (m_tracks[idx].kind == KindAudio || !m_tracks[idx].pills.empty())
+                                 ? "" : m_tracks[idx].badge.c_str();
             params.rows[i].icon_path = (m_tracks[idx].kind == KindAudio)
                                      ? "../icons/icon_aspect.png" : "../icons/icon_tv.png";
             params.rows[i].progress = -1;
             params.rows[i].has_chevron = 0;
             params.rows[i].is_focused = (idx == m_selectedIndex);
+        }
+
+        /* The card for the track under the cursor. */
+        if (m_selectedIndex >= 0 && m_selectedIndex < total) {
+            const Entry& sel = m_tracks[m_selectedIndex];
+            int n = 0;
+            for (const auto& f : sel.facts) {
+                if (n >= 10) break;
+                params.panel[n].label = f.first.c_str();
+                params.panel[n].value = f.second.c_str();
+                ++n;
+            }
+            params.panel_count = n;
+            params.panel_eyebrow = sel.kind == KindAudio ? "TRACK DETAILS" : "QUALITY DETAILS";
+            params.panel_title = sel.label.c_str();
         }
     }
 

@@ -1228,12 +1228,99 @@ void ProviderHostScreen::renderStreamPicker(uint32_t* framebuffer, int width, in
 
         params.rows[i].title = c.label[0] ? c.label : "Stream";
         params.rows[i].detail = detail[i];
+        if (kind == KindSource) {
+            /* Chips instead of one run-on line: codec, HDR (stands out), audio, size, bitrate. */
+            static std::string pill_store[kMaxChoices];
+            std::string& ps = pill_store[i];
+            ps.clear();
+            auto chip = [&ps](const std::string& s) {
+                if (s.empty()) return;
+                if (!ps.empty()) ps += "\t";
+                ps += s;
+            };
+            auto up = [](std::string s) {
+                std::transform(s.begin(), s.end(), s.begin(), [](unsigned char ch) { return std::toupper(ch); });
+                return s;
+            };
+            char b[32];
+            chip(up(c.video_codec));
+            if (c.video_range[0] && std::strcmp(c.video_range, "SDR"))
+                chip(std::string("+") + c.video_range);
+            else
+                chip(c.video_range);
+            std::string audio = up(c.audio_codec);
+            if (audio == "EAC3") audio = "DD+";
+            else if (audio == "AC3") audio = "DD";
+            if (c.audio_channels > 0) {
+                if (c.audio_channels == 1)      std::snprintf(b, sizeof b, "Mono");
+                else if (c.audio_channels == 2) std::snprintf(b, sizeof b, "2.0");
+                else                            std::snprintf(b, sizeof b, "%d.1", c.audio_channels - 1);
+                audio += (audio.empty() ? "" : " ") + std::string(b);
+            }
+            chip(audio);
+            if (c.size_bytes > 0) {
+                const double gb = (double)c.size_bytes / (1024.0 * 1024.0 * 1024.0);
+                if (gb >= 1.0) std::snprintf(b, sizeof b, "%.1f GB", gb);
+                else           std::snprintf(b, sizeof b, "%.0f MB", gb * 1024.0);
+                chip(b);
+            }
+            if (c.bitrate_bps > 0) {
+                std::snprintf(b, sizeof b, "%.1f Mbps", (double)c.bitrate_bps / 1e6);
+                chip(b);
+            }
+            if (!ps.empty()) params.rows[i].pills = ps.c_str();
+        }
         params.rows[i].icon_path = "../icons/icon_tv.png";
         params.rows[i].badge = kind == KindSource ? "SOURCE" : kind == KindListed ? "LISTED"
                              : kind == KindGuess ? "GUESS" : "HLS";
         params.rows[i].progress = -1;
         params.rows[i].has_chevron = 1;
         params.rows[i].is_focused = (i == m_streamIndex);
+    }
+
+    /* The stream under the cursor, fact by fact, in a card beside the list: the row
+     * stays short and nothing about the stream is cut to fit it. */
+    static std::string panel_label[10], panel_value[10], panel_title;
+    const int fi = (m_streamIndex >= 0 && m_streamIndex < total) ? m_streamIndex : -1;
+    if (fi >= 0 && g_pending.kind[fi] == KindSource) {
+        const evo_stream_choice_t& c = g_pending.choices[fi];
+        int n = 0;
+        auto put = [&n](const char* label, const std::string& value) {
+            if (n >= 10 || value.empty()) return;
+            panel_label[n] = label;
+            panel_value[n] = value;
+            ++n;
+        };
+        if (c.facts[0]) {
+            for (const char* p = c.facts; *p && n < 10;) {
+                const char* tab = std::strchr(p, '\t');
+                const char* nl = std::strchr(p, '\n');
+                if (!tab || !nl || tab > nl) break;
+                put(std::string(p, tab).c_str(), std::string(tab + 1, nl));
+                p = nl + 1;
+            }
+        } else {
+            put("Video", source_detail(c));
+        }
+        panel_title = c.label[0] ? c.label : "Stream";
+        params.panel_eyebrow = "STREAM DETAILS";
+        params.panel_title = panel_title.c_str();
+        params.panel_count = n;
+        for (int k = 0; k < n; ++k) {
+            params.panel[k].label = panel_label[k].c_str();
+            params.panel[k].value = panel_value[k].c_str();
+        }
+        /* Quality as the row's badge, when the stream said what it is. */
+        for (int i = 0; i < rows; ++i) {
+            if (g_pending.kind[i] != KindSource) continue;
+            const char* q = std::strstr(g_pending.choices[i].facts, "Quality\t");
+            static char badge[kMaxChoices][16];
+            if (q) {
+                const char* e = std::strchr(q + 8, '\n');
+                std::snprintf(badge[i], sizeof badge[i], "%.*s", (int)(e ? e - (q + 8) : 0), q + 8);
+                if (badge[i][0]) params.rows[i].badge = badge[i];
+            }
+        }
     }
 
     params.hint_count = 2;

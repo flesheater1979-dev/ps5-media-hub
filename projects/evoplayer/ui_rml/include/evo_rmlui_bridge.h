@@ -341,6 +341,10 @@ typedef struct {
     int         progress;     /* 0..1000, or -1 for no bar */
     int         has_chevron;
     int         is_focused;
+    /* Pills drawn on the second line in place of `detail`, tab-separated
+     * ("HEVC\tHDR10\tDD+ 5.1"). A leading '+' makes a pill stand out. NULL or
+     * empty = the plain detail line. Only the kit UI draws them. */
+    const char* pills;
 } evo_rmlui_list_row_t;
 
 typedef struct {
@@ -382,6 +386,17 @@ typedef struct {
         const char* icon_path;
         int         danger;
     } menu[EVO_RMLUI_LIST_MENU_ROWS];
+
+    /* A details card beside the rows for whatever is under the cursor (the
+     * stream picker's quality, size, release...). panel_count 0 = no card and
+     * full-width rows. Only the kit UI draws it. */
+    int         panel_count;
+    const char* panel_eyebrow;
+    const char* panel_title;
+    struct {
+        const char* label;
+        const char* value;
+    } panel[10];
 } evo_rmlui_list_params_t;
 
 /*

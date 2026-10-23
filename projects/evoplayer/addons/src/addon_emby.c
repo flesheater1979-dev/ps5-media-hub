@@ -639,6 +639,14 @@ static void map_item(ms_client_t *c, cJSON *o, int ctx, evo_provider_item_t *it)
         else if (tags && cJSON_GetObjectItem(tags, "Thumb"))
             snprintf(it->art_alt_url, sizeof it->art_alt_url,
                      "%s/Items/%s/Images/Thumb?maxWidth=640&quality=70&format=jpg", base, id);
+        if (is_episode && ctx == CTX_SEASON) {
+            char *tj = tags ? cJSON_PrintUnformatted(tags) : NULL;
+            PROV_LOG("episode art: '%s' ImageTags=%s SeriesPrimary=%s SeasonId=%s parentBackdrop=%d art=%s alt=%s",
+                     name, tj ? tj : "none", jstr(o, "SeriesPrimaryImageTag")[0] ? "yes" : "no",
+                     jstr(o, "SeasonId")[0] ? "yes" : "no", pbd ? cJSON_GetArraySize(pbd) : -1,
+                     it->art_url[0] ? "set" : "none", it->art_alt_url[0] ? "set" : "none");
+            free(tj);
+        }
         if (tags && cJSON_GetObjectItem(tags, "Logo"))
             snprintf(it->logo_url, sizeof it->logo_url,
                      "%s/Items/%s/Images/Logo?maxWidth=480", base, id);
@@ -1345,6 +1353,116 @@ static long utf8_next(const unsigned char *s, int *len)
  * Lines become " | " segments, invisible / symbol / emoji code points go,
  * angle brackets become [ ], spaces collapse, and only whole characters fit.
  */
+/* Styled letters and digits that carry real information ("s₀₁·ᴇ₀₈", "15.4 ᴹᵇᵖˢ")
+ * and have a plain ASCII twin the font does have: subscript / superscript digits,
+ * small capitals and modifier letters. 0 = no twin. */
+static char label_fold(long cp)
+{
+    static const struct { long from; const char *to; } runs[] = {
+        { 0x2080, "0123456789" },                 /* subscript digits      */
+        { 0x2074, "456789" },                     /* superscript 4..9      */
+        { 0x1D2C, "A" }, { 0x1D2E, "B" }, { 0x1D30, "DEFG" }, { 0x1D34, "HIJKLMN" },
+        { 0x1D3C, "O" }, { 0x1D3E, "PR" }, { 0x1D40, "TU" }, { 0x1D42, "W" },
+        { 0x1D43, "a" }, { 0x1D47, "bde" }, { 0x1D4D, "g" }, { 0x1D4F, "km" }, { 0x1D52, "o" },
+        { 0x1D56, "p" }, { 0x1D57, "tu" }, { 0x1D5B, "v" },
+        { 0x1D00, "a" }, { 0x1D04, "cd" }, { 0x1D07, "e" }, { 0x1D0A, "jklm" },
+        { 0x1D0F, "o" }, { 0x1D18, "p" }, { 0x1D1B, "tu" }, { 0x1D20, "vw" }, { 0x1D22, "z" },
+        { 0x02B0, "h" }, { 0x02B2, "j" }, { 0x02B3, "r" }, { 0x02B7, "w" }, { 0x02B8, "y" },
+        { 0x02E1, "l" }, { 0x02E2, "sx" }, { 0x2071, "i" }, { 0x207F, "n" },
+        { 0x1D9C, "c" }, { 0x1DA0, "f" }, { 0x1DBB, "z" },
+    };
+    if (cp == 0x2070) return '0';
+    if (cp == 0xB9) return '1';
+    if (cp == 0xB2) return '2';
+    if (cp == 0xB3) return '3';
+    for (size_t i = 0; i < sizeof runs / sizeof runs[0]; ++i) {
+        long d = cp - runs[i].from;
+        if (d >= 0 && d < (long)strlen(runs[i].to)) return runs[i].to[d];
+    }
+    switch (cp) {                                  /* small capitals outside 1D00 */
+    case 0x0262: return 'g'; case 0x029C: return 'h'; case 0x026A: return 'i';
+    case 0x029F: return 'l'; case 0x0274: return 'n'; case 0x0280: return 'r';
+    case 0x028F: return 'y'; case 0x0299: return 'b'; case 0xA730: return 'f';
+    case 0xA731: return 's';
+    case 0x2605: case 0x2B50: return '*';         /* star ratings           */
+    default: return 0;
+    }
+}
+
+static void fact_add(char *facts, size_t cap, const char *name, const char *value)
+{
+    size_t n = strlen(facts);
+    if (!value[0]) return;
+    snprintf(facts + n, cap - n, "%s\t%s\n", name, value);
+}
+
+/*
+ * An AIOStreams source name, cleaned, reads "4K | [Web-dl] | ***** | Show s01e08 |
+ * HEVC SDR DD+ 5.1 | 6.28 / 45 GB · 15.4 Mbps · 1d | [TB] Indexer · Group | en · sub (en)".
+ * Split it into labelled facts for the picker's detail card and leave the title
+ * as the row label. A name that does not look like that is left alone.
+ */
+static void label_facts(evo_stream_choice_t *ch)
+{
+    char buf[256];
+    char *seg[12];
+    int n = 0;
+    snprintf(buf, sizeof buf, "%s", ch->label);
+    for (char *p = buf; p && n < 12;) {
+        seg[n++] = p;
+        char *bar = strstr(p, " | ");
+        if (bar) { *bar = '\0'; p = bar + 3; } else p = NULL;
+    }
+    size_t q = strlen(seg[0]);
+    if (n < 4 || q > 6 || !(strchr(seg[0], 'K') || strchr(seg[0], 'p') || !strcmp(seg[0], "SD")))
+        return;
+
+    char *other[12];
+    int no = 0;
+    ch->facts[0] = '\0';
+    fact_add(ch->facts, sizeof ch->facts, "Quality", seg[0]);
+    for (int i = 1; i < n; ++i) {
+        char *s = seg[i];
+        size_t len = strlen(s);
+        if (len > 2 && s[0] == '[' && s[len - 1] == ']' && !strchr(s, ' ')) {
+            s[len - 1] = '\0';
+            fact_add(ch->facts, sizeof ch->facts, "Source", s + 1);
+        } else if (s[0] == '*' && s[strspn(s, "*")] == '\0') {
+            char r[16];
+            snprintf(r, sizeof r, "%d of 5", (int)strlen(s));
+            fact_add(ch->facts, sizeof ch->facts, "Rating", r);
+        } else if (strstr(s, " GB") || strstr(s, " MB")) {
+            for (char *part = s; part;) {
+                char *dot = strstr(part, " \xC2\xB7 ");       /* " · " */
+                if (dot) *dot = '\0';
+                fact_add(ch->facts, sizeof ch->facts,
+                         (strstr(part, "GB") || strstr(part, "MB")) ? "Size"
+                         : strstr(part, "bps") ? "Bitrate" : "Added", part);
+                part = dot ? dot + 3 : NULL;
+            }
+        } else if (strstr(s, "HEVC") || strstr(s, "AVC") || strstr(s, "AV1") || strstr(s, "VP9") ||
+                   strstr(s, "H264") || strstr(s, "x265") || strstr(s, "x264")) {
+            fact_add(ch->facts, sizeof ch->facts, "Video and audio", s);
+        } else if (no < 12) {
+            other[no++] = s;
+        }
+    }
+    /* What is left: the title first, then the release, then languages and the rest. */
+    static const char *const names[] = { NULL, "Release", "Languages", "Details" };
+    for (int i = 0; i < no; ++i) {
+        if (i == 0) {
+            snprintf(ch->label, sizeof ch->label, "%s", other[0]);
+        } else if (i == 2 && strstr(other[i], " \xC2\xBB ")) {      /* "en · sub (en) » tags" */
+            char *tags = strstr(other[i], " \xC2\xBB ");
+            *tags = '\0';
+            fact_add(ch->facts, sizeof ch->facts, "Languages", other[i]);
+            fact_add(ch->facts, sizeof ch->facts, "Tags", tags + 4);
+        } else {
+            fact_add(ch->facts, sizeof ch->facts, names[i < 3 ? i : 3], other[i]);
+        }
+    }
+}
+
 static void label_clean(const char *in, char *out, size_t cap)
 {
     char tmp[512];
@@ -1357,6 +1475,7 @@ static void label_clean(const char *in, char *out, size_t cap)
         else if (cp == '\r' || cp == '\t' || cp == 0xA0 || (cp >= 0x2000 && cp <= 0x200A) ||
                  cp == 0x202F || cp == 0x205F || cp == 0x3000)
             tmp[t++] = ' ';                 /* AIOStreams pads with NBSP */
+        else if (label_fold(cp)) tmp[t++] = label_fold(cp);
         else if (cp == 0x3008 || cp == 0x2329 || cp == 0x27E8) tmp[t++] = '[';
         else if (cp == 0x3009 || cp == 0x232A || cp == 0x27E9) tmp[t++] = ']';
         else if (cp < 0x20 || cp < 0 || (cp >= 0x2000 && cp < 0x2C00) ||
@@ -1479,7 +1598,9 @@ int ms_parse_sources(ms_client_t *c, const char *item_id, const char *body,
             ch->audio_channels = (int)jnum(as, "Channels");
         }
 
+        PROV_LOG("  source %d name (raw): %s", n + 1, jstr(ms, "Name"));
         label_clean(jstr(ms, "Name"), ch->label, sizeof ch->label);
+        label_facts(ch);
         if (!ch->label[0]) snprintf(ch->label, sizeof ch->label, "Version %d", n + 1);
         ++n;
     }

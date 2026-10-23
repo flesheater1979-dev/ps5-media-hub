@@ -215,6 +215,7 @@ class ListScreen
     struct Row
     {
         std::string title, detail, icon, badge;
+        std::vector<std::string> pills;
         int progress = -1;
         bool chevron = false;
         bool focused = false;
@@ -237,6 +238,8 @@ class ListScreen
     std::vector<MenuItem> menu_;
     int menu_focus_ = 0;
     std::string menu_eyebrow_, menu_title_, menu_sub_, menu_icon_;
+    std::string panel_eyebrow_, panel_title_;
+    std::vector<std::pair<std::string, std::string>> panel_; /* label, value */
 
     float age_ = 0.0f;
     hui::ui::SpringRect ring_;

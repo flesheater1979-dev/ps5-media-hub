@@ -758,6 +758,7 @@ constexpr float kListTop = 220.0f;
 constexpr float kListRowH = 76.0f;
 constexpr float kListGap = 8.0f;
 constexpr float kListRight = 1824.0f;
+constexpr float kPanelW = 600.0f; /* details card beside the rows, when there is one */
 constexpr float kMenuW = 640.0f;
 constexpr float kMenuItemH = 64.0f;
 const Color kDanger = Color::rgb(0xff5a5f);
@@ -817,6 +818,18 @@ void ListScreen::set(const evo_rmlui_list_params_t &p)
         r.detail = str(p.rows[i].detail);
         r.icon = str(p.rows[i].icon_path);
         r.badge = str(p.rows[i].badge);
+        {
+            const std::string all = str(p.rows[i].pills);
+            for (std::size_t a = 0; a < all.size();)
+            {
+                std::size_t b = all.find('\t', a);
+                if (b == std::string::npos)
+                    b = all.size();
+                if (b > a)
+                    r.pills.push_back(all.substr(a, b - a));
+                a = b + 1;
+            }
+        }
         r.progress = p.rows[i].progress;
         r.chevron = p.rows[i].has_chevron != 0;
         r.focused = p.rows[i].is_focused != 0;
@@ -850,6 +863,11 @@ void ListScreen::set(const evo_rmlui_list_params_t &p)
     menu_title_ = str(p.menu_title);
     menu_sub_ = str(p.menu_sub);
     menu_icon_ = str(p.menu_icon);
+    panel_eyebrow_ = str(p.panel_eyebrow);
+    panel_title_ = str(p.panel_title);
+    panel_.clear();
+    for (int i = 0; i < p.panel_count && i < 10; ++i)
+        panel_.emplace_back(str(p.panel[i].label), str(p.panel[i].value));
 }
 
 void ListScreen::enter()
@@ -861,7 +879,8 @@ void ListScreen::enter()
 
 Rect ListScreen::row_rect(int index) const
 {
-    return {kLeft, kListTop + static_cast<float>(index) * (kListRowH + kListGap), kListRight - kLeft,
+    const float right = panel_.empty() ? kListRight : kListRight - kPanelW - 28.0f;
+    return {kLeft, kListTop + static_cast<float>(index) * (kListRowH + kListGap), right - kLeft,
             kListRowH};
 }
 
@@ -1002,8 +1021,33 @@ void ListScreen::draw(DrawList &list, const Context &ctx) const
             const float text_w = right - (r.x + 88);
             ui::text(list, row.focused ? fonts.semibold : fonts.regular,
                      fit(fonts.semibold, row.title, 24, text_w), r.x + 88, r.y + 35, 24, kWhite);
-            ui::text(list, fonts.regular, fit(fonts.regular, row.detail, 18, text_w), r.x + 88, r.y + 61,
-                     18, p.text_faint);
+            if (!row.pills.empty())
+            {
+                /* Pills on the second line: one fact each, so a long stream or track
+                 * reads as chips instead of one run-on string. '+' = stands out. */
+                float px = r.x + 88;
+                const float py = r.y + 40;
+                for (const std::string &raw : row.pills)
+                {
+                    const bool strong = raw[0] == '+';
+                    const std::string t = strong ? raw.substr(1) : raw;
+                    const float w = fonts.semibold.measure(t, 15, 0.6f) + 22;
+                    if (px + w > r.x + 88 + text_w)
+                        break;
+                    const Rect pill{px, py, w, 26};
+                    if (strong)
+                        list.bordered_rect(pill, 13, p.accent.with_alpha(row.focused ? 0.25f : 0.14f), 1.5f,
+                                           p.accent);
+                    else
+                        list.rounded_rect(pill, 13, kWhite.with_alpha(row.focused ? 0.18f : 0.09f));
+                    ui::text(list, fonts.semibold, t, pill.cx(), py + 18.5f, 15,
+                             strong ? p.accent : (row.focused ? kWhite : p.text_muted), Align::center, 0.6f);
+                    px += w + 8;
+                }
+            }
+            else
+                ui::text(list, fonts.regular, fit(fonts.regular, row.detail, 18, text_w), r.x + 88, r.y + 61,
+                         18, p.text_faint);
             if (row.progress >= 0)
             {
                 const float f = tween::clamp01(static_cast<float>(row.progress) / 1000.0f);
@@ -1017,6 +1061,38 @@ void ListScreen::draw(DrawList &list, const Context &ctx) const
         {
             list.push_opacity(has_focus_.value * (1.0f - menu_open_.value));
             list.bordered_rect(ring_.value().inset(-3), 23, Color::rgb(0x000000, 0.0f), 3, kWhite);
+            list.pop_opacity();
+        }
+
+        /* Details card for the row under the cursor: every fact on its own line,
+         * so nothing has to be squeezed into (and cut from) a row. */
+        if (!panel_.empty())
+        {
+            const float in = tween::stagger(age_, 2, 0.05f, 0.45f);
+            list.push_opacity(in);
+            const float x = kListRight - kPanelW;
+            const float h = 9.0f * (kListRowH + kListGap) - kListGap;
+            const Rect card{x, kListTop, kPanelW, h};
+            list.rounded_rect(card, 24, p.surface);
+            list.bordered_rect(card, 24, Color::rgb(0x000000, 0.0f), 1.5f, kWhite.with_alpha(0.10f));
+            const float tx = x + 32.0f;
+            const float tw = kPanelW - 64.0f;
+            if (!panel_eyebrow_.empty())
+                ui::text(list, fonts.semibold, ui::upper(panel_eyebrow_), tx, card.y + 46, 16, p.accent,
+                         Align::left, 3.0f);
+            ui::paragraph(list, fonts.display, panel_title_, tx, card.y + 90, 32, tw, 38, kWhite, 2,
+                          Align::left);
+            float y = card.y + 152.0f;
+            list.rounded_rect({tx, y - 16.0f, tw, 1.5f}, 0.75f, kWhite.with_alpha(0.10f));
+            for (const auto &f : panel_)
+            {
+                if (y + 56.0f > card.y + card.h)
+                    break;
+                ui::text(list, fonts.semibold, ui::upper(f.first), tx, y + 14, 13, p.text_muted, Align::left,
+                         2.0f);
+                ui::paragraph(list, fonts.regular, f.second, tx, y + 42, 22, tw, 26, kWhite, 2, Align::left);
+                y += 60.0f;
+            }
             list.pop_opacity();
         }
     }

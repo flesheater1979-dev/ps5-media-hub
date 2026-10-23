@@ -483,8 +483,13 @@ int main(int argc, char **argv)
             launch.recent[i].is_focused = launch.library[i].is_focused = 0;
         nav.rail_focused = 0;
         for (int i = 0; i < 9; ++i)
+        {
             lp.rows[i].is_focused = 0;
+            lp.rows[i].pills = nullptr;
+        }
+        lp.row_count = 9;
         lp.cursor_index = -1;
+        lp.panel_count = 0;
         lp.is_empty = 0;
         lp.menu_count = 0;
         for (int i = 0; i < 8; ++i)
@@ -522,6 +527,153 @@ int main(int argc, char **argv)
              }
              lp.rows[0].is_focused = 1;
              lp.cursor_index = 0;
+         }},
+        {"list_streams", 1, [&] {
+             clear_focus();
+             static const char *const streams[9][3] = {
+                 {"Clarksons Farm s01·e08", "4K HEVC  -  SDR  -  6.3 GB  -  15.4 Mbps  -  DD+ 5.1", "4K"},
+                 {"Clarkson's Farm s01·e08", "1080p H264  -  SDR  -  4.0 GB  -  10.4 Mbps  -  DD+ 5.1", "1080P"},
+                 {"Clarksons Farm s01·e08", "1080p H264  -  SDR  -  3.8 GB  -  10.0 Mbps  -  AC3 Stereo", "1080P"},
+                 {"Clarkson's Farm s01·e08", "1080p H264  -  SDR  -  1.8 GB  -  4.7 Mbps  -  AAC Stereo", "1080P"},
+                 {"Clarksons Farm s01·e08", "1080p H264  -  SDR  -  5.1 GB  -  13.6 Mbps  -  DD+ 5.1", "1080P"},
+                 {"Server transcode (1080p H.264)", "1080p H264  -  AAC", "1080P"},
+                 {"Clarksons Farm s01·e08", "720p H264  -  SDR  -  1.2 GB  -  3.1 Mbps  -  AAC Stereo", "720P"},
+                 {"Clarksons Farm s01·e08", "4K HEVC  -  HDR10  -  18.2 GB  -  41.0 Mbps  -  TRUEHD 7.1", "4K"},
+                 {"Clarksons Farm s01·e08", "480p H264  -  SDR  -  0.6 GB  -  1.4 Mbps  -  AAC Stereo", "480P"}};
+             lp.title = "Choose a stream";
+             lp.subtitle = "Clarkson's Farm - S01E08 Harvesting";
+             for (int i = 0; i < 9; ++i)
+             {
+                 lp.rows[i].title = streams[i][0];
+                 lp.rows[i].detail = streams[i][1];
+                 lp.rows[i].badge = streams[i][2];
+                 lp.rows[i].progress = -1;
+                 lp.rows[i].icon_path = "../icons/icon_tv.png";
+             }
+             lp.rows[0].is_focused = 1;
+             lp.cursor_index = 0;
+             lp.hint_count = 2;
+             lp.hints[0] = {"../icons/btn_cross.png", "PLAY"};
+             lp.hints[1] = {"../icons/btn_circle.png", "BACK"};
+             lp.panel_eyebrow = "STREAM DETAILS";
+             lp.panel_title = "Clarksons Farm s01·e08";
+             static const char *const facts[9][2] = {
+                 {"Quality", "4K"}, {"Source", "Web-dl"}, {"Rating", "5 of 5"},
+                 {"Video and audio", "HEVC SDR DD+ 5.1"}, {"Size", "6.28 / 45 GB"},
+                 {"Bitrate", "15.4 Mbps"}, {"Added", "1d"}, {"Release", "[TB] ComeTorz · HONE"},
+                 {"Languages", "en · sub (en) » web t1 amazon 3635"}};
+             lp.panel_count = 9;
+             for (int i = 0; i < 9; ++i)
+                 lp.panel[i] = {facts[i][0], facts[i][1]};
+             static const char *const pills[9] = {
+                 "+HEVC\t+HDR10\tDD+ 5.1\t6.3 GB\t15.4 Mbps", "H264\tSDR\tDD+ 5.1\t4.0 GB\t10.4 Mbps",
+                 "H264\tSDR\tAC3 2.0\t3.8 GB\t10.0 Mbps",     "H264\tSDR\tAAC 2.0\t1.8 GB\t4.7 Mbps",
+                 "H264\tSDR\tDD+ 5.1\t5.1 GB\t13.6 Mbps",     "H264\tAAC\tTranscode",
+                 "H264\tSDR\tAAC 2.0\t1.2 GB\t3.1 Mbps",      "+HEVC\t+HDR10\tTRUEHD 7.1\t18.2 GB\t41 Mbps",
+                 "H264\tSDR\tAAC 2.0\t0.6 GB"};
+             for (int i = 0; i < 9; ++i)
+                 lp.rows[i].pills = pills[i];
+         }},
+        {"list_streams_wide", 1, [&] {
+             clear_focus();
+             static const char *const titles[9] = {"Clarksons Farm s01·e08", "Clarkson's Farm s01·e08",
+                                                   "Clarksons Farm s01·e08", "Clarkson's Farm s01·e08",
+                                                   "Clarksons Farm s01·e08", "Server transcode (1080p H.264)",
+                                                   "Clarksons Farm s01·e08", "Clarksons Farm s01·e08",
+                                                   "Clarksons Farm s01·e08"};
+             static const char *const pills[9] = {
+                 "+4K\tWeb-dl\t+HEVC\t+HDR10\tDD+ 5.1\tEN\tSUB EN\t6.3 GB\t15.4 Mbps\tComeTorz",
+                 "+1080P\tWeb-dl\tH264\tSDR\tDD+ 5.1\tEN\t4.0 GB\t10.4 Mbps",
+                 "+1080P\tWeb-dl\tH264\tSDR\tAC3 2.0\tEN\t3.8 GB\t10.0 Mbps",
+                 "+1080P\tWebrip\tH264\tSDR\tAAC 2.0\tEN\t1.8 GB\t4.7 Mbps",
+                 "+1080P\tWebrip\tH264\tSDR\tDD+ 5.1\tEN\t5.1 GB\t13.6 Mbps",
+                 "+1080P\tTranscode\tH264\tAAC",
+                 "+720P\tWeb-dl\tH264\tSDR\tAAC 2.0\tEN\t1.2 GB\t3.1 Mbps",
+                 "+4K\tRemux\t+HEVC\t+HDR10\tTRUEHD 7.1\tEN\t18.2 GB\t41 Mbps",
+                 "+480P\tWebrip\tH264\tSDR\tAAC 2.0\tEN\t0.6 GB"};
+             lp.title = "Choose a stream";
+             lp.subtitle = "Clarkson's Farm - S01E08 Harvesting";
+             for (int i = 0; i < 9; ++i)
+             {
+                 lp.rows[i].title = titles[i];
+                 lp.rows[i].detail = "";
+                 lp.rows[i].badge = "";
+                 lp.rows[i].pills = pills[i];
+                 lp.rows[i].progress = -1;
+                 lp.rows[i].icon_path = "../icons/icon_tv.png";
+             }
+             lp.rows[0].is_focused = 1;
+             lp.cursor_index = 0;
+             lp.hint_count = 2;
+             lp.hints[0] = {"../icons/btn_cross.png", "PLAY"};
+             lp.hints[1] = {"../icons/btn_circle.png", "BACK"};
+         }},
+        {"list_audio_pills", 1, [&] {
+             clear_focus();
+             static const char *const titles[5] = {"English", "English - Commentary", "Japanese", "French", "Spanish"};
+             static const char *const pills[5] = {"+DEFAULT\tDD+\t5.1\t640 kbps", "AAC\t2.0\t128 kbps\tCOMMENTARY",
+                                                  "TRUEHD\t7.1\tAtmos\t4.2 Mbps", "AC3\t5.1\t448 kbps",
+                                                  "AC3\t2.0\t192 kbps"};
+             lp.title = "Audio";
+             lp.subtitle = "Clarkson's Farm - S01E08 Harvesting";
+             lp.row_count = 6;
+             lp.rows[0].title = "Auto";
+             lp.rows[0].pills = "FOLLOW SETTINGS\tEnglish first";
+             lp.rows[0].badge = "";
+             for (int i = 0; i < 5; ++i)
+             {
+                 lp.rows[i + 1].title = titles[i];
+                 lp.rows[i + 1].pills = pills[i];
+                 lp.rows[i + 1].badge = "";
+             }
+             for (int i = 0; i < 6; ++i)
+             {
+                 lp.rows[i].detail = "";
+                 lp.rows[i].progress = -1;
+                 lp.rows[i].icon_path = "../icons/icon_volume.png";
+             }
+             lp.rows[1].is_focused = 1;
+             lp.cursor_index = 1;
+             lp.hint_count = 2;
+             lp.hints[0] = {"../icons/btn_cross.png", "SELECT"};
+             lp.hints[1] = {"../icons/btn_circle.png", "BACK"};
+         }},
+        {"list_audio_card", 1, [&] {
+             clear_focus();
+             static const char *const titles[5] = {"English", "English - Commentary", "Japanese", "French", "Spanish"};
+             static const char *const pills[5] = {"+DD+\t5.1", "AAC\t2.0", "TRUEHD\t7.1", "AC3\t5.1", "AC3\t2.0"};
+             lp.title = "Audio";
+             lp.subtitle = "Clarkson's Farm - S01E08 Harvesting";
+             lp.row_count = 6;
+             lp.rows[0].title = "Auto";
+             lp.rows[0].pills = "FOLLOW SETTINGS";
+             lp.rows[0].badge = "";
+             for (int i = 0; i < 5; ++i)
+             {
+                 lp.rows[i + 1].title = titles[i];
+                 lp.rows[i + 1].pills = pills[i];
+                 lp.rows[i + 1].badge = i == 0 ? "DEFAULT" : "";
+             }
+             for (int i = 0; i < 6; ++i)
+             {
+                 lp.rows[i].detail = "";
+                 lp.rows[i].progress = -1;
+                 lp.rows[i].icon_path = "../icons/icon_volume.png";
+             }
+             lp.rows[1].is_focused = 1;
+             lp.cursor_index = 1;
+             lp.hint_count = 2;
+             lp.hints[0] = {"../icons/btn_cross.png", "SELECT"};
+             lp.hints[1] = {"../icons/btn_circle.png", "BACK"};
+             lp.panel_eyebrow = "TRACK DETAILS";
+             lp.panel_title = "English";
+             static const char *const facts[6][2] = {
+                 {"Codec", "Dolby Digital Plus"}, {"Channels", "5.1 surround"}, {"Bitrate", "640 kbps"},
+                 {"Sample rate", "48 kHz"}, {"Output", "Bitstream passthrough to receiver"},
+                 {"Track title", "Main audio"}};
+             lp.panel_count = 6;
+             for (int i = 0; i < 6; ++i)
+                 lp.panel[i] = {facts[i][0], facts[i][1]};
          }},
         {"list_empty", 1, [&] { clear_focus(); lp.title = "Favorites"; lp.subtitle = "Saved for later";
                                  lp.is_empty = 1; lp.row_count = 0; lp.total_count = 0; }},

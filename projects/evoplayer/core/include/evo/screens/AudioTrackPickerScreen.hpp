@@ -42,6 +42,8 @@ private:
         std::string label;
         std::string detail;
         std::string badge;
+        std::string pills;   /* tab-separated chips for the row, a leading '+' stands out */
+        std::vector<std::pair<std::string, std::string>> facts;  /* the details card */
     };
 
     void refreshTracks();

@@ -132,7 +132,8 @@ typedef enum {
  */
 typedef struct evo_stream_choice {
     char    url[EVO_PROVIDER_MAX_URL];
-    char    label[64];          /* "1080p", "Direct", "Original" - shown as-is */
+    char    label[256];         /* "1080p", "Direct", "Original", or a media server's whole
+                                 * cleaned source name - shown as-is */
     char    container[16];      /* "mkv", "mp4", "ts", "m3u8" - hint, not truth */
     char    video_codec[16];
     char    audio_codec[16];
@@ -142,6 +143,11 @@ typedef struct evo_stream_choice {
     int64_t size_bytes;         /* 0 if unknown or live */
     char    video_range[16];    /* "SDR", "HDR10", "HDR10+", "HLG", "Dolby Vision"; "" unknown */
     int     audio_channels;     /* 0 if unknown */
+
+    /* What a picker can show about this stream beyond the label, one fact per
+     * line as "Name\tValue\n" ("Quality\t4K\nSize\t6.28 GB\n"). Empty when the
+     * provider has nothing more than the label. */
+    char    facts[640];
 
     /* No duration, not seekable. Set from EVO_PROVIDER_CAP_LIVE providers and
      * from any HLS playlist with no EXT-X-ENDLIST. */
