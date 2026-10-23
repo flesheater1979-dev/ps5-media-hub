@@ -97,9 +97,11 @@ pt::Codec codec_from_av(int av_codec_id)
         return pt::Codec::eac3;
     case AV_CODEC_ID_DTS:
         return pt::Codec::dts;
+    /* AAC is never passed through (#163): the port is fed without a gap, yet an HDMI sink
+     * that advertises AAC (LG UltraGear) plays silence. AAC is lossy stereo, so decoding it
+     * to PCM loses nothing. */
     case AV_CODEC_ID_AAC:
     case AV_CODEC_ID_AAC_LATM:
-        return pt::Codec::aac;
     default:
         return pt::Codec::unknown;
     }
