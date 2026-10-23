@@ -82,6 +82,10 @@ Each issue body also has a "References & sequencing" block.
 docker compose run --rm ps5-dev ./scripts/package-app.sh --ffpfsc --usb-remote
 docker compose run --rm ps5-dev ./scripts/deploy-app.sh --ffpfsc   # sha256-verified
 
+# fast path: reuse one container (~0.7 s per call instead of several s). Prefix any
+# container command with ./tools/dx.sh; ./tools/dx.sh --stop before `docker compose build`
+./tools/dx.sh ./tools/evo-remote.sh status
+
 # drive the console (PS5_HOST=192.168.0.x)
 ./tools/evo-remote.sh launch | quit | close | status | log
 ./tools/evo-remote.sh screen <id> | key <button>... | play <path>   # key l3 = screenshot
@@ -180,6 +184,23 @@ every console action, and commits. agy never touches the console or git.
   and the memory notes by meaning or by name. Ask it first ("why can't we call
   sceVideoOutOpen", "where is seek handled") and then Read the `path:lines` it
   returns. Fall back to Grep for an exact string you already know.
+- **Before you design a fix, check the sibling projects.** `third_party/` holds ~40 PS5
+  homebrew repos (ProsperoTV, ProsperoLight, SharpProspero, Jelly5, Emby5, AnyPS5, PS5MC,
+  afterglow, spot5, VLC, kodi-ps5, the PS5 research repos, ...). Two extra `evo_search`
+  sources cover them and are left out of a plain search, so ask for them:
+  `source: commits` = commit messages of every repo on every branch ("did anyone already
+  fix AAC passthrough lip sync?"; a hit tagged `[not in checkout]` is fetched but not
+  checked out), `source: thirdparty` = their code and docs (how another app calls an API,
+  e.g. `sceVideoOutGetFlipStatus`). Do this for decode, audio, A/V sync, GPU and
+  provider bugs, then Read the file in that repo. Treat what you find as a hint to port by
+  hand: check its licence ([proprietary.md](docs/proprietary.md)), do not paste it in, and
+  verify on the console. `Jelly5` and a few others carry copies of EVO's own source, so a
+  hit on your own file name there is noise.
+- **Pick the right search:** meaning or "why" questions → `evo_search` (default sources);
+  "has someone fixed this" → `source: commits`; "how does another app do X" →
+  `source: thirdparty`; an exact identifier or string → Grep (or `evo_search` with that
+  name); `git log` / `git blame` for EVO's own history. Narrow with `path:` (for example
+  `path: third_party/ProsperoTV/`).
 - **Read narrow.** `evo_rmlui_app.cpp` (4k lines), `uiview_playback_rml.cpp`
   and `core/Application.cpp` are large. Grep first, then read only that range.
 - **Don't re-read a file right after editing it.**

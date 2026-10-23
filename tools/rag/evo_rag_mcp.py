@@ -28,7 +28,15 @@ INSTRUCTIONS = (
     "Search EVO Player's own code, docs, GitHub issues and project memory notes. "
     "Use evo_search BEFORE grepping broadly or re-deriving a hardware rule: ask in plain "
     "words ('why must we never deploy over a running EVO') or by name ('slot_renew_decoder'). "
-    "Results give path:lines - Read that range for the full text.")
+    "Results give path:lines - Read that range for the full text.\n"
+    "third_party/ holds ~40 PS5 homebrew repos (sibling and research projects). They are NOT in a "
+    "plain search; ask for them. Before designing a fix for a decode, audio, A/V sync, GPU or "
+    "provider bug, call evo_search with source=commits ('did anyone already fix X': commit "
+    "messages of every repo on every branch; a hit tagged [not in checkout] is fetched but not "
+    "checked out) and with source=thirdparty ('how does another app call this API'). Use path= "
+    "to narrow, e.g. third_party/ProsperoTV/. Treat hits as hints to port by hand and verify on "
+    "the console; check the licence, never paste code. Some clones (Jelly5 ...) contain copies of "
+    "EVO's own files, which is noise. For an exact string use Grep; for EVO's own history use git.")
 
 TOOLS = [
     {
@@ -46,7 +54,16 @@ TOOLS = [
                           "description": "A question or identifiers. Plain words and exact names both work."},
                 "k": {"type": "integer", "description": "Results to return (default 8, max 20)."},
                 "source": {"type": "string",
-                           "description": "all (default), or comma list of: code, docs, issues, memory."},
+                           "description": "all (default; EVO's own code, docs, issues, memory), or comma "
+                                          "list of: code, docs, issues, memory, thirdparty, commits. "
+                                          "Use commits for 'did a sibling project already fix this' "
+                                          "(commit messages of every third_party repo, including ones "
+                                          "fetched but not checked out, tagged [not in checkout]). Use "
+                                          "thirdparty for every reference repo under third_party/ "
+                                          "(the homebrew clones such as ProsperoTV, ProsperoLight, "
+                                          "SharpProspero, PS5MC, afterglow, spot5, AnyPS5, Jelly5, Emby5, "
+                                          "VLC, kodi-ps5, the PS5 research repos, ps5-homebrew-ui): "
+                                          "'did a sibling project already solve this'."},
                 "path": {"type": "string",
                          "description": "Only paths starting with this, e.g. 'projects/evoplayer/media/'."},
             },
@@ -82,6 +99,7 @@ def background_sync():
         idx = index()
         idx.sync_files(force=True)
         idx.sync_issues()
+        idx.sync_commits()                              # third_party commit messages (throttled)
         n = idx.embed_pending()
         log(f"background sync done, {n} chunks embedded; {idx.status()}")
     except Exception as e:                              # never kill the server

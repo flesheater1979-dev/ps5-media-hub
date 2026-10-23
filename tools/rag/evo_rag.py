@@ -17,9 +17,17 @@ Sources (the `source` filter):
   docs     *.md in the repo
   issues   every GitHub issue, open and closed, with comments (needs `gh`)
   memory   the Claude Code memory notes for this project
+  thirdparty  every reference repo under third_party/ (homebrew clones, ProsperoTV, ...).
+              Only searched when asked for (source=thirdparty, or a path under
+              third_party/); "all" leaves it out so reference code never drowns EVO's own.
+              Skip list: THIRDPARTY_SKIP below, or EVO_RAG_THIRDPARTY=dirA,dirB (empty = off).
+  commits     the commit messages (subject, body, files touched) of those same repos, on
+              every ref, so a fix that is fetched but not checked out still shows up, tagged
+              "[not in checkout]". Same rule as thirdparty: only when asked for.
 
-Skipped on purpose: third_party/, generated pipe tables and the embedded asset
-bundle, main.c.legacy (CLAUDE.md says not to learn from it), anything over 300 KB.
+Skipped on purpose: third_party/ffmpeg, FastCopy, daemons (see THIRDPARTY_SKIP),
+generated pipe tables and the embedded asset bundle, main.c.legacy (CLAUDE.md says not
+to learn from it), anything over 300 KB.
 """
 import argparse
 import hashlib
@@ -49,12 +57,22 @@ SKIP_FRAGMENTS = ("third_party/", "/third_party/", ".legacy", "bundle_data",
                   "_pipe.h", ".pipe", ".inc", "/output/", "node_modules/",
                   "uiview/obj/")
 MAX_FILE_BYTES = 300_000
+# Reference repos: every directory under third_party/ except the skip list below. Each is its
+# own git repo, so the EVO `git ls-files` never lists their files; they are walked on their own
+# (see list_thirdparty_files). Drop a clone into third_party/ and the next search indexes it.
+THIRDPARTY_SKIP = ("ffmpeg", "FastCopy", "daemons")   # huge or not relevant to EVO
+THIRDPARTY_EXT = {".cs", ".rs", ".go", ".js", ".mjs", ".ts", ".tsx", ".jsx", ".java", ".kt",
+                  ".swift", ".lua", ".rb", ".php", ".gradle"}   # on top of the normal set
+THIRDPARTY_SKIP_FRAGMENTS = ("/vendor/", "/dist/", "/build/", "/out/", ".min.", "/node_modules/",
+                             "/.git/", "package-lock", "/obj/", "/bin/")
 TARGET_CHARS = 1500
 HARD_CHARS = 2400
 CHUNKER_VERSION = 2          # bump when chunking changes; forces a re-chunk
 MD_TARGET_CHARS = 700
 MD_MAX_CHARS = 1800
 ISSUE_STALE_S = 6 * 3600
+COMMITS_STALE_S = 600            # re-check each third_party repo's refs at most this often
+MAX_COMMITS_PER_REPO = 4000
 
 STOP = set("the a an of to in is are was be how what why where when do does did "
            "i we it for on with and or not this that from by as at can should "
@@ -212,6 +230,44 @@ def chunk_issue(issue):
     return out
 
 
+# --------------------------------------------------------------------- commits
+
+def git_out(repo, *args, timeout=90):
+    try:
+        r = subprocess.run(["git", "-c", "core.quotepath=off", "-C", str(repo), *args],
+                           capture_output=True, timeout=timeout)
+    except Exception:
+        return None
+    return r.stdout.decode("utf-8", "replace") if r.returncode == 0 else None
+
+
+def chunk_commits(repo):
+    """One chunk per non-merge commit on any ref: subject, body and the files it touched.
+    Commits that are on a fetched branch but not in the checked-out HEAD are tagged so a
+    search shows that the fix exists upstream but is not in the local checkout yet."""
+    head = git_out(repo, "rev-list", "--no-merges", "--abbrev-commit", "HEAD")
+    in_head = set(head.split()) if head else set()
+    raw = git_out(repo, "log", "--all", "--no-merges", f"-n{MAX_COMMITS_PER_REPO}", "--date=short",
+                  "--abbrev-commit", "--name-only",
+                  "--format=%x1e%h%x1f%ad%x1f%an%x1f%s%x1f%b%x1f", timeout=180)
+    out = []
+    for rec in (raw or "").split("\x1e"):
+        parts = rec.split("\x1f")
+        if len(parts) < 6:
+            continue
+        h, date, who, subject, body, files = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
+        names = [f for f in files.split("\n") if f.strip()]
+        tag = "" if (not in_head or h in in_head) else " [not in checkout]"
+        text = f"{repo.name} commit {h} {date} by {who}{tag}\n{subject}\n"
+        if body.strip():
+            text += "\n" + body.strip() + "\n"
+        if names:
+            text += "\nfiles: " + ", ".join(names[:25]) + (f" (+{len(names) - 25} more)" if len(names) > 25 else "")
+        out.append(dict(kind="commits", start=0, end=0,
+                        title=f"{repo.name} {h} {date}{tag} {subject}"[:160], text=text[:HARD_CHARS]))
+    return out
+
+
 # ----------------------------------------------------------------------- files
 
 def memory_dir():
@@ -228,13 +284,51 @@ def memory_dir():
     return None
 
 
-def wanted(rel):
+def wanted(rel, thirdparty=False):
     low = rel.lower()
-    if any(f in low for f in SKIP_FRAGMENTS):
+    skip = SKIP_FRAGMENTS if not thirdparty else tuple(
+        f for f in SKIP_FRAGMENTS if "third_party" not in f) + THIRDPARTY_SKIP_FRAGMENTS
+    if any(f in low for f in skip):
         return False
     name = rel.rsplit("/", 1)[-1]
     ext = os.path.splitext(name)[1].lower()
-    return ext == ".md" or ext in CODE_EXT or name in CODE_NAMES
+    return (ext == ".md" or ext in CODE_EXT or name in CODE_NAMES
+            or (thirdparty and ext in THIRDPARTY_EXT))
+
+
+def thirdparty_dirs():
+    env = os.environ.get("EVO_RAG_THIRDPARTY")
+    base = ROOT / "third_party"
+    if env is not None:                       # explicit list; empty turns the source off
+        names = [n.strip() for n in env.split(",") if n.strip()]
+    elif base.is_dir():
+        names = sorted(p.name for p in base.iterdir() if p.is_dir() and p.name not in THIRDPARTY_SKIP)
+    else:
+        names = []
+    return [base / n for n in names if (base / n).is_dir()]
+
+
+def list_thirdparty_files():
+    """Repo-relative paths ("third_party/ProsperoTV/...") of the allowlisted reference repos."""
+    out = []
+    for d in thirdparty_dirs():
+        files = []
+        if (d / ".git").exists():
+            try:
+                raw = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"],
+                                     cwd=d, capture_output=True, timeout=30).stdout
+                files = [b.decode("utf-8", "replace") for b in raw.split(b"\0") if b]
+            except Exception:
+                files = []
+        else:
+            for dp, dn, fn in os.walk(d):
+                dn[:] = [x for x in dn if x not in (".git", "node_modules")]
+                files += [os.path.relpath(os.path.join(dp, f), d).replace(os.sep, "/") for f in fn]
+        for f in files:
+            rel = f"third_party/{d.name}/{f}"
+            if wanted(rel, thirdparty=True):
+                out.append(rel)
+    return out
 
 
 def list_repo_files():
@@ -277,13 +371,35 @@ class Embedder:
             return self.model
         try:
             from fastembed import TextEmbedding
-            self.model = TextEmbedding(MODEL_NAME, cache_dir=str(INDEX_DIR / "models"))
+            kw = dict(cache_dir=str(INDEX_DIR / "models"))
+            self.device = "cpu"
+            # EVO_RAG_DEVICE=cpu|cuda|auto (default auto: use the GPU when onnxruntime-gpu and the
+            # CUDA libraries are there, e.g. in output/rag/gpu-venv; otherwise the CPU).
+            want = os.environ.get("EVO_RAG_DEVICE", "auto").lower()
+            if want in ("auto", "cuda"):
+                try:
+                    import onnxruntime as ort
+                    if hasattr(ort, "preload_dlls"):
+                        ort.preload_dlls()           # finds the pip nvidia-* CUDA/cuDNN DLLs
+                    if "CUDAExecutionProvider" in ort.get_available_providers():
+                        self.model = TextEmbedding(
+                            MODEL_NAME, providers=["CUDAExecutionProvider", "CPUExecutionProvider"], **kw)
+                        self.device = "cuda"
+                        self.model.embed(["warm up"], batch_size=1).__next__()   # fails here, not mid-run
+                except Exception as e:
+                    print(f"[rag] GPU unavailable, using CPU: {type(e).__name__}: {str(e)[:160]}",
+                          file=sys.stderr)
+                    self.model = None
+            if self.model is None:
+                self.model = TextEmbedding(MODEL_NAME, **kw)
+                self.device = "cpu"
         except Exception as e:                       # not installed, offline, ...
             self.err = f"{type(e).__name__}: {e}"
         return self.model
 
     def embed(self, texts):
-        vecs = np.asarray(list(self.model.embed(texts, batch_size=32)), dtype=np.float32)
+        bs = int(os.environ.get("EVO_RAG_BATCH", "64" if getattr(self, "device", "cpu") == "cuda" else "32"))
+        vecs = np.asarray(list(self.model.embed(texts, batch_size=bs)), dtype=np.float32)
         norms = np.linalg.norm(vecs, axis=1, keepdims=True)
         return vecs / np.maximum(norms, 1e-9)
 
@@ -374,6 +490,12 @@ class Index:
                 continue
             src = "docs" if rel.endswith(".md") else "code"
             present[rel] = (src, ROOT / rel, f"{st.st_size}:{st.st_mtime_ns}")
+        for rel in list_thirdparty_files():
+            try:
+                st = (ROOT / rel).stat()
+            except OSError:
+                continue
+            present[rel] = ("thirdparty", ROOT / rel, f"{st.st_size}:{st.st_mtime_ns}")
         mem = memory_dir()
         if mem:
             for p in mem.glob("*.md"):
@@ -383,7 +505,7 @@ class Index:
                 present[f"memory/{p.name}"] = ("memory", p, f"{st.st_size}:{st.st_mtime_ns}")
         with self.lock:
             known = dict((r[0], r[1]) for r in self.db.execute(
-                "SELECT path, sig FROM files WHERE source IN ('code','docs','memory')"))
+                "SELECT path, sig FROM files WHERE source IN ('code','docs','memory','thirdparty')"))
         removed = [p for p in known if p not in present]
         changed = [p for p, v in present.items() if known.get(p) != v[2]]
         for p in removed:
@@ -437,14 +559,55 @@ class Index:
             self.db.commit()
         return changed
 
+    def sync_commits(self, force=False):
+        """Commit messages of every third_party repo (all refs, so fetched-but-not-checked-out
+        commits count). One chunk per commit; a repo is redone only when its refs change."""
+        with self.lock:
+            row = self.db.execute("SELECT v FROM meta WHERE k='commits_synced'").fetchone()
+        if not force and row and time.time() - float(row[0]) < COMMITS_STALE_S:
+            return 0
+        seen, changed = set(), 0
+        for d in thirdparty_dirs():
+            if not (d / ".git").exists():
+                continue
+            path = f"commits/{d.name}"
+            seen.add(path)
+            refs = git_out(d, "for-each-ref", "--format=%(objectname)")
+            if refs is None:
+                continue
+            sig = hashlib.sha1(refs.encode()).hexdigest()
+            with self.lock:
+                old = self.db.execute("SELECT sig FROM files WHERE path=?", (path,)).fetchone()
+            if old and old[0] == sig:
+                continue
+            self._replace_file(path, "commits", sig, chunk_commits(d))
+            changed += 1
+        with self.lock:
+            gone = [r[0] for r in self.db.execute("SELECT path FROM files WHERE source='commits'")
+                    if r[0] not in seen]
+        for p in gone:
+            self._drop_file(p)
+        with self.lock:
+            self.db.execute("INSERT OR REPLACE INTO meta VALUES('commits_synced', ?)",
+                            (str(time.time()),))
+            self.db.commit()
+        return changed
+
     def embed_pending(self, batch=64):
         if not self.embedder.load():
             return 0
+        gpu = getattr(self.embedder, "device", "cpu") == "cuda"
+        if gpu:
+            batch = 256                                  # fewer DB round trips; the GPU takes it
+        # On the CPU, reference code stays keyword-only (~115k chunks would take hours); on the
+        # GPU (~230 chunks/s) everything is embedded.
+        skip = "" if gpu else "AND NOT (source='thirdparty' AND kind<>'docs') "
         done = 0
         while True:
             with self.lock:
                 rows = self.db.execute(
-                    "SELECT id, path, title, text, sha FROM chunks WHERE vec IS NULL LIMIT ?",
+                    "SELECT id, path, title, text, sha FROM chunks WHERE vec IS NULL "
+                    + skip + "LIMIT ?",
                     (batch,)).fetchall()
             if not rows:
                 break
@@ -479,8 +642,15 @@ class Index:
         terms = query_terms(query)
         sources = None if source in ("", "all", None) else set(source.split(","))
 
+        tp_ok = path_prefix.startswith(("third_party", "commits/"))   # asks for reference repos
+
         def ok(src, path):
-            return (sources is None or src in sources) and path.startswith(path_prefix)
+            if sources is None:
+                if src in ("thirdparty", "commits") and not tp_ok:   # "all" leaves them out
+                    return False
+            elif src not in sources:
+                return False
+            return path.startswith(path_prefix)
 
         bm25 = []
         if terms and mode in ("hybrid", "bm25"):
@@ -636,10 +806,12 @@ def main():
         print(f"files: {ch} changed, {rm} removed  ({time.time() - t:.1f}s)")
         if not a.no_issues:
             print(f"issues: {idx.sync_issues(force=True)} changed")
+        t = time.time()
+        print(f"commits: {idx.sync_commits(force=True)} repos changed  ({time.time() - t:.1f}s)")
         if not a.no_embed:
             t = time.time()
             n = idx.embed_pending()
-            print(f"embedded {n} chunks ({time.time() - t:.1f}s)"
+            print(f"embedded {n} chunks on {getattr(idx.embedder, 'device', 'cpu')} ({time.time() - t:.1f}s)"
                   if idx.embedder.model else f"no embeddings: {idx.embedder.err}")
         print(json.dumps(idx.status(), indent=1))
     elif a.cmd == "search":
