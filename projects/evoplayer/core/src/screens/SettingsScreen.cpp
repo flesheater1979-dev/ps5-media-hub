@@ -41,6 +41,7 @@ enum class SettingKey : int {
     RefreshRate,
     HdrOutput,
     /* AUDIO */
+    VolumeBoost,
     OutputChannels,
     AudioPassthrough,
     SurroundTest,
@@ -114,6 +115,8 @@ const PreviewSpec kPreviews[] = {
      "Outputs the video's own rate (24p or 50 Hz) so motion has no judder."},
     {SettingKey::HdrOutput, EVO_RMLUI_PREVIEW_HDR,
      "Highlights like the sun and lamps get brighter without clipping. Needs an HDR10 TV."},
+    {SettingKey::VolumeBoost, EVO_RMLUI_PREVIEW_INFO,
+     "Makes quiet files louder. Very loud passages are cut off cleanly instead of wrapping into noise. Has no effect on Dolby/DTS passthrough."},
     {SettingKey::OutputChannels, EVO_RMLUI_PREVIEW_CHANNELS,
      "Stereo mixes 5.1 and 7.1 down to two speakers or headphones."},
     {SettingKey::AudioPassthrough, EVO_RMLUI_PREVIEW_PASSTHROUGH,
@@ -152,6 +155,7 @@ const SettingKey kVideoKeys[] = {
     SettingKey::HdrOutput,
 };
 const SettingKey kAudioKeys[] = {
+    SettingKey::VolumeBoost,
     SettingKey::OutputChannels, SettingKey::AudioPassthrough, SettingKey::SurroundTest, SettingKey::NavigationSounds,
 };
 const SettingKey kSubtitleKeys[] = {
@@ -328,6 +332,14 @@ SettingDef makeDef(SettingKey key, ISettingsService* settings) {
                      "../icons/icon_sun.png", 2, static_cast<int>(settings->getHdrOutputMode()));
         for (int i = 0; i < 2; ++i)
             d.opt_label[i] = settings->getHdrOutputModeName(static_cast<HdrOutputMode>(i));
+        break;
+
+    case SettingKey::VolumeBoost:
+        d = valueDef(key, "VOLUME BOOST", "RAISE QUIET FILES. LOUD PASSAGES CLIP, NEVER WRAP",
+                     "../icons/icon_volume.png", 5,
+                     static_cast<int>(settings->getVolumeBoost()));
+        for (int i = 0; i < 5; ++i)
+            d.opt_label[i] = settings->getVolumeBoostName(static_cast<VolumeBoost>(i));
         break;
 
     /* #117: read when a file opens, so it applies from the next file. */
@@ -679,6 +691,7 @@ void applyOption(SettingKey key, int opt) {
     case SettingKey::DeepBlacks:     st->setDeepBlacks(static_cast<DeepBlacks>(opt)); break;
     case SettingKey::MotionSmoothing: st->setMotionSmoothing(static_cast<MotionSmoothing>(opt)); break;
     case SettingKey::HdrOutput:      st->setHdrOutputMode(static_cast<HdrOutputMode>(opt)); break;
+    case SettingKey::VolumeBoost:    st->setVolumeBoost(static_cast<VolumeBoost>(opt)); break;
     case SettingKey::OutputChannels: st->setAudioOutputChannels(static_cast<AudioOutputChannels>(opt)); break;
     case SettingKey::SubtitleFont:   st->setSubtitleFontFace(opt); break;
     case SettingKey::SecondaryPosition: st->setSecondarySubtitlePosition(opt); break;

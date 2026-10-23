@@ -88,6 +88,17 @@ const char* SettingsService::getAudioOutputChannelsName(AudioOutputChannels chan
     }
 }
 
+const char* SettingsService::getVolumeBoostName(VolumeBoost boost) const {
+    switch (boost) {
+        case VolumeBoost::Plus50:  return "+50%";
+        case VolumeBoost::Plus100: return "+100%";
+        case VolumeBoost::Plus200: return "+200%";
+        case VolumeBoost::Plus300: return "+300%";
+        case VolumeBoost::Off:
+        default:                   return "OFF";
+    }
+}
+
 const char* SettingsService::getRefreshRateModeName(RefreshRateMode mode) const {
     switch (mode) {
         case RefreshRateMode::Off:          return "OFF";
@@ -152,7 +163,7 @@ bool SettingsService::saveSettings() {
     }
 
     std::fprintf(file,
-        "%d\n%d\n%d\n%d\n%d\n%d\n%s\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n",
+        "%d\n%d\n%d\n%d\n%d\n%d\n%s\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n",
         0, // legacy dummy profile
         m_resumePlaybackEnabled ? 1 : 0,
         static_cast<int>(m_defaultViewMode),
@@ -177,7 +188,8 @@ bool SettingsService::saveSettings() {
         static_cast<int>(m_motionSmoothing), // line 22 (#105 motion smoothing)
         static_cast<int>(m_deepBlacks),      // line 23 (#119 deep blacks)
         m_audioPassthroughEnabled ? 1 : 0,   // line 24 (HDMI bitstream passthrough)
-        m_matchVideoRate ? 1 : 0             // line 25 (experimental: match video frame rate)
+        m_matchVideoRate ? 1 : 0,            // line 25 (experimental: match video frame rate)
+        static_cast<int>(m_volumeBoost)      // line 26 (#166 volume boost)
     );
 
     std::fclose(file);
@@ -216,9 +228,10 @@ bool SettingsService::loadSettings() {
     int rawDeepBlacks = 0;
     int rawAudioPassthrough = 0;
     int rawMatchVideoRate = 0;
+    int rawVolumeBoost = 0;
 
     int readCount = std::fscanf(file,
-        "%d\n%d\n%d\n%d\n%d\n%d\n%127[^\n]\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d",
+        "%d\n%d\n%d\n%d\n%d\n%d\n%127[^\n]\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d",
         &rawProfile,
         &rawResume,
         &rawViewMode,
@@ -243,7 +256,8 @@ bool SettingsService::loadSettings() {
         &rawMotionSmoothing,
         &rawDeepBlacks,
         &rawAudioPassthrough,
-        &rawMatchVideoRate
+        &rawMatchVideoRate,
+        &rawVolumeBoost
     );
 
     std::fclose(file);
@@ -316,6 +330,9 @@ bool SettingsService::loadSettings() {
         m_audioPassthroughEnabled = (rawAudioPassthrough != 0);
     }
     if (readCount >= 25) m_matchVideoRate = (rawMatchVideoRate != 0);
+    if (readCount >= 26 && rawVolumeBoost >= 0 && rawVolumeBoost <= 4) {
+        m_volumeBoost = static_cast<VolumeBoost>(rawVolumeBoost);
+    }
 
     syncThemeToRmlUi();
     evo_feedback_refresh_lightbar();

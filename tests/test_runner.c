@@ -30,6 +30,7 @@
 #include <sys/stat.h>
 #include "evo_data_path.h"
 #include "pp_playback.h"
+#include "evo_audio_gain.h"
 
 /* Test runner assertion tracking */
 static int g_tests_run = 0;
@@ -952,6 +953,83 @@ static void test_error_reporting(void)
 }
 
 /* ==========================================================================
+ * Audio volume boost: integer gain scaling and clean clipping (#166)
+ * ========================================================================== */
+
+static void test_audio_volume_boost(void)
+{
+    TEST_START("Audio: volume boost (+50%..+300%) with clean clipping");
+
+    /* Null and zero checks */
+    evo_audio_apply_gain_s16(NULL, 10, 50);
+    int16_t empty[1] = { 100 };
+    evo_audio_apply_gain_s16(empty, 0, 50);
+    TEST_ASSERT(empty[0] == 100, "zero count leaves buffer unchanged");
+
+    /* Off (0% boost) leaves samples untouched */
+    int16_t s_off[4] = { 0, 1000, -1000, 32000 };
+    evo_audio_apply_gain_s16(s_off, 4, 0);
+    TEST_ASSERT(s_off[0] == 0 && s_off[1] == 1000 && s_off[2] == -1000 && s_off[3] == 32000,
+                "boost 0 leaves samples untouched");
+
+    /* +50% boost: multiply by 1.5 (150/100) */
+    int16_t s_50[4] = { 0, 1000, -1000, 100 };
+    evo_audio_apply_gain_s16(s_50, 4, 50);
+    TEST_ASSERT(s_50[0] == 0 && s_50[1] == 1500 && s_50[2] == -1500 && s_50[3] == 150,
+                "+50% boost scales by 1.5x");
+
+    /* +100% boost: multiply by 2.0 (200/100) */
+    int16_t s_100[2] = { 1000, -2000 };
+    evo_audio_apply_gain_s16(s_100, 2, 100);
+    TEST_ASSERT(s_100[0] == 2000 && s_100[1] == -4000,
+                "+100% boost scales by 2.0x");
+
+    /* +200% boost: multiply by 3.0 (300/100) */
+    int16_t s_200[2] = { 1000, -1000 };
+    evo_audio_apply_gain_s16(s_200, 2, 200);
+    TEST_ASSERT(s_200[0] == 3000 && s_200[1] == -3000,
+                "+200% boost scales by 3.0x");
+
+    /* +300% boost: multiply by 4.0 (400/100) */
+    int16_t s_300[2] = { 1000, -1000 };
+    evo_audio_apply_gain_s16(s_300, 2, 300);
+    TEST_ASSERT(s_300[0] == 4000 && s_300[1] == -4000,
+                "+300% boost scales by 4.0x");
+
+    /* Clean clipping at +32767 limit: no wraparound into negative numbers */
+    int16_t s_clip_pos[4] = { 20000, 25000, 32000, 32767 };
+    evo_audio_apply_gain_s16(s_clip_pos, 4, 100);
+    TEST_ASSERT(s_clip_pos[0] == 32767 && s_clip_pos[1] == 32767 &&
+                s_clip_pos[2] == 32767 && s_clip_pos[3] == 32767,
+                "positive overflow clips cleanly to +32767 without wrap");
+
+    /* Clean clipping at -32768 limit: no wraparound into positive numbers */
+    int16_t s_clip_neg[4] = { -20000, -25000, -32000, -32768 };
+    evo_audio_apply_gain_s16(s_clip_neg, 4, 100);
+    TEST_ASSERT(s_clip_neg[0] == -32768 && s_clip_neg[1] == -32768 &&
+                s_clip_neg[2] == -32768 && s_clip_neg[3] == -32768,
+                "negative overflow clips cleanly to -32768 without wrap");
+
+    /* Extreme +300% boost with full-scale values: int32 math avoids overflow */
+    int16_t s_extreme[2] = { 32767, -32768 };
+    evo_audio_apply_gain_s16(s_extreme, 2, 300);
+    TEST_ASSERT(s_extreme[0] == 32767 && s_extreme[1] == -32768,
+                "+300% boost on full-scale values clamps cleanly");
+
+    /* State setter/getter and process helper */
+    evo_audio_gain_set_boost(100);
+    TEST_ASSERT(evo_audio_gain_get_boost() == 100, "gain state setter/getter works");
+    int16_t s_proc[1] = { 500 };
+    evo_audio_gain_process(s_proc, 1);
+    TEST_ASSERT(s_proc[0] == 1000, "gain process applies active boost");
+
+    evo_audio_gain_set_boost(0);
+    TEST_ASSERT(evo_audio_gain_get_boost() == 0, "gain can be disabled");
+
+    TEST_PASS();
+}
+
+/* ==========================================================================
  * Main Test Runner Entrypoint
  * ========================================================================== */
 
@@ -977,6 +1055,7 @@ int main(void)
     test_iptv_provider_catalog_and_epg();
     test_frame_interpolation();
     test_error_reporting();
+    test_audio_volume_boost();
 
     printf("\n----------------------------------------------------------------------\n");
     printf("  Results: %d/%d passed (%d failed)\n",

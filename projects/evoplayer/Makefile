@@ -109,6 +109,7 @@ MEDIA_SRCS := \
     media/src/evo_parallel_io.c \
     media/src/evo_packet_queue.c \
     media/src/evo_audio_resample.c \
+    media/src/evo_audio_gain.c \
     media/src/evo_audio_out.c \
     media/src/evo_subtitle.c \
     media/src/evo_charset.c \

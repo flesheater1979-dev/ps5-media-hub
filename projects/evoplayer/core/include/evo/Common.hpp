@@ -138,6 +138,27 @@ enum class AudioOutputChannels : int {
     Stereo = 1
 };
 
+// Audio volume boost (#166): Off, +50%, +100%, +200%, +300%.
+// Multiplies decoded PCM before sceAudioOutOutput with clean int16 clipping.
+enum class VolumeBoost : int {
+    Off = 0,
+    Plus50 = 1,
+    Plus100 = 2,
+    Plus200 = 3,
+    Plus300 = 4
+};
+
+inline int getVolumeBoostPercent(VolumeBoost boost) {
+    switch (boost) {
+        case VolumeBoost::Plus50:  return 50;
+        case VolumeBoost::Plus100: return 100;
+        case VolumeBoost::Plus200: return 200;
+        case VolumeBoost::Plus300: return 300;
+        case VolumeBoost::Off:
+        default:                   return 0;
+    }
+}
+
 
 // File Classification for Storage Browser
 enum class FileCategory : int {

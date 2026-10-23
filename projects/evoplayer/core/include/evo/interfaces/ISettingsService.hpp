@@ -95,6 +95,10 @@ public:
     virtual void setAudioOutputChannels(AudioOutputChannels channels) = 0;
     virtual const char* getAudioOutputChannelsName(AudioOutputChannels channels) const = 0;
 
+    virtual VolumeBoost getVolumeBoost() const = 0;
+    virtual void setVolumeBoost(VolumeBoost boost) = 0;
+    virtual const char* getVolumeBoostName(VolumeBoost boost) const = 0;
+
     virtual bool isAudioPassthroughEnabled() const = 0;
     virtual void setAudioPassthroughEnabled(bool enabled) = 0;
     // Experimental: drive the panel at the video's own rate during playback

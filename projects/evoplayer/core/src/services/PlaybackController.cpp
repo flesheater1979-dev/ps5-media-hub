@@ -10,6 +10,7 @@
 #include "evo_audio_out.h"
 #include "evo_pt.h"
 #include "evo_audio_resample.h"
+#include "evo_audio_gain.h"
 #include "evo_packet_queue.h"
 #include "evo_vdec.h"
 #include "evo_sweep.h"
@@ -1248,10 +1249,13 @@ bool PlaybackController::startPlaybackSource(const PlaybackSource& source,
                      * source is downmixed to 2.0 by libswresample. */
                     bool forceStereo = false;
                     bool passthroughEnabled = false;
+                    VolumeBoost volumeBoost = VolumeBoost::Off;
                     if (ISettingsService *settings = Application::getInstance().getSettingsService()) {
                         forceStereo = settings->getAudioOutputChannels() == AudioOutputChannels::Stereo;
                         passthroughEnabled = settings->isAudioPassthroughEnabled();
+                        volumeBoost = settings->getVolumeBoost();
                     }
+                    evo_audio_gain_set_boost(getVolumeBoostPercent(volumeBoost));
 
                     if (passthroughEnabled && !forceStereo && evo_pt_probe_sink_support(aStream->codecpar->codec_id)) {
                         handle = evo_pt_open(aStream->codecpar->codec_id);
@@ -1287,9 +1291,10 @@ bool PlaybackController::startPlaybackSource(const PlaybackSource& source,
                     }
 
                     audio_handle = handle;
-                    evo_boot_log("audio: source %dch -> port %dch (output=%s, pt=%d) handle=%d",
+                    evo_boot_log("audio: source %dch -> port %dch (output=%s, pt=%d, boost=%d%%) handle=%d",
                                  chCount, evo_audio_channels,
-                                 forceStereo ? "stereo" : "auto", evo_pt_is_active(), handle);
+                                 forceStereo ? "stereo" : "auto", evo_pt_is_active(),
+                                 evo_audio_gain_get_boost(), handle);
 
                     if (audio_handle < 1) {
                         toast("AUDIO OUTPUT ERROR",
