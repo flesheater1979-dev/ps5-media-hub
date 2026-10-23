@@ -735,6 +735,15 @@ void BrowserScreen::onEnter() {
         }
     }
     resetSelection();
+    if (!m_returnFocusPath.empty()) {
+        for (size_t i = 0; i < m_items.size(); ++i) {
+            if (m_items[i].fullPath == m_returnFocusPath) {
+                m_selectedIndex = static_cast<int>(i);
+                break;
+            }
+        }
+        m_returnFocusPath.clear();
+    }
     if (!evo_jailbreak_is_open() && (m_activeSource == 0 || m_activeSource == 1)) {
         m_focusPane = BrowserFocusPane::Sidebar;
     }
@@ -919,6 +928,8 @@ void BrowserScreen::activateSelection() {
     }
 
     const auto& item = m_items[m_selectedIndex];
+    if (item.category == FileCategory::Video || item.category == FileCategory::Audio)
+        m_returnFocusPath = item.fullPath;
     auto browser = Application::getInstance().getFileSystemBrowser();
     auto playback = Application::getInstance().getPlaybackController();
     auto screenMgr = Application::getInstance().getScreenManager();

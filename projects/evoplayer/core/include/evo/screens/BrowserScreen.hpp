@@ -110,6 +110,8 @@ private:
     bool m_isSearching = false;
 
     int m_selectedIndex = 0;
+    /* #214: item last sent to playback; onEnter puts the cursor back on it. */
+    std::string m_returnFocusPath;
     int m_scrollOffset = 0;
     double m_settleMs = 0.0;
     MediaMetadataInfo m_cachedMetadata;
