@@ -23,6 +23,12 @@ extern "C" {
  * Technical messages are suppressed unless debug mode is active. */
 void toast(const char *title, const char *msg);
 
+/* A toast that stays until toast_dismiss() (#120, the update card). A later
+ * toast() replaces it; the caller re-posts it if it is still wanted. */
+void toast_sticky(const char *title, const char *msg);
+void toast_dismiss(void);
+int  toast_is_sticky(void);
+
 /* Draw the current toast into the framebuffer. Call every frame. */
 void draw_prospero_toast(uint32_t *fb);
 

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 namespace evo::kit
 {
@@ -202,6 +203,68 @@ void ToastOverlay::draw(DrawList &list, const Context &ctx) const
     else acc = p.accent;
 
     list.push_opacity((float)alpha_ / 255.0f);
+
+    /* A message with a second line is a card that asks something (the update card,
+     * #120): the first line is the detail, wrapped, the second is the button hint. */
+    const size_t nl = message_.find('\n');
+    if (nl != std::string::npos) {
+        const std::string detail = message_.substr(0, nl);
+        const std::string hint = message_.substr(nl + 1);
+        const float w = 540.0f, inner = w - 72.0f;
+        std::vector<std::string> lines;
+        std::string cur;
+        size_t at = 0;
+        while (at <= detail.size() && lines.size() < 3) {
+            size_t sp = detail.find(' ', at);
+            if (sp == std::string::npos) sp = detail.size();
+            const std::string word = detail.substr(at, sp - at);
+            const std::string trial = cur.empty() ? word : cur + " " + word;
+            if (!cur.empty() && fonts.regular.measure(trial, 18) > inner) {
+                lines.push_back(cur);
+                cur = word;
+            } else {
+                cur = trial;
+            }
+            at = sp + 1;
+        }
+        if (!cur.empty() && lines.size() < 3) lines.push_back(cur);
+        const float h = 58.0f + 26.0f * (float)lines.size() + 78.0f;
+        Rect card{1920.0f - w - 40.0f + slide_, 990.0f - h, w, h};
+        list.shadow({card.x, card.y + 10, card.w, card.h}, 20, 24, Color::rgb(0x000000, 0.5f));
+        list.rounded_rect(card, 24, p.bg_top.with_alpha(0.97f));
+        list.bordered_rect(card, 24, Color::rgb(0, 0), 1.0f, kWhite.with_alpha(0.12f));
+        list.rounded_rect({card.x + 20, card.y + 22, 6, h - 44}, 3, acc);
+        float y = card.y + 44;
+        ui::text(list, fonts.semibold, fit(fonts.semibold, title_, 22, inner), card.x + 44, y, 22, kWhite);
+        y += 14;
+        for (const std::string &l : lines) {
+            y += 26;
+            ui::text(list, fonts.regular, l, card.x + 44, y, 18, p.text_muted);
+        }
+        /* The hint is "PRIMARY|SECONDARY": two buttons, Cross and Circle, which the
+         * card owns while it is up (Application.cpp reads those two presses). */
+        const size_t bar = hint.find('|');
+        const std::string labels[2] = {hint.substr(0, bar), bar == std::string::npos ? "" : hint.substr(bar + 1)};
+        const ui::Button glyphs[2] = {ui::Button::cross, ui::Button::circle};
+        const float gap = 14.0f, bw = (inner - gap) / 2.0f, bh = 46.0f, by = card.y + h - bh - 20.0f;
+        for (int i = 0; i < 2; ++i)
+        {
+            if (labels[i].empty()) continue;
+            const Rect b{card.x + 44 + (float)i * (bw + gap), by, bw, bh};
+            const bool primary = i == 0;
+            list.rounded_rect(b, bh / 2, primary ? acc : kWhite.with_alpha(0.10f));
+            if (primary)
+                list.bordered_rect(Rect{b.x - 3, b.y - 3, b.w + 6, b.h + 6}, bh / 2 + 3, Color::rgb(0, 0), 2.0f, kWhite.with_alpha(0.9f));
+            const float gw = ui::button_width(glyphs[i], 28.0f);
+            const float tw = fonts.semibold.measure(labels[i], 18);
+            float x = b.x + (bw - (gw + 10.0f + tw)) / 2.0f;
+            ui::draw_button(list, fonts, ui::GlyphStyle::dark(), glyphs[i], x, b.y + bh / 2, 28.0f);
+            ui::text(list, fonts.semibold, labels[i], x + gw + 10.0f, b.y + bh / 2 + 6.5f, 18,
+                     primary ? ui::Painter::on(acc) : kWhite);
+        }
+        list.pop_opacity();
+        return;
+    }
 
     float text_w = std::max(fonts.semibold.measure(title_, 20), fonts.regular.measure(message_, 18));
     float w = std::min(620.0f, text_w + 70.0f);

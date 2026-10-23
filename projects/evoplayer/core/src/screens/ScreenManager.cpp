@@ -178,7 +178,7 @@ void ScreenManager::activateRail() {
         evo_feedback(EVO_FB_OPEN);
         m_railIndex = 0;
         syncNavRail();
-        Application::getInstance().requestSoftClose();
+        Application::getInstance().requestCloseAndExit();
         return;
     }
 

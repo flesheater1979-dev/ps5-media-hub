@@ -5,6 +5,9 @@
 
 namespace evo {
 
+/* #120: the next time SETTINGS > SYSTEM opens, put the cursor on SOFTWARE UPDATE. */
+void settingsFocusUpdateRow();
+
 class SettingsScreen : public StatefulScreen {
 public:
     SettingsScreen();

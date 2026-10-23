@@ -50,6 +50,7 @@ extern "C" int perf_render_fps;
 #include "evo_jailbreak.h"
 #include "evo_vdec.h"
 #include "evo_direct_mem.h"
+#include "evo_updater.h"
 #include "evo_data_path.h"
 #include "evo_speaker_cal.h"
 #include "evo_toast.h"
@@ -147,6 +148,12 @@ extern "C" { volatile sig_atomic_t g_evo_term_requested = 0; }
  * --as-needed over the whole stub directory, so no PRX .syms entry is needed
  * (and a .syms line nothing imports would brick the module load). */
 extern "C" int sceSystemServiceHideSplashScreen(void);
+extern "C" int sceSystemServiceLoadExec(const char *path, const char **arguments);
+extern "C" int sceSystemServiceGetAppId(const char *title_id);
+extern "C" int sceSystemServiceKillApp(int app_id, int a, int b, int c);
+
+/* #120: a newer release was found and the user has not answered the card yet. */
+static bool g_upd_card_wanted = false;
 #endif
 
 namespace evo {
@@ -283,6 +290,11 @@ void Application::requestSoftClose() {
     m_softCloseFrames = 0;
     evo_boot_log("soft close: requested");
     evo_boot_log_flush();
+}
+
+void Application::requestCloseAndExit() {
+    m_exitAfterSoftClose = true;
+    requestSoftClose();
 }
 
 bool Application::initialize(int argc, char** argv) {
@@ -490,7 +502,6 @@ bool Application::initScreens() {
     m_screenManager->registerScreen(std::make_unique<ImageViewerScreen>());
     m_screenManager->registerScreen(std::make_unique<ModalDialogScreen>(ModalType::ExitConfirm));
     m_screenManager->registerScreen(std::make_unique<ModalDialogScreen>(ModalType::ResumePrompt));
-
     m_screenManager->navigateTo(ScreenId::MainMenu);
     return true;
 }
@@ -1153,7 +1164,7 @@ int Application::run() {
                 /* The safe-to-close screen, not a toast: it is what the
                  * parked loop leaves latched on the panel, so it has to say
                  * everything on its own. */
-                if (m_screenManager)
+                if (m_screenManager && !m_exitAfterSoftClose)
                     m_screenManager->navigateTo(ScreenId::SafeToClose);
             }
             if (++m_softCloseFrames > 150) {     /* ~2.5 s of presented frames */
@@ -1163,6 +1174,21 @@ int Application::run() {
                              "safe to close from the switcher");
                 evo_boot_log_flush();
                 evo_usb_remote_mark_parked();
+                if (m_exitAfterSoftClose) {
+                    /* GPU is idle and everything is released: have the system close
+                     * us the way `evo-remote.sh close` does (SystemService kill), so
+                     * ShadowMount sees an ordinary kill and unmounts the image. A
+                     * LoadExec "exit" did not: it left the old image mounted, and an
+                     * updated .ffpfsc was never picked up on the next launch (#120).
+                     * Both return only if refused; then we stay parked. */
+                    const int appId = sceSystemServiceGetAppId("PPSA99039");
+                    if (appId > 0)
+                        sceSystemServiceKillApp(appId, -1, 0, 0);
+                    const int refused = sceSystemServiceLoadExec("exit", nullptr);
+                    evo_boot_log("soft close: system exit refused rc=0x%x - staying parked",
+                                 static_cast<unsigned>(refused));
+                    evo_boot_log_flush();
+                }
                 continue;
             }
         }
@@ -1203,6 +1229,57 @@ int Application::run() {
          * because a refresh finishes inside one of its callbacks and this is
          * what turns that into a main-thread callback for the screen. */
         evo_bundle_poll();
+        /* #120: one background release check ~8 s after start-up, a toast if
+         * there is a newer one. Never downloads without the user (Settings). */
+        {
+            static bool s_upd_checked = false;
+            static struct timespec s_upd_t0 = {0, 0};
+            if (!s_upd_checked) {
+                struct timespec t;
+                clock_gettime(CLOCK_MONOTONIC, &t);
+                if (s_upd_t0.tv_sec == 0) s_upd_t0 = t;
+                if (t.tv_sec - s_upd_t0.tv_sec >= 8) {
+                    s_upd_checked = true;
+                    evo_updater_check(evo_direct_mem_kernel_total_mb() > 12288);
+                }
+            }
+            /* A small card at the side, not a screen: it stays until the user
+             * answers (Options = update, Triangle = later; see the input code).
+             * It shows only on calm screens, so it never covers playback or a
+             * provider, and comes back when the user returns to one. */
+            if (evo_updater_take_new_flag()) g_upd_card_wanted = true;
+            if (g_upd_card_wanted && m_screenManager && !m_softClose) {
+                bool calm = false;
+                switch (m_screenManager->getCurrentScreenId()) {
+                case ScreenId::MainMenu:
+                case ScreenId::UsbBrowser:
+                case ScreenId::Favorites:
+                case ScreenId::RecentFiles:
+                case ScreenId::Settings:
+                case ScreenId::SettingsSystem:
+                case ScreenId::AboutSupport:
+                    calm = true;
+                    break;
+                default:
+                    break;
+                }
+                if (calm && !toast_is_sticky()) {
+                    evo_updater_status_t us;
+                    evo_updater_get(&us);
+                    char title[48];
+                    std::snprintf(title, sizeof title, "EVO %s is available", us.latest);
+                    char head[160];
+                    evo_updater_plain_notes(us.notes, head, sizeof head);
+                    if (char* sep = std::strstr(head, " - ")) *sep = '\0';
+                    char msg[240];
+                    /* "detail\nPRIMARY|SECONDARY": the card draws the two as Cross / Circle buttons. */
+                    std::snprintf(msg, sizeof msg, "%s\nUPDATE NOW|LATER", head);
+                    toast_sticky(title, msg);
+                } else if (!calm && toast_is_sticky()) {
+                    toast_dismiss();
+                }
+            }
+        }
         evo_usb_remote_poll();
         evo_webui_pump();   /* #101: the system browser, when a web UI is open */
         webui_playback_pump();
@@ -1461,6 +1538,25 @@ int Application::run() {
                     evo_feedback(EVO_FB_BOUNDARY);
                 }
                 pressed &= ~(PadButtons::L3 | (r3IsChapters ? 0u : PadButtons::R3));
+            }
+
+            /* #120: while the update card is up it has the focus, like a dialog:
+             * Cross = update now, Circle = later. Every press is consumed so the
+             * screen under it never sees one. */
+            if (g_upd_card_wanted && toast_is_sticky() && pressed) {
+                if (pressed & PadButtons::Cross) {
+                    g_upd_card_wanted = false;
+                    toast_dismiss();
+                    evo_feedback(EVO_FB_CONFIRM);
+                    evo_updater_download();
+                    settingsFocusUpdateRow();
+                    if (m_screenManager) m_screenManager->navigateTo(ScreenId::SettingsSystem);
+                } else if (pressed & PadButtons::Circle) {
+                    g_upd_card_wanted = false;
+                    toast_dismiss();
+                    evo_feedback(EVO_FB_CANCEL);
+                }
+                pressed = 0;
             }
 
             if (evo_webui_active()) {

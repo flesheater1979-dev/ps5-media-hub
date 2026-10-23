@@ -8,6 +8,7 @@
 #include "evo_hw.h"
 #include "evo_agc_runtime.h"
 #include "evo_direct_mem.h"
+#include "evo_updater.h"
 
 #include <cstddef>
 #include <cstdio>
@@ -61,6 +62,7 @@ enum class SettingKey : int {
     DeveloperTools,
     ConsoleModel,
     MemoryMode,
+    SoftwareUpdate,
     QuitEvo,
     /* EXPERIMENTAL */
     MotionSmoothing,
@@ -139,6 +141,8 @@ const PreviewSpec kPreviews[] = {
      "The console EVO detected. Some features, like Maximum AI upscaling, need a PS5 Pro."},
     {SettingKey::MemoryMode, EVO_RMLUI_PREVIEW_INFO,
      "How much GPU memory EVO was given. A PS5 Pro gives about 1.2 GiB more to the Pro memory package. Standard mode is the normal amount."},
+    {SettingKey::SoftwareUpdate, EVO_RMLUI_PREVIEW_INFO,
+     "Checks GitHub for a newer EVO. It downloads only after you say so, checks the file against GitHub's checksum, and replaces the installed image just once, when you confirm. EVO then closes; open it again from the Games row."},
     {SettingKey::QuitEvo, EVO_RMLUI_PREVIEW_INFO, "Releases everything, then close EVO from the switcher."},
 };
 
@@ -160,7 +164,7 @@ const SettingKey kInterfaceKeys[] = {
 };
 const SettingKey kSystemKeys[] = {
     SettingKey::CompatReport, SettingKey::DebugOverlay, SettingKey::DeveloperTools,
-    SettingKey::ConsoleModel, SettingKey::MemoryMode, SettingKey::QuitEvo,
+    SettingKey::ConsoleModel, SettingKey::MemoryMode, SettingKey::SoftwareUpdate, SettingKey::QuitEvo,
 };
 /*
  * Things that work but are not finished. They stay out of the other sections so
@@ -481,6 +485,47 @@ SettingDef makeDef(SettingKey key, ISettingsService* settings) {
         break;
     }
 
+    /* #120: one row walks check -> download -> install; the state is in the subtitle. */
+    case SettingKey::SoftwareUpdate: {
+        static char s_upd_sub[200];
+        evo_updater_status_t us;
+        evo_updater_get(&us);
+        const char* ver = (EVO_PLAYER_VERSION[0] == 'v' || EVO_PLAYER_VERSION[0] == 'V')
+                              ? EVO_PLAYER_VERSION : "v" EVO_PLAYER_VERSION;
+        switch (us.state) {
+        case EVO_UPD_CHECKING:
+            std::snprintf(s_upd_sub, sizeof s_upd_sub, "CHECKING GITHUB...");
+            break;
+        case EVO_UPD_UP_TO_DATE:
+            std::snprintf(s_upd_sub, sizeof s_upd_sub, "RUNNING %s - UP TO DATE. CROSS TO CHECK AGAIN", ver);
+            break;
+        case EVO_UPD_AVAILABLE:
+            std::snprintf(s_upd_sub, sizeof s_upd_sub, "%s AVAILABLE (%llu MB) - CROSS TO DOWNLOAD",
+                          us.latest, static_cast<unsigned long long>(us.total >> 20));
+            break;
+        case EVO_UPD_DOWNLOADING:
+            std::snprintf(s_upd_sub, sizeof s_upd_sub, "DOWNLOADING %s: %d%% - CROSS TO CANCEL", us.latest,
+                          us.total ? static_cast<int>(us.done * 100 / us.total) : 0);
+            break;
+        case EVO_UPD_READY:
+            std::snprintf(s_upd_sub, sizeof s_upd_sub, "%s VERIFIED - CROSS TO INSTALL AND CLOSE EVO", us.latest);
+            break;
+        case EVO_UPD_APPLIED:
+            std::snprintf(s_upd_sub, sizeof s_upd_sub, "INSTALLED - OPEN EVO AGAIN FROM THE GAMES ROW");
+            break;
+        case EVO_UPD_FAILED:
+            std::snprintf(s_upd_sub, sizeof s_upd_sub, "%s - CROSS TO TRY AGAIN", us.error);
+            break;
+        default:
+            std::snprintf(s_upd_sub, sizeof s_upd_sub, "RUNNING %s - CROSS TO CHECK FOR UPDATES", ver);
+            break;
+        }
+        for (char* c = s_upd_sub; *c; ++c)
+            if (*c >= 'a' && *c <= 'z') *c = static_cast<char>(*c - 'a' + 'A');
+        d = actionDef(key, "SOFTWARE UPDATE", s_upd_sub, "../icons/icon_activity.png", "UPDATE");
+        break;
+    }
+
     case SettingKey::QuitEvo:
         d = actionDef(key, "QUIT EVO", "RELEASE EVERYTHING, THEN CLOSE FROM THE SWITCHER",
                       "../icons/icon_power.png", "QUIT");
@@ -489,6 +534,28 @@ SettingDef makeDef(SettingKey key, ISettingsService* settings) {
 
     for (const PreviewSpec& ps : kPreviews)
         if (ps.key == key) { d.preview = ps.kind; d.benefit = ps.benefit; break; }
+
+    /* #120: once a newer release is known, the preview pane says what is new in it. */
+    if (key == SettingKey::SoftwareUpdate) {
+        evo_updater_status_t us;
+        evo_updater_get(&us);
+        static char s_upd_new[640];
+        if (us.notes[0]) {
+            char plain[560];
+            evo_updater_plain_notes(us.notes, plain, sizeof plain);
+            /* One feature per line, and no feature cut off in the middle. */
+            if (std::strlen(plain) > 500) {
+                if (char* cut = std::strrchr(plain, '-')) { if (cut > plain) cut[-1] = '\0'; }
+            }
+            std::string lines;
+            for (const char* q = plain; *q; ++q) {
+                if (q[0] == ' ' && q[1] == '-' && q[2] == ' ') { lines += "\n- "; q += 2; }
+                else lines += *q;
+            }
+            std::snprintf(s_upd_new, sizeof s_upd_new, "WHAT'S NEW IN %s\n%s", us.latest, lines.c_str());
+            d.benefit = s_upd_new;
+        }
+    }
 
     /* A collapsed VALUE row shows its current choice as the badge. */
     if (d.kind == EVO_RMLUI_ROW_VALUE) {
@@ -669,6 +736,34 @@ bool runAction(const SettingDef& def) {
             return true;
         }
         return false;
+    case SettingKey::SoftwareUpdate: {
+        evo_updater_status_t us;
+        evo_updater_get(&us);
+        evo_feedback(EVO_FB_CONFIRM);
+        switch (us.state) {
+        case EVO_UPD_AVAILABLE:
+            evo_updater_download();
+            break;
+        case EVO_UPD_DOWNLOADING:
+            evo_updater_cancel();
+            break;
+        case EVO_UPD_READY:
+            if (evo_updater_apply()) {
+                toast("EVO UPDATED", "Closing. Open EVO again from the Games row");
+                evo_boot_log("settings: update installed - closing");
+                evo_boot_log_flush();
+                Application::getInstance().requestCloseAndExit();
+            }
+            break;
+        case EVO_UPD_CHECKING:
+        case EVO_UPD_APPLIED:
+            break;
+        default:
+            evo_updater_check(evo_direct_mem_kernel_total_mb() > 12288);
+            break;
+        }
+        return true;
+    }
     /*
      * Soft close, not exit.
      *
@@ -692,7 +787,7 @@ bool runAction(const SettingDef& def) {
         evo_feedback(EVO_FB_OPEN);
         evo_boot_log("settings: QUIT EVO selected - soft close");
         evo_boot_log_flush();
-        Application::getInstance().requestSoftClose();
+        Application::getInstance().requestCloseAndExit();
         return true;
     case SettingKey::CompatReport: {
         FILE* fp = std::fopen("/mnt/usb0/evo_compatibility_report.txt", "w");
@@ -842,10 +937,18 @@ void SettingsSectionScreen::onExit() {
     saveSettings();
 }
 
+static bool s_focusUpdateRow = false;
+void settingsFocusUpdateRow() { s_focusUpdateRow = true; }
+
 void SettingsSectionScreen::onEnter() {
     StatefulScreen::onEnter();
     m_selectedIndex = 0;
     m_expandedIndex = -1;
+    if (s_focusUpdateRow && m_id == ScreenId::SettingsSystem) {
+        for (int i = 0; i < kSections[m_section].count; ++i)
+            if (kSections[m_section].keys[i] == SettingKey::SoftwareUpdate) m_selectedIndex = i;
+    }
+    s_focusUpdateRow = false;
 }
 
 void SettingsSectionScreen::navigate(int delta) {

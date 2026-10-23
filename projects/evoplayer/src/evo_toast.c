@@ -37,6 +37,7 @@ static char      prospero_toast_message[256] = {0};
 static long long prospero_toast_started_ms  = 0;
 static int       prospero_toast_active      = 0;
 static int       prospero_toast_kind        = 0;  /* 0=info 1=technical 2=error */
+static int       prospero_toast_sticky      = 0;  /* stays until toast_dismiss() (#120) */
 
 /* --------------------------------------------------------------------------
  * Classification helpers
@@ -129,6 +130,7 @@ void toast(const char *title, const char *msg)
     prospero_toast_started_ms = now_ms();
     prospero_toast_active     = 1;
     prospero_toast_kind       = error ? 2 : technical ? 1 : 0;
+    prospero_toast_sticky     = 0;
 
     /*
      * EVO: the console's own notification banner is deliberately not used.
@@ -140,6 +142,27 @@ void toast(const char *title, const char *msg)
      * is drawn inside our own frame; there is no reason for a second
      * notification system that we do not control.
      */
+}
+
+void toast_sticky(const char *title, const char *msg)
+{
+    snprintf(prospero_toast_title,   sizeof(prospero_toast_title),   "%s", title ? title : "EVO PLAYER");
+    snprintf(prospero_toast_message, sizeof(prospero_toast_message), "%s", msg ? msg : "");
+    prospero_toast_started_ms = now_ms();
+    prospero_toast_active     = 1;
+    prospero_toast_kind       = 0;
+    prospero_toast_sticky     = 1;
+}
+
+void toast_dismiss(void)
+{
+    prospero_toast_active = 0;
+    prospero_toast_sticky = 0;
+}
+
+int toast_is_sticky(void)
+{
+    return prospero_toast_active && prospero_toast_sticky;
 }
 
 void draw_prospero_toast(uint32_t *fb)
@@ -172,7 +195,7 @@ void draw_prospero_toast(uint32_t *fb)
 
     elapsed = now_ms() - prospero_toast_started_ms;
 
-    if (elapsed >= hold_ms + fade_ms) {
+    if (!prospero_toast_sticky && elapsed >= hold_ms + fade_ms) {
         prospero_toast_active = 0;
         evo_rmlui_update_toast(&p);
         return;
@@ -183,7 +206,7 @@ void draw_prospero_toast(uint32_t *fb)
     p.kind    = prospero_toast_kind;   /* 0=info 1=tech 2=error - evo_rmlui_toast_params_t matches */
     p.visible = 1;
 
-    p.alpha = (elapsed > hold_ms)
+    p.alpha = (!prospero_toast_sticky && elapsed > hold_ms)
         ? 255 - (int)((elapsed - hold_ms) * 255 / fade_ms)
         : 255;
     if (p.alpha < 0) p.alpha = 0;

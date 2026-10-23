@@ -56,6 +56,15 @@ public:
      */
     void requestSoftClose();
 
+    /*
+     * Same release-and-drain, but the app then closes itself through the system
+     * (sceSystemServiceLoadExec "exit", the graceful path - never exit()/_Exit())
+     * and never shows the safe-to-close screen. For flows that end with "relaunch
+     * EVO" (the updater, #120), where asking the user to close it is extra work.
+     * If the system refuses, it parks like requestSoftClose.
+     */
+    void requestCloseAndExit();
+
     ISettingsService* getSettingsService() const override { return m_settingsService.get(); }
     IMediaMetadataService* getMediaMetadataService() const override { return m_mediaMetadataService.get(); }
     ICoverArtService* getCoverArtService() const override { return m_coverArtService.get(); }
@@ -121,7 +130,8 @@ private:
      * on its definition. Nothing in it is written to survive a second pass. */
     bool m_shutdownDone = false;
     bool m_softClose = false;      /* soft close requested            */
-    bool m_softClosed = false;     /* parked; loop does nothing but sleep */
+    bool m_exitAfterSoftClose = false;  /* requestCloseAndExit(): leave via the system when drained */
+    bool m_softClosed = false;    /* parked; loop does nothing but sleep */
     int  m_softCloseFrames = 0;    /* frames rendered since the request */
 };
 
