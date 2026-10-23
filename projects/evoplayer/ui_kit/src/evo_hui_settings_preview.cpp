@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace evo::kit
 {
@@ -58,10 +59,66 @@ void tag(DrawList &list, const Context &ctx, const Rect &frame, const std::strin
     ui::text(list, fonts.semibold, label, t.cx(), t.cy() + 6, 16, accent ? kInk : kWhite, Align::center);
 }
 
+/* A tag pill on the right side of a frame. */
+void tag_right(DrawList &list, const Context &ctx, const Rect &frame, const std::string &label, bool accent)
+{
+    const ui::Fonts &fonts = ctx.fonts;
+    const float lw = fonts.semibold.measure(label, 16) + 24.0f;
+    Rect t{frame.x + frame.w - lw - 10.0f, frame.y + 10.0f, lw, 28.0f};
+    list.rounded_rect(t, 14.0f, accent ? ctx.palette.accent : Color::rgb(0x000000, 0.6f));
+    ui::text(list, fonts.semibold, label, t.cx(), t.cy() + 6.0f, 16, accent ? kInk : kWhite, Align::center);
+}
+
+/* Small photo credit line above the DETAILS block. */
+void credit_line(DrawList &list, const Context &ctx, const Rect &box, const Area &a)
+{
+    ui::text(list, ctx.fonts.regular, "Photos: NASA (public domain)", a.x, box.y + box.h - 146.0f, 12, ctx.palette.text_faint);
+}
+
 /* A frame border: thin for the baseline, accent for the result. */
 void frame_border(DrawList &list, const Context &ctx, const Rect &r, bool accent)
 {
     list.bordered_rect(r, 12, Color::rgb(0x000000, 0.0f), accent ? 2.0f : 1.0f, accent ? ctx.palette.accent : ctx.palette.border);
+}
+
+/* Compare wipe on a 16:9 image: sweeps left to right and back with ctx.time (~4 s period). */
+void draw_photo_wipe(DrawList &list, const Context &ctx, const Rect &rect,
+                     std::uint32_t tex_left, std::uint32_t tex_right,
+                     const std::string &left_label, const std::string &right_label,
+                     bool is_active)
+{
+    list.rounded_rect(rect, 12.0f, kWhite.with_alpha(0.04f));
+
+    if (!is_active || tex_right == 0 || tex_left == 0)
+    {
+        const std::uint32_t tex = (tex_left != 0) ? tex_left : tex_right;
+        if (tex != 0)
+            list.image(tex, rect, ::hui::gfx::kFullUv, kWhite, 12.0f);
+        frame_border(list, ctx, rect, false);
+        tag(list, ctx, rect, left_label, false);
+        return;
+    }
+
+    const float sweep = 0.5f + 0.38f * std::sin((ctx.time + 0.5f) * (2.0f * 3.14159265f / 4.0f));
+    const float split_w = std::clamp(std::round(rect.w * sweep), 1.0f, rect.w - 1.0f);
+    const float div_x = rect.x + split_w;
+
+    const Rect left_clip{rect.x, rect.y, split_w, rect.h};
+    const Rect right_clip{div_x, rect.y, (rect.x + rect.w) - div_x, rect.h};
+
+    list.push_clip(left_clip);
+    list.image(tex_left, rect, ::hui::gfx::kFullUv, kWhite, 12.0f);
+    list.pop_clip();
+
+    list.push_clip(right_clip);
+    list.image(tex_right, rect, ::hui::gfx::kFullUv, kWhite, 12.0f);
+    list.pop_clip();
+
+    list.line(div_x, rect.y + 1.0f, div_x, rect.y + rect.h - 1.0f, 2.0f, kWhite);
+    frame_border(list, ctx, rect, true);
+
+    tag(list, ctx, rect, left_label, false);
+    tag_right(list, ctx, rect, right_label, true);
 }
 
 /* Choice chips, the highlighted one filled; wraps to a second row. Returns the y below them. */
@@ -177,22 +234,60 @@ void draw_deep_blacks(DrawList &list, const Context &ctx, const Rect &box, const
     benefit(list, ctx, a, y + 40.0f, pv.benefit);
 }
 
-/* ---- UPSCALING: a blocky low-res crop next to the highlighted choice. ---- */
+/* ---- UPSCALING: 16:9 comparison wipe with real photos and three thumbnails. ---- */
 void draw_upscaling(DrawList &list, const Context &ctx, const Rect &box, const SettingsPreview &pv)
 {
     Area a = begin_card(list, ctx, box, pv);
-    Rect l, r;
-    const float bottom = frame_pair(a, l, r);
-    const int lvl = std::max(pv.index, 0);
-    mock_scene(list, l, 0.0f, true);
-    mock_scene(list, r, 0.0f, lvl == 0);
-    frame_border(list, ctx, l, false);
-    frame_border(list, ctx, r, true);
-    const auto labels = chip_labels(pv);
-    tag(list, ctx, l, "OFF", false);
-    tag(list, ctx, r, labels[std::min<size_t>(lvl, labels.size() - 1)], true);
-    const float y = chips(list, ctx, a, bottom + 28.0f, labels, pv.index);
-    benefit(list, ctx, a, y + 40.0f, pv.benefit);
+
+    static const char *const kUpImages[3] = {
+        "../icons/preview_up_off.png",
+        "../icons/preview_up_lanczos.png",
+        "../icons/preview_up_ai.png",
+    };
+
+    std::vector<std::string> labels = pv.choices;
+    if (labels.empty())
+        labels = {"OFF", "SHARP", "AI"};
+    for (std::string &l : labels)
+        l = ui::upper(l);
+
+    const int sel = std::clamp(pv.index, 0, 2);
+    const std::string choice_name = (sel < static_cast<int>(labels.size())) ? labels[sel] : (sel == 1 ? "SHARP" : "AI");
+    const bool is_off = (sel == 0);
+
+    const float img_w = a.w;
+    const float img_h = std::round(img_w * 9.0f / 16.0f);
+    const Rect img_rect{a.x, a.top, img_w, img_h};
+
+    const std::uint32_t tex_off = ctx.textures.icon(kUpImages[0]);
+    const std::uint32_t tex_sel = ctx.textures.icon(kUpImages[sel]);
+
+    draw_photo_wipe(list, ctx, img_rect, tex_off, tex_sel, "OFF", choice_name, !is_off);
+
+    const int count = 3;
+    const float gap = 12.0f;
+    const float thumb_w = std::floor((a.w - static_cast<float>(count - 1) * gap) / static_cast<float>(count));
+    const float thumb_h = std::round(thumb_w * 9.0f / 16.0f);
+    const float thumb_y = img_rect.y + img_rect.h + 12.0f;
+
+    for (int i = 0; i < count; ++i)
+    {
+        const Rect thumb_r{a.x + static_cast<float>(i) * (thumb_w + gap), thumb_y, thumb_w, thumb_h};
+        const bool sel_thumb = (i == sel);
+        list.rounded_rect(thumb_r, 6.0f, kWhite.with_alpha(0.04f));
+        if (const std::uint32_t t = ctx.textures.icon(kUpImages[i]))
+            list.image(t, thumb_r, ::hui::gfx::kFullUv, kWhite.with_alpha(sel_thumb ? 1.0f : 0.75f), 6.0f);
+        list.bordered_rect(thumb_r, 6.0f, Color::rgb(0x000000, 0.0f), sel_thumb ? 2.0f : 1.0f,
+                           sel_thumb ? ctx.palette.accent : ctx.palette.border);
+        if (sel_thumb)
+            list.glow(thumb_r, 6.0f, 6.0f, ctx.palette.accent.with_alpha(0.35f));
+
+        const std::string &lbl = (i < static_cast<int>(labels.size())) ? labels[i] : (i == 0 ? "OFF" : (i == 1 ? "SHARP" : "AI"));
+        ui::text(list, ctx.fonts.semibold, lbl, thumb_r.cx(), thumb_y + thumb_h + 18.0f, 15,
+                 sel_thumb ? ctx.palette.accent : ctx.palette.text_muted, Align::center);
+    }
+
+    credit_line(list, ctx, box, a);
 }
 
 /* ---- 1. AI NETWORK: four rising bars for DETAIL and thinner GPU COST. ---- */
@@ -235,143 +330,290 @@ void draw_ai_network(DrawList &list, const Context &ctx, const Rect &box, const 
     benefit(list, ctx, a, y + 40.0f, pv.benefit);
 }
 
-/* ---- 2. HDR OUTPUT: SDR vs bloomed HDR10 scene. ---- */
+/* ---- 2. HDR OUTPUT: auto wipe between SDR and HDR photos. ---- */
 void draw_hdr(DrawList &list, const Context &ctx, const Rect &box, const SettingsPreview &pv)
 {
     Area a = begin_card(list, ctx, box, pv);
-    Rect l, r;
-    const float bottom = frame_pair(a, l, r);
-    /* Real choices are AUTO (MATCH CONTENT) and OFF (TONE-MAP TO SDR): decide by the label. */
-    const auto hdr_labels = chip_labels(pv);
-    const bool is_hdr = pv.index >= 0 && pv.index < static_cast<int>(hdr_labels.size())
-                            ? hdr_labels[pv.index].find("OFF") == std::string::npos
+
+    static const char *const kHdrSdr = "../icons/preview_hdr_sdr.png";
+    static const char *const kHdrHdr = "../icons/preview_hdr_hdr.png";
+
+    const auto raw_labels = chip_labels(pv);
+    const bool is_hdr = pv.index >= 0 && pv.index < static_cast<int>(raw_labels.size())
+                            ? raw_labels[pv.index].find("OFF") == std::string::npos
                             : pv.index == 1;
-    mock_scene(list, l, 0.0f, false, false);
-    mock_scene(list, r, 0.0f, false, is_hdr);
-    frame_border(list, ctx, l, false);
-    frame_border(list, ctx, r, is_hdr);
-    tag(list, ctx, l, "SDR", false);
-    tag(list, ctx, r, is_hdr ? "HDR10" : "SDR", is_hdr);
-    const auto labels = chip_labels(pv);
-    const float y = chips(list, ctx, a, bottom + 28.0f, labels, pv.index);
-    benefit(list, ctx, a, y + 40.0f, pv.benefit);
+
+    const float img_w = a.w;
+    const float img_h = std::round(img_w * 9.0f / 16.0f);
+    const Rect img_rect{a.x, a.top, img_w, img_h};
+
+    const std::uint32_t tex_sdr = ctx.textures.icon(kHdrSdr);
+    const std::uint32_t tex_hdr = ctx.textures.icon(kHdrHdr);
+
+    draw_photo_wipe(list, ctx, img_rect, tex_sdr, tex_hdr, "SDR", "HDR", is_hdr);
+
+    const float l1_y = img_rect.y + img_rect.h + 34.0f;
+    ui::text(list, ctx.fonts.regular, "Bright areas keep their detail", a.x, l1_y, 16, kWhite);
+    const float l2_y = l1_y + 22.0f;
+    ui::text(list, ctx.fonts.regular, "Needs an HDR10 TV", a.x, l2_y, 15, ctx.palette.text_faint);
+
+    std::vector<std::string> clean_labels;
+    for (const std::string &l : raw_labels)
+    {
+        if (l.find("OFF") != std::string::npos)
+            clean_labels.push_back("OFF");
+        else if (l.find("AUTO") != std::string::npos || l.find("MATCH") != std::string::npos)
+            clean_labels.push_back("AUTO");
+        else
+            clean_labels.push_back(l);
+    }
+    if (clean_labels.empty())
+        clean_labels = {"OFF", "AUTO"};
+
+    chips(list, ctx, a, l2_y + 14.0f, clean_labels, pv.index);
+
+    credit_line(list, ctx, box, a);
 }
 
-/* ---- 3. MOTION SMOOTHING: 24 fps steps vs smoothed trail. ---- */
+/* ---- 3. MOTION SMOOTHING: 24 fps stepped motion vs smooth continuous glide. ---- */
 void draw_motion(DrawList &list, const Context &ctx, const Rect &box, const SettingsPreview &pv)
 {
     Area a = begin_card(list, ctx, box, pv);
+    const ui::Fonts &fonts = ctx.fonts;
     const Palette &p = ctx.palette;
-    const float sh = 68.0f;
-    Rect s1{a.x, a.top, a.w, sh};
-    Rect s2{a.x, a.top + sh + 16.0f, a.w, sh};
 
-    list.rounded_rect(s1, 12, kWhite.with_alpha(0.04f));
-    list.rounded_rect(s2, 12, kWhite.with_alpha(0.04f));
-    frame_border(list, ctx, s1, false);
-    tag(list, ctx, s1, "24 FPS", false);
+    const bool on = (pv.index > 0);
 
-    const float span_x0 = s1.x + 150.0f;
-    const float span_w = s1.w - 180.0f;
-    for (int i = 0; i < 4; ++i)
+    /* 16:9 cinema/video screen */
+    const float sw = 352.0f, sh = 198.0f;
+    Rect screen{a.x + (a.w - sw) * 0.5f, a.top, sw, sh};
+
+    list.gradient_rect(screen, 12.0f, Color::rgb(0x0e111a), Color::rgb(0x06080d));
+    frame_border(list, ctx, screen, on);
+    if (on)
+        list.glow(screen, 12.0f, 10.0f, p.accent.with_alpha(0.18f));
+
+    tag(list, ctx, screen, on ? "SMOOTHING ON" : "SMOOTHING OFF", on);
+
+    /* Ball motion track inside the screen */
+    list.push_clip(screen);
+
+    /* Subtle cinematic pan background: horizon line and distant vertical beacons */
+    const float ground_y = screen.y + sh * 0.78f;
+    list.line(screen.x, ground_y, screen.x + sw, ground_y, 1.0f, kWhite.with_alpha(0.08f));
+    for (int i = 0; i < 5; ++i)
     {
-        const float bx = span_x0 + (span_w / 3.0f) * static_cast<float>(i);
-        list.rounded_rect({bx - 6.0f, s1.cy() - 18.0f, 12.0f, 36.0f}, 4, kWhite);
+        const float bx_bg = screen.x + 36.0f + static_cast<float>(i) * 70.0f;
+        list.line(bx_bg, ground_y - 20.0f, bx_bg, ground_y, 1.0f, kWhite.with_alpha(0.04f));
     }
 
-    const bool smoothed = (pv.index > 0);
-    frame_border(list, ctx, s2, smoothed);
-    tag(list, ctx, s2, smoothed ? "SMOOTHED" : "OFF", smoothed);
+    const float track_x0 = screen.x + 32.0f;
+    const float track_x1 = screen.x + sw - 32.0f;
+    const float track_w = track_x1 - track_x0;
+    const float track_y = screen.y + sh * 0.44f;
 
-    if (!smoothed)
+    /* Guide rail */
+    list.line(track_x0, track_y, track_x1, track_y, 2.0f, kWhite.with_alpha(0.10f));
+    list.circle(track_x0, track_y, 3.0f, kWhite.with_alpha(0.20f));
+    list.circle(track_x1, track_y, 3.0f, kWhite.with_alpha(0.20f));
+
+    /* 2.4 second loop */
+    const float loop_dur = 2.4f;
+    const float norm_t = std::fmod(ctx.time, loop_dur) / loop_dur;
+    const float ball_r = 10.0f;
+
+    if (!on)
     {
-        for (int i = 0; i < 4; ++i)
+        /* OFF: visible steps (about 6 steps per sec = 14 steps over 2.4s) with faint ghost circles left at each step */
+        const int total_steps = 14;
+        int cur_step = static_cast<int>(norm_t * static_cast<float>(total_steps));
+        if (cur_step >= total_steps)
+            cur_step = total_steps - 1;
+
+        /* Faint ghost circles left behind at earlier steps */
+        for (int s = 0; s < cur_step; ++s)
         {
-            const float bx = span_x0 + (span_w / 3.0f) * static_cast<float>(i);
-            list.rounded_rect({bx - 6.0f, s2.cy() - 18.0f, 12.0f, 36.0f}, 4, kWhite.with_alpha(0.8f));
+            const float gx = track_x0 + track_w * (static_cast<float>(s) / static_cast<float>(total_steps - 1));
+            const float age = static_cast<float>(cur_step - s);
+            const float alpha = std::max(0.05f, 0.24f - age * 0.015f);
+            list.circle(gx, track_y, ball_r - 1.0f, kWhite.with_alpha(alpha));
+            list.ring(gx, track_y, ball_r - 1.0f, 1.0f, kWhite.with_alpha(alpha * 1.3f));
         }
+
+        /* Active ball at cur_step */
+        const float cur_x = track_x0 + track_w * (static_cast<float>(cur_step) / static_cast<float>(total_steps - 1));
+        list.glow({cur_x - ball_r, track_y - ball_r, ball_r * 2.0f, ball_r * 2.0f}, ball_r, 6.0f, kWhite.with_alpha(0.30f));
+        list.circle(cur_x, track_y, ball_r, kWhite);
+        list.circle(cur_x - 3.0f, track_y - 3.0f, 3.0f, Color::rgb(0xffffff, 0.85f));
     }
     else
     {
-        for (int i = 0; i < 12; ++i)
+        /* ON: ball glides continuously with a soft fading trail */
+        const float cur_x = track_x0 + track_w * norm_t;
+
+        /* Soft fading trail */
+        const int trail_samples = 14;
+        for (int k = trail_samples; k >= 1; --k)
         {
-            const float t = static_cast<float>(i) / 11.0f;
-            const float bx = span_x0 + span_w * t;
-            const float alpha = 0.12f + 0.88f * t;
-            list.rounded_rect({bx - 5.0f, s2.cy() - 18.0f, 10.0f, 36.0f}, 3, p.accent.with_alpha(alpha));
-            if (i == 11)
-                list.glow({bx - 5.0f, s2.cy() - 18.0f, 10.0f, 36.0f}, 3, 8.0f, p.accent.with_alpha(0.5f));
+            const float lag = static_cast<float>(k) * 0.022f;
+            const float tx = cur_x - track_w * lag;
+            if (tx >= track_x0)
+            {
+                const float fade = 1.0f - (static_cast<float>(k) / static_cast<float>(trail_samples));
+                const float alpha = 0.38f * fade;
+                const float tr = ball_r * (0.50f + 0.50f * fade);
+                list.circle(tx, track_y, tr, p.accent.with_alpha(alpha));
+            }
         }
+
+        /* Glowing continuous ball */
+        list.glow({cur_x - ball_r - 2.0f, track_y - ball_r - 2.0f, (ball_r + 2.0f) * 2.0f, (ball_r + 2.0f) * 2.0f},
+                  ball_r + 2.0f, 10.0f, p.accent.with_alpha(0.65f));
+        list.circle(cur_x, track_y, ball_r, kWhite);
+        list.circle(cur_x - 3.0f, track_y - 3.0f, 3.0f, Color::rgb(0xffffff, 0.9f));
+    }
+
+    list.pop_clip();
+
+    /* Captions below the screen */
+    const float cap_y = screen.y + screen.h + 20.0f;
+    if (!on)
+    {
+        ui::text(list, fonts.semibold, "Normal film motion", a.x, cap_y, 16, kWhite, Align::left);
+    }
+    else
+    {
+        ui::text(list, fonts.semibold, "Extra smooth, like a video call or sports", a.x, cap_y, 16, p.accent, Align::left);
+        ui::text(list, fonts.regular, "Films can look too smooth", a.x, cap_y + 22.0f, 14, p.text_muted, Align::left);
     }
 
     const auto labels = chip_labels(pv);
-    const float y = chips(list, ctx, a, s2.y + s2.h + 28.0f, labels, pv.index);
-    benefit(list, ctx, a, y + 40.0f, pv.benefit);
+    const float chips_y = screen.y + screen.h + (on ? 56.0f : 36.0f);
+    const float y = chips(list, ctx, a, chips_y, labels, pv.index);
+    benefit(list, ctx, a, y + 24.0f, pv.benefit);
 }
 
-/* ---- 4. REFRESH RATE (120 Hz output): frame cadence timeline. ---- */
+/* ---- 4. REFRESH RATE (120 Hz output): 60 Hz uneven stutter vs 120 Hz even lanes. ---- */
 void draw_refresh(DrawList &list, const Context &ctx, const Rect &box, const SettingsPreview &pv)
 {
     Area a = begin_card(list, ctx, box, pv);
     const ui::Fonts &fonts = ctx.fonts;
     const Palette &p = ctx.palette;
 
-    ui::text(list, fonts.semibold, "24 FPS FILM", a.x, a.top + 14.0f, 14, p.text_muted, Align::left, 2.0f);
-    const float row1_y = a.top + 24.0f;
-    for (int i = 0; i < 24; ++i)
-    {
-        const float tx = a.x + (a.w - 2.0f) * (static_cast<float>(i) / 23.0f);
-        list.line(tx, row1_y, tx, row1_y + 10.0f, 1.5f, kWhite.with_alpha(0.6f));
-    }
+    /* pv.index == 0 is OFF (60 Hz); > 0 is 120 Hz (Always or PlaybackOnly) */
+    const bool is_120 = (pv.index > 0);
 
-    ui::text(list, fonts.semibold, "120 HZ OUTPUT", a.x, a.top + 50.0f, 14, p.text_muted, Align::left, 2.0f);
-    const float row2_y = a.top + 60.0f;
-    for (int i = 0; i < 120; ++i)
-    {
-        const float tx = a.x + (a.w - 1.0f) * (static_cast<float>(i) / 119.0f);
-        list.line(tx, row2_y, tx, row2_y + 8.0f, 1.0f, kWhite.with_alpha(0.35f));
-    }
+    const float lane_w = a.w;
+    const float lane_h = 76.0f;
+    Rect lane1{a.x, a.top, lane_w, lane_h};
+    Rect lane2{a.x, a.top + lane_h + 12.0f, lane_w, lane_h};
 
-    const bool is_60hz = (pv.index == 0);
-    const bool is_120hz = (pv.index > 0);
-    const Color col_60 = is_60hz ? p.accent : p.text_muted;
-    const Color col_120 = is_120hz ? p.accent : p.text_muted;
+    /* Common timing for both lanes */
+    const float loop_dur = 2.4f;
+    const float t = std::fmod(ctx.time, loop_dur);
+    const float ball_r = 9.0f;
 
-    ui::text(list, fonts.semibold, "60 HZ: UNEVEN", a.x, a.top + 94.0f, 14, col_60, Align::left, 2.0f);
-    const int cadence_60[4] = {2, 3, 2, 3};
-    const float block_y1 = a.top + 104.0f;
-    const float block_gap = 4.0f;
-    const float avail_w = a.w - 3.0f * block_gap;
-    float cur_x1 = a.x;
-    for (int k = 0; k < 4; ++k)
-    {
-        const float bw = avail_w * (static_cast<float>(cadence_60[k]) / 10.0f);
-        Rect br{cur_x1, block_y1, bw, 30.0f};
-        list.rounded_rect(br, 6, is_60hz ? p.accent.with_alpha(0.25f) : kWhite.with_alpha(0.06f));
-        list.bordered_rect(br, 6, Color::rgb(0,0), is_60hz ? 2.0f : 1.0f, is_60hz ? p.accent : p.border);
-        ui::text(list, fonts.semibold, std::to_string(cadence_60[k]), br.cx(), br.cy() + 5.0f, 14, is_60hz ? kWhite : p.text_faint, Align::center);
-        cur_x1 += bw + block_gap;
-    }
+    auto draw_lane = [&](const Rect &lane, const std::string &badge_text, const std::string &caption,
+                         bool active, bool is_top_60hz) {
+        /* Base container */
+        const Color bg = active ? Color::rgb(0x0e1322) : Color::rgb(0x07090f, 0.6f);
+        list.rounded_rect(lane, 12.0f, bg);
+        frame_border(list, ctx, lane, active);
+        if (active)
+            list.glow(lane, 12.0f, 8.0f, p.accent.with_alpha(0.20f));
 
-    ui::text(list, fonts.semibold, "120 HZ: EVEN", a.x, a.top + 158.0f, 14, col_120, Align::left, 2.0f);
-    const float block_y2 = a.top + 168.0f;
-    float cur_x2 = a.x;
-    for (int k = 0; k < 4; ++k)
-    {
-        const float bw = avail_w * 0.25f;
-        Rect br{cur_x2, block_y2, bw, 30.0f};
-        list.rounded_rect(br, 6, is_120hz ? p.accent.with_alpha(0.25f) : kWhite.with_alpha(0.06f));
-        list.bordered_rect(br, 6, Color::rgb(0,0), is_120hz ? 2.0f : 1.0f, is_120hz ? p.accent : p.border);
-        ui::text(list, fonts.semibold, "5", br.cx(), br.cy() + 5.0f, 14, is_120hz ? kWhite : p.text_faint, Align::center);
-        cur_x2 += bw + block_gap;
-    }
+        /* Badge on left */
+        const float badge_w = 76.0f;
+        Rect badge_r{lane.x + 14.0f, lane.y + 12.0f, badge_w, 24.0f};
+        list.rounded_rect(badge_r, 12.0f, active ? p.accent : kWhite.with_alpha(0.08f));
+        ui::text(list, fonts.semibold, badge_text, badge_r.cx(), badge_r.cy() + 5.0f, 13,
+                 active ? kInk : p.text_muted, Align::center);
+
+        /* Caption below badge */
+        ui::text(list, fonts.regular, caption, lane.x + 14.0f, lane.y + 54.0f, 13,
+                 active ? kWhite : p.text_faint, Align::left);
+
+        /* Inset track screen on the right */
+        const float track_screen_x = lane.x + 184.0f;
+        const float track_screen_w = lane.w - 198.0f;
+        Rect track_screen{track_screen_x, lane.y + 10.0f, track_screen_w, lane.h - 20.0f};
+
+        list.rounded_rect(track_screen, 8.0f, Color::rgb(0x05070c));
+        list.bordered_rect(track_screen, 8.0f, Color::rgb(0, 0), 1.0f,
+                           active ? p.accent.with_alpha(0.35f) : kWhite.with_alpha(0.06f));
+
+        const float bx0 = track_screen.x + 18.0f;
+        const float bx1 = track_screen.x + track_screen_w - 18.0f;
+        const float bw = bx1 - bx0;
+        const float track_y = track_screen.cy();
+
+        /* Track line */
+        list.line(bx0, track_y, bx1, track_y, 1.5f, kWhite.with_alpha(active ? 0.14f : 0.05f));
+
+        /* Discrete step positions */
+        const int total_steps = 10;
+        for (int i = 0; i < total_steps; ++i)
+        {
+            const float sx = bx0 + bw * (static_cast<float>(i) / static_cast<float>(total_steps - 1));
+            list.circle(sx, track_y, 2.0f, kWhite.with_alpha(active ? 0.18f : 0.07f));
+        }
+
+        /* Calculate ball position */
+        float ball_x = bx0;
+        if (is_top_60hz)
+        {
+            /* 60 Hz: uneven timing (alternating step weights 3 and 2: lingering every other step) */
+            const float weight_t = (t / loop_dur) * 25.0f;
+            float cum = 0.0f;
+            int step_60 = 0;
+            for (int i = 0; i < total_steps; ++i)
+            {
+                const float w = (i % 2 == 0) ? 3.0f : 2.0f;
+                if (weight_t < cum + w || i == total_steps - 1)
+                {
+                    step_60 = i;
+                    break;
+                }
+                cum += w;
+            }
+            ball_x = bx0 + bw * (static_cast<float>(step_60) / static_cast<float>(total_steps - 1));
+        }
+        else
+        {
+            /* 120 Hz: perfectly even steps */
+            int step_120 = static_cast<int>((t / loop_dur) * static_cast<float>(total_steps));
+            if (step_120 >= total_steps)
+                step_120 = total_steps - 1;
+            ball_x = bx0 + bw * (static_cast<float>(step_120) / static_cast<float>(total_steps - 1));
+        }
+
+        /* Draw ball */
+        if (active)
+        {
+            list.glow({ball_x - ball_r, track_y - ball_r, ball_r * 2.0f, ball_r * 2.0f},
+                      ball_r, 6.0f, p.accent.with_alpha(0.60f));
+            list.circle(ball_x, track_y, ball_r, kWhite);
+            list.circle(ball_x - 2.5f, track_y - 2.5f, 2.5f, Color::rgb(0xffffff, 0.9f));
+        }
+        else
+        {
+            list.circle(ball_x, track_y, ball_r, kWhite.with_alpha(0.35f));
+        }
+    };
+
+    /* Top lane: 60 Hz */
+    draw_lane(lane1, "60 HZ", "Slight stutter in films", !is_120, true);
+
+    /* Bottom lane: 120 Hz */
+    draw_lane(lane2, "120 HZ", "Even and smooth", is_120, false);
 
     const auto labels = chip_labels(pv);
-    const float y = chips(list, ctx, a, block_y2 + 30.0f + 24.0f, labels, pv.index);
-    benefit(list, ctx, a, y + 40.0f, pv.benefit);
+    const float chips_y = lane2.y + lane2.h + 24.0f;
+    const float y = chips(list, ctx, a, chips_y, labels, pv.index);
+    benefit(list, ctx, a, y + 24.0f, pv.benefit);
 }
 
-/* ---- 5. MATCH VIDEO RATE: 60 Hz judder vs 1:1 smooth timeline. ---- */
+/* ---- 5. MATCH VIDEO RATE: mock TV with mode badge and ball lane. ---- */
 void draw_match_rate(DrawList &list, const Context &ctx, const Rect &box, const SettingsPreview &pv)
 {
     Area a = begin_card(list, ctx, box, pv);
@@ -379,47 +621,163 @@ void draw_match_rate(DrawList &list, const Context &ctx, const Rect &box, const 
     const Palette &p = ctx.palette;
 
     const bool on = (pv.index == 1);
-    const Color col_off = !on ? p.accent : p.text_muted;
-    const Color col_on = on ? p.accent : p.text_muted;
 
-    ui::text(list, fonts.semibold, "OFF: 60 HZ OUTPUT (3:2 PULLDOWN)", a.x, a.top + 16.0f, 14, col_off, Align::left, 2.0f);
-    const float block_gap = 4.0f;
-    const float avail_w = a.w - 3.0f * block_gap - 80.0f;
-    const int cadence[4] = {2, 3, 2, 3};
-    const float y1 = a.top + 28.0f;
-    float cx1 = a.x;
-    for (int k = 0; k < 4; ++k)
-    {
-        const float bw = avail_w * (static_cast<float>(cadence[k]) / 10.0f);
-        Rect br{cx1, y1, bw, 32.0f};
-        list.rounded_rect(br, 6, !on ? p.accent.with_alpha(0.25f) : kWhite.with_alpha(0.06f));
-        list.bordered_rect(br, 6, Color::rgb(0,0), !on ? 2.0f : 1.0f, !on ? p.accent : p.border);
-        ui::text(list, fonts.semibold, std::to_string(cadence[k]), br.cx(), br.cy() + 5.0f, 14, !on ? kWhite : p.text_faint, Align::center);
-        cx1 += bw + block_gap;
-    }
-    Rect tag1{cx1 + 8.0f, y1 + 2.0f, 68.0f, 28.0f};
-    list.rounded_rect(tag1, 14, !on ? Color::rgb(0xff6b4a) : Color::rgb(0x000000, 0.5f));
-    ui::text(list, fonts.semibold, "JUDDER", tag1.cx(), tag1.cy() + 5.0f, 13, kWhite, Align::center);
+    /* Mock TV bezel and screen */
+    const float tv_w = 416.0f, tv_h = 152.0f;
+    Rect tv{a.x + (a.w - tv_w) * 0.5f, a.top, tv_w, tv_h};
 
-    ui::text(list, fonts.semibold, "ON: 1:1 MATCHED RATE (24P)", a.x, a.top + 90.0f, 14, col_on, Align::left, 2.0f);
-    const float y2 = a.top + 102.0f;
-    float cx2 = a.x;
-    for (int k = 0; k < 4; ++k)
+    /* TV Stand: base neck and wide stand foot */
+
+    /* TV outer frame */
+    list.rounded_rect(tv, 12.0f, Color::rgb(0x10131c));
+    frame_border(list, ctx, tv, on);
+    if (on)
+        list.glow(tv, 12.0f, 8.0f, p.accent.with_alpha(0.18f));
+
+    /* Inner display screen */
+    Rect screen{tv.x + 8.0f, tv.y + 8.0f, tv.w - 16.0f, tv.h - 16.0f};
+    list.rounded_rect(screen, 8.0f, Color::rgb(0x06080e));
+    list.bordered_rect(screen, 8.0f, Color::rgb(0, 0), 1.0f, kWhite.with_alpha(0.06f));
+
+    list.push_clip(screen);
+
+    /* Mode badge animation in ON mode:
+     * Cycle: 4.0s
+     * 0.0s - 0.9s: 60 Hz initial
+     * 0.9s - 1.2s: brief switch blink
+     * 1.2s - 4.0s: switched to "24 Hz film mode" / "TV matches the film"
+     * At ctx.time = 1.5s, it is comfortably in the matched film state!
+     */
+    const float cycle_dur = 4.0f;
+    const float phase = std::fmod(ctx.time, cycle_dur);
+    const bool in_switched_state = on && (phase >= 1.2f || ctx.time <= 0.01f);
+    const bool is_blinking = on && (phase >= 0.9f && phase < 1.2f);
+
+    /* TV top bar: left status indicator */
+    list.circle(screen.x + 16.0f, screen.y + 20.0f, 3.5f,
+                on ? (in_switched_state ? p.accent : Color::rgb(0xffa500)) : p.text_muted);
+    ui::text(list, fonts.semibold, on ? "HDMI 1 (24P FILM)" : "HDMI 1",
+             screen.x + 26.0f, screen.y + 24.0f, 11, p.text_muted, Align::left, 1.5f);
+
+    /* Mode Badge on the top right */
+    std::string badge_label;
+    bool badge_accent = false;
+    if (!on)
     {
-        const float bw = avail_w * 0.25f;
-        Rect br{cx2, y2, bw, 32.0f};
-        list.rounded_rect(br, 6, on ? p.accent.with_alpha(0.25f) : kWhite.with_alpha(0.06f));
-        list.bordered_rect(br, 6, Color::rgb(0,0), on ? 2.0f : 1.0f, on ? p.accent : p.border);
-        ui::text(list, fonts.semibold, "1:1", br.cx(), br.cy() + 5.0f, 14, on ? kWhite : p.text_faint, Align::center);
-        cx2 += bw + block_gap;
+        badge_label = "TV stays at 60 Hz";
+        badge_accent = false;
     }
-    Rect tag2{cx2 + 8.0f, y2 + 2.0f, 68.0f, 28.0f};
-    list.rounded_rect(tag2, 14, on ? p.accent : Color::rgb(0x000000, 0.5f));
-    ui::text(list, fonts.semibold, "SMOOTH", tag2.cx(), tag2.cy() + 5.0f, 13, on ? kInk : kWhite, Align::center);
+    else
+    {
+        if (in_switched_state)
+        {
+            badge_label = "TV matches the film";
+            badge_accent = true;
+        }
+        else
+        {
+            badge_label = "TV stays at 60 Hz";
+            badge_accent = false;
+        }
+    }
+
+    const float badge_w = fonts.semibold.measure(badge_label, 13) + 24.0f;
+    Rect badge_r{screen.x + screen.w - badge_w - 12.0f, screen.y + 10.0f, badge_w, 24.0f};
+    list.rounded_rect(badge_r, 12.0f, badge_accent ? p.accent : Color::rgb(0x000000, 0.65f));
+    if (!badge_accent)
+        list.bordered_rect(badge_r, 12.0f, Color::rgb(0, 0), 1.0f, p.border.with_alpha(0.5f));
+    ui::text(list, fonts.semibold, badge_label, badge_r.cx(), badge_r.cy() + 5.0f, 13,
+             badge_accent ? kInk : kWhite, Align::center);
+
+    /* Ball lane inside TV */
+    Rect tv_lane{screen.x + 14.0f, screen.y + 44.0f, screen.w - 28.0f, 80.0f};
+    list.rounded_rect(tv_lane, 8.0f, Color::rgb(0x0a0d16));
+    list.bordered_rect(tv_lane, 8.0f, Color::rgb(0, 0), 1.0f,
+                       on ? p.accent.with_alpha(0.25f) : kWhite.with_alpha(0.06f));
+
+    const float bx0 = tv_lane.x + 20.0f;
+    const float bx1 = tv_lane.x + tv_lane.w - 20.0f;
+    const float bw = bx1 - bx0;
+    const float track_y = tv_lane.cy();
+
+    /* Track line */
+    list.line(bx0, track_y, bx1, track_y, 1.5f, kWhite.with_alpha(on ? 0.14f : 0.06f));
+
+    const int total_steps = 10;
+    for (int i = 0; i < total_steps; ++i)
+    {
+        const float sx = bx0 + bw * (static_cast<float>(i) / static_cast<float>(total_steps - 1));
+        list.circle(sx, track_y, 2.0f, kWhite.with_alpha(on ? 0.18f : 0.08f));
+    }
+
+    /* Ball motion:
+     * OFF: ball with uneven steps (judder: alternating weights 3 and 2)
+     * ON: ball with perfectly even steps
+     */
+    const float loop_dur = 2.4f;
+    const float t = std::fmod(ctx.time, loop_dur);
+    const float ball_r = 9.0f;
+    float ball_x = bx0;
+
+    if (!on || !in_switched_state)
+    {
+        /* Uneven steps (lingering alternating frames) */
+        const float weight_t = (t / loop_dur) * 25.0f;
+        float cum = 0.0f;
+        int step_uneven = 0;
+        for (int i = 0; i < total_steps; ++i)
+        {
+            const float w = (i % 2 == 0) ? 3.0f : 2.0f;
+            if (weight_t < cum + w || i == total_steps - 1)
+            {
+                step_uneven = i;
+                break;
+            }
+            cum += w;
+        }
+        ball_x = bx0 + bw * (static_cast<float>(step_uneven) / static_cast<float>(total_steps - 1));
+
+        list.circle(ball_x, track_y, ball_r, kWhite.with_alpha(0.60f));
+    }
+    else
+    {
+        /* Perfectly even steps */
+        int step_even = static_cast<int>((t / loop_dur) * static_cast<float>(total_steps));
+        if (step_even >= total_steps)
+            step_even = total_steps - 1;
+        ball_x = bx0 + bw * (static_cast<float>(step_even) / static_cast<float>(total_steps - 1));
+
+        list.glow({ball_x - ball_r, track_y - ball_r, ball_r * 2.0f, ball_r * 2.0f},
+                  ball_r, 6.0f, p.accent.with_alpha(0.60f));
+        list.circle(ball_x, track_y, ball_r, kWhite);
+        list.circle(ball_x - 2.5f, track_y - 2.5f, 2.5f, Color::rgb(0xffffff, 0.9f));
+    }
+
+    /* Screen switch blink: brief black veil when mode switches */
+    if (is_blinking)
+    {
+        const float blink_prog = (phase - 0.9f) / 0.3f;
+        const float blink_alpha = 0.92f * std::sin(blink_prog * 3.14159f);
+        list.rounded_rect(screen, 8.0f, Color::rgb(0x000000, blink_alpha));
+    }
+
+    list.pop_clip();
+
+    /* Primary caption below TV */
+    const float note_y = tv.y + tv.h + 20.0f;
+    if (!on)
+        ui::text(list, fonts.semibold, "Films can judder slightly", a.x, note_y, 16, kWhite, Align::left);
+    else
+        ui::text(list, fonts.semibold, "Perfectly even motion", a.x, note_y, 16, p.accent, Align::left);
+
+    /* Plain note */
+    ui::text(list, fonts.regular, "The screen blinks briefly when it switches", a.x, note_y + 22.0f, 14,
+             p.text_muted, Align::left);
 
     const auto labels = chip_labels(pv);
-    const float y = chips(list, ctx, a, y2 + 32.0f + 28.0f, labels, pv.index);
-    benefit(list, ctx, a, y + 40.0f, pv.benefit);
+    const float chips_y = note_y + 50.0f;
+    const float y = chips(list, ctx, a, chips_y, labels, pv.index);
+    benefit(list, ctx, a, y + 24.0f, pv.benefit);
 }
 
 /* ---- 6. ASPECT RATIO: 16:9 screen with fit, fill or stretch picture. ---- */
@@ -533,7 +891,7 @@ void draw_sub_font(DrawList &list, const Context &ctx, const Rect &box, const Se
     tag(list, ctx, frame, tag_lbl, true);
 
     const char *line = "You were right about the lighthouse.";
-    const float tx = frame.cx(), ty = frame.y + frame.h - 24.0f;
+    const float tx = frame.cx();
     const ui::FontRef *face = &fonts.regular;
     float fsize = 26.0f;
     float tracking = 0.0f;
@@ -548,11 +906,25 @@ void draw_sub_font(DrawList &list, const Context &ctx, const Rect &box, const Se
         tracking = -0.5f;
     }
 
-    ui::text(list, *face, line, tx + 1.5f, ty + 1.5f, fsize, Color::rgb(0x000000, 0.9f), Align::center, tracking);
-    ui::text(list, *face, line, tx, ty, fsize, kWhite, Align::center, tracking);
+    /* Wrap the sample line so it fits cleanly inside the 400 px frame at every choice. */
+    const float max_text_w = frame.w - 36.0f;
+    std::vector<std::string> lines = face->font->wrap(line, fsize, max_text_w);
+    if (lines.empty())
+        lines.push_back(line);
 
-    const float y = chips(list, ctx, a, frame.y + frame.h + 28.0f, labels, pv.index);
-    benefit(list, ctx, a, y + 40.0f, pv.benefit);
+    const float line_h = fsize * 1.25f;
+    const float last_baseline = frame.y + frame.h - 22.0f;
+    float y_base = last_baseline - static_cast<float>(lines.size() - 1) * line_h;
+    for (const std::string &l : lines)
+    {
+        const std::string fitted = face->font->fit(l, fsize, max_text_w);
+        ui::text(list, *face, fitted, tx + 1.5f, y_base + 1.5f, fsize, Color::rgb(0x000000, 0.9f), Align::center, tracking);
+        ui::text(list, *face, fitted, tx, y_base, fsize, kWhite, Align::center, tracking);
+        y_base += line_h;
+    }
+
+    const float y = chips(list, ctx, a, frame.y + frame.h + 24.0f, labels, pv.index);
+    benefit(list, ctx, a, y + 24.0f, pv.benefit);
 }
 
 /* ---- 9. SECONDARY POSITION: stacked above primary vs top of screen. ---- */
@@ -685,50 +1057,189 @@ void draw_lightbar(DrawList &list, const Context &ctx, const Rect &box, const Se
 {
     Area a = begin_card(list, ctx, box, pv);
     const Palette &p = ctx.palette;
-    const float cx = a.x + a.w * 0.5f, cy = a.top + 80.0f;
 
-    list.rounded_rect({cx - 95.0f, cy - 10.0f, 40.0f, 85.0f}, 16, Color::rgb(0x181a20));
-    list.rounded_rect({cx + 95.0f - 40.0f, cy - 10.0f, 40.0f, 85.0f}, 16, Color::rgb(0x181a20));
+    /* preview_controller.png is 720x456 (aspect 1.5789). Draw centred, 360 px wide. */
+    const float cw = 360.0f;
+    const float ch = std::round(cw * 456.0f / 720.0f); // 228 px
+    const Rect c_rect{a.x + (a.w - cw) * 0.5f, a.top, cw, ch};
 
-    Rect body{cx - 80.0f, cy - 45.0f, 160.0f, 95.0f};
-    list.rounded_rect(body, 22, Color::rgb(0x20242c));
-    list.bordered_rect(body, 22, Color::rgb(0,0), 1.5f, Color::rgb(0x353b47));
+    if (const std::uint32_t tex = ctx.textures.icon("../icons/preview_controller.png"))
+        list.image(tex, c_rect, ::hui::gfx::kFullUv, kWhite);
 
-    Rect pad{cx - 40.0f, cy - 38.0f, 80.0f, 48.0f};
-    list.rounded_rect(pad, 8, Color::rgb(0x16181e));
-
-    Rect strip{cx - 34.0f, cy - 42.0f, 68.0f, 6.0f};
     const bool on = (pv.index == 1);
     if (on)
     {
-        list.glow(strip, 3, 14.0f, p.accent.with_alpha(0.85f));
-        list.rounded_rect(strip, 3, p.accent);
-    }
-    else
-    {
-        list.rounded_rect(strip, 3, Color::rgb(0x4a505e));
+        /* In the 600x380 design space, the light bars are:
+         * Left:  from (210, 82) curving to (212, 158)
+         * Right: from (390, 82) curving to (388, 158)
+         * Scale from 600x380 space to drawn rectangle is cw / 600.0f = 0.60f.
+         */
+        const float s = cw / 600.0f;
+        const float breathe = 0.5f + 0.5f * std::sin(ctx.time * 2.2f);
+        const float glow_spread = 8.0f + 6.0f * breathe;
+        const float glow_alpha = 0.40f + 0.35f * breathe;
+
+        // Glow around both strips
+        const Rect left_glow{c_rect.x + 198.0f * s, c_rect.y + 78.0f * s, 18.0f * s, 84.0f * s};
+        const Rect right_glow{c_rect.x + 384.0f * s, c_rect.y + 78.0f * s, 18.0f * s, 84.0f * s};
+        list.glow(left_glow, 6.0f, glow_spread, p.accent.with_alpha(glow_alpha));
+        list.glow(right_glow, 6.0f, glow_spread, p.accent.with_alpha(glow_alpha));
+
+        // Draw curved strips (about 6 px wide at drawn scale) with capsule-capped line segments
+        constexpr int kSteps = 8;
+        float prev_lx = 0.0f, prev_ly = 0.0f;
+        float prev_rx = 0.0f, prev_ry = 0.0f;
+        for (int i = 0; i <= kSteps; ++i)
+        {
+            const float t = static_cast<float>(i) / static_cast<float>(kSteps);
+            const float yd = 82.0f + 76.0f * t;
+            const float bow = 4.0f * t * (1.0f - t);
+            const float xld = 210.0f + 2.0f * t - 9.0f * bow;
+            const float xrd = 390.0f - 2.0f * t + 9.0f * bow;
+
+            const float lx = c_rect.x + xld * s;
+            const float ly = c_rect.y + yd * s;
+            const float rx = c_rect.x + xrd * s;
+            const float ry = c_rect.y + yd * s;
+
+            if (i > 0)
+            {
+                list.line(prev_lx, prev_ly, lx, ly, 6.0f, p.accent);
+                list.line(prev_rx, prev_ry, rx, ry, 6.0f, p.accent);
+            }
+            prev_lx = lx;
+            prev_ly = ly;
+            prev_rx = rx;
+            prev_ry = ry;
+        }
     }
 
-    list.circle(cx - 26.0f, cy + 22.0f, 13.0f, Color::rgb(0x16181e));
-    list.circle(cx + 26.0f, cy + 22.0f, 13.0f, Color::rgb(0x16181e));
-
-    tag(list, ctx, {cx - 105.0f, cy - 55.0f, 210.0f, 140.0f}, on ? "ON" : "OFF", on);
+    tag(list, ctx, c_rect, on ? "ON" : "OFF", on);
 
     const auto labels = chip_labels(pv);
-    const float y = chips(list, ctx, a, cy + 95.0f, labels, pv.index);
-    benefit(list, ctx, a, y + 40.0f, pv.benefit);
+    const float y = chips(list, ctx, a, c_rect.y + c_rect.h + 20.0f, labels, pv.index);
+    benefit(list, ctx, a, y + 24.0f, pv.benefit);
+}
+
+/* Top-down living room view for audio channel layout and surround sound test. */
+float draw_living_room_audio(DrawList &list, const Context &ctx, const Area &a, int layout)
+{
+    const Palette &p = ctx.palette;
+    const ui::Fonts &fonts = ctx.fonts;
+
+    const float cx = a.x + a.w * 0.5f;
+    const float room_w = a.w, room_h = 244.0f;
+    const Rect room{a.x, a.top, room_w, room_h};
+
+    // Living room floor boundary
+    list.rounded_rect(room, 16.0f, kWhite.with_alpha(0.03f));
+    list.bordered_rect(room, 16.0f, Color::rgb(0, 0), 1.0f, kWhite.with_alpha(0.08f));
+
+    // TV on the front wall: a thin screen with a stand
+    const Rect tv_rect{cx - 100.0f, room.y + 12.0f, 200.0f, 18.0f};
+    list.rounded_rect(tv_rect, 5.0f, Color::rgb(0x2a3242));
+    list.bordered_rect(tv_rect, 5.0f, Color::rgb(0, 0), 1.0f, Color::rgb(0x4a5772));
+    ui::text(list, fonts.semibold, "TV", cx, tv_rect.cy() + 5.0f, 13, kWhite.with_alpha(0.9f), Align::center);
+
+    // Sofa facing the TV, back of the sofa at the bottom
+    const Rect sofa{cx - 80.0f, room.y + 150.0f, 160.0f, 64.0f};
+    list.rounded_rect(sofa, 14.0f, Color::rgb(0x252c3b));
+    list.bordered_rect(sofa, 14.0f, Color::rgb(0, 0), 1.0f, Color::rgb(0x3b4660));
+    list.rounded_rect({sofa.x + 6.0f, sofa.y + sofa.h - 18.0f, sofa.w - 12.0f, 12.0f}, 6.0f, Color::rgb(0x303a4e));
+    list.rounded_rect({sofa.x + 5.0f, sofa.y + 6.0f, 14.0f, sofa.h - 22.0f}, 6.0f, Color::rgb(0x303a4e));
+    list.rounded_rect({sofa.x + sofa.w - 19.0f, sofa.y + 6.0f, 14.0f, sofa.h - 22.0f}, 6.0f, Color::rgb(0x303a4e));
+
+    // Viewer seen from above: shoulders first, head on top, facing the TV
+    const float px = cx, py = sofa.y + 36.0f;
+    list.rounded_rect({px - 25.0f, py - 4.0f, 50.0f, 22.0f}, 11.0f, Color::rgb(0x6f7d99));
+    list.circle(px, py - 6.0f, 12.0f, Color::rgb(0xe3e9f5));
+    list.circle(px, py - 6.0f, 12.0f, Color::rgb(0xe3e9f5));
+    list.rounded_rect({px - 4.0f, py - 20.0f, 8.0f, 5.0f}, 2.5f, Color::rgb(0xc7d0e2));  // nose: shows which way they face
+
+    const float lx = px, ly = py - 6.0f;
+
+    struct RoomSpeaker
+    {
+        const char *label;
+        float x;
+        float y;
+        int min_layout; // 0 stereo, 1 5.1, 2 7.1
+        bool is_sub;
+        float label_dx;
+        float label_dy;
+        Align align;
+    };
+
+    const RoomSpeaker speakers[8] = {
+        {"FL",  cx - 195.0f, room.y + 46.0f,  0, false,   0.0f,  30.0f, Align::center},
+        {"FR",  cx + 195.0f, room.y + 46.0f,  0, false,   0.0f,  30.0f, Align::center},
+        {"C",   cx,          room.y + 62.0f,  1, false,   0.0f,  30.0f, Align::center},
+        {"SUB", cx - 105.0f, room.y + 64.0f,  1, true,    0.0f,  32.0f, Align::center},
+        {"SL",  cx - 232.0f, room.y + 134.0f, 1, false,   0.0f,  30.0f, Align::center},
+        {"SR",  cx + 232.0f, room.y + 134.0f, 1, false,   0.0f,  30.0f, Align::center},
+        {"RL",  cx - 135.0f, room.y + 206.0f, 2, false,   0.0f, -20.0f, Align::center},
+        {"RR",  cx + 135.0f, room.y + 206.0f, 2, false,   0.0f, -20.0f, Align::center},
+    };
+
+    for (const auto &spk : speakers)
+    {
+        const bool lit = (layout >= spk.min_layout);
+        const float bw = spk.is_sub ? 34.0f : 28.0f;
+        const float bh = spk.is_sub ? 34.0f : 28.0f;
+        const Rect box_r{spk.x - bw * 0.5f, spk.y - bh * 0.5f, bw, bh};
+
+        if (lit)
+        {
+            list.glow(box_r, 4.0f, 8.0f, p.accent.with_alpha(0.35f));
+
+            for (int w = 0; w < 2; ++w)
+            {
+                const float pulse = std::fmod(ctx.time * 2.0f + static_cast<float>(w) * 0.5f, 1.0f);
+                const float r = (spk.is_sub ? 16.0f : 14.0f) + pulse * 12.0f;
+                const float alpha = (1.0f - pulse) * 0.75f + 0.15f;
+                const Color wave_col = p.accent.with_alpha(alpha);
+
+                if (spk.is_sub)
+                {
+                    list.ring(spk.x, spk.y, r, 1.5f, wave_col);
+                }
+                else
+                {
+                    const float ang = std::atan2(ly - spk.y, lx - spk.x);
+                    float px0 = 0.0f, py0 = 0.0f;
+                    for (int step = -3; step <= 3; ++step)
+                    {
+                        const float a = ang + static_cast<float>(step) * (3.14159265f / 14.0f);
+                        const float ptx = spk.x + r * std::cos(a);
+                        const float pty = spk.y + r * std::sin(a);
+                        if (step > -3)
+                            list.line(px0, py0, ptx, pty, 2.0f, wave_col);
+                        px0 = ptx;
+                        py0 = pty;
+                    }
+                }
+            }
+        }
+
+        // Speaker box (rounded rect with cone circle)
+        list.rounded_rect(box_r, 4.0f, lit ? p.accent.with_alpha(0.25f) : kWhite.with_alpha(0.05f));
+        list.bordered_rect(box_r, 4.0f, Color::rgb(0, 0), 1.0f, lit ? p.accent : kWhite.with_alpha(0.18f));
+
+        const float cone_r = spk.is_sub ? 11.0f : 8.5f;
+        list.circle(spk.x, spk.y, cone_r, lit ? p.accent : kWhite.with_alpha(0.18f));
+        list.circle(spk.x, spk.y, spk.is_sub ? 4.0f : 3.0f, lit ? kInk : Color::rgb(0x141822));
+
+        ui::text(list, fonts.semibold, spk.label, spk.x + spk.label_dx, spk.y + spk.label_dy, 13,
+                 lit ? p.accent : p.text_faint.with_alpha(0.55f), spk.align);
+    }
+
+    return room.y + room.h;
 }
 
 /* ---- 13. OUTPUT CHANNELS: listener and speaker layout. ---- */
 void draw_channels(DrawList &list, const Context &ctx, const Rect &box, const SettingsPreview &pv)
 {
     Area a = begin_card(list, ctx, box, pv);
-    const ui::Fonts &fonts = ctx.fonts;
-    const Palette &p = ctx.palette;
-    const float cx = a.x + a.w * 0.5f, cy = a.top + 95.0f;
-
-    list.circle(cx, cy, 14.0f, kWhite.with_alpha(0.25f));
-    list.triangle({cx - 5.0f, cy - 20.0f, 10.0f, 8.0f}, kWhite.with_alpha(0.5f));
 
     int layout = 1; // 0 stereo, 1 5.1, 2 7.1; AUTO plays what the file has
     if (!pv.choices.empty() && pv.index < static_cast<int>(pv.choices.size()))
@@ -742,31 +1253,10 @@ void draw_channels(DrawList &list, const Context &ctx, const Rect &box, const Se
             layout = 0;
     }
 
-    struct Spk { const char *name; float x, y; int min_layout; };
-    const Spk spks[8] = {
-        {"L", cx - 80.0f, cy - 60.0f, 0},
-        {"R", cx + 80.0f, cy - 60.0f, 0},
-        {"C", cx, cy - 70.0f, 1},
-        {"SUB", cx, cy + 40.0f, 1},
-        {"SL", cx - 100.0f, cy, 1},
-        {"SR", cx + 100.0f, cy, 1},
-        {"RL", cx - 70.0f, cy + 65.0f, 2},
-        {"RR", cx + 70.0f, cy + 65.0f, 2},
-    };
-
-    for (const auto &s : spks)
-    {
-        const bool lit = (layout >= s.min_layout);
-        const Color col = lit ? p.accent : kWhite.with_alpha(0.18f);
-        if (lit)
-            list.glow({s.x - 12.0f, s.y - 12.0f, 24.0f, 24.0f}, 12, 10.0f, p.accent.with_alpha(0.5f));
-        list.circle(s.x, s.y, 11.0f, col);
-        ui::text(list, fonts.semibold, s.name, s.x, s.y + 5.0f, 12, lit ? kInk : p.text_faint, Align::center);
-    }
-
+    const float room_bottom = draw_living_room_audio(list, ctx, a, layout);
     const auto labels = chip_labels(pv);
-    const float y = chips(list, ctx, a, cy + 105.0f, labels, pv.index);
-    benefit(list, ctx, a, y + 40.0f, pv.benefit);
+    const float y = chips(list, ctx, a, room_bottom + 20.0f, labels, pv.index);
+    benefit(list, ctx, a, y + 24.0f, pv.benefit);
 }
 
 /* ---- 14. AUDIO PASSTHROUGH: decoded PCM vs bitstream flow diagram. ---- */
@@ -800,7 +1290,7 @@ void draw_passthrough(DrawList &list, const Context &ctx, const Rect &box, const
     Rect b2{a1_end + 12.0f, row1.cy() - 20.0f, 95.0f, 40.0f};
     list.rounded_rect(b2, 8, col1.with_alpha(!on ? 0.25f : 0.08f));
     list.bordered_rect(b2, 8, Color::rgb(0,0), 1.0f, col1);
-    ui::text(list, fonts.semibold, "2.0 PCM", b2.cx(), b2.cy() + 6.0f, 16, ink1, Align::center);
+    ui::text(list, fonts.semibold, "PCM", b2.cx(), b2.cy() + 6.0f, 16, ink1, Align::center);
 
     const float a2_start = b2.x + b2.w + 10.0f;
     const float a2_end = a2_start + 50.0f;
@@ -845,33 +1335,484 @@ void draw_surround(DrawList &list, const Context &ctx, const Rect &box, const Se
     Area a = begin_card(list, ctx, box, pv);
     const ui::Fonts &fonts = ctx.fonts;
     const Palette &p = ctx.palette;
-    const float cx = a.x + a.w * 0.5f, cy = a.top + 95.0f;
 
-    list.circle(cx, cy, 14.0f, kWhite.with_alpha(0.25f));
-    list.triangle({cx - 5.0f, cy - 20.0f, 10.0f, 8.0f}, kWhite.with_alpha(0.5f));
+    // Surround test lights all 8 channels (7.1 layout)
+    const float room_bottom = draw_living_room_audio(list, ctx, a, 2);
 
-    struct Spk { const char *name; float x, y; };
-    const Spk spks[8] = {
-        {"L", cx - 80.0f, cy - 60.0f},
-        {"R", cx + 80.0f, cy - 60.0f},
-        {"C", cx, cy - 70.0f},
-        {"SUB", cx, cy + 40.0f},
-        {"SL", cx - 100.0f, cy},
-        {"SR", cx + 100.0f, cy},
-        {"RL", cx - 70.0f, cy + 65.0f},
-        {"RR", cx + 70.0f, cy + 65.0f},
-    };
+    const float line_y = room_bottom + 16.0f;
+    ui::text(list, fonts.semibold, "Press X to play the test tones.", a.x + a.w * 0.5f, line_y, 18, p.text_muted, Align::center);
+    benefit(list, ctx, a, line_y + 36.0f, pv.benefit);
+}
 
-    for (const auto &s : spks)
+/* ---- 16. RESUME PLAYBACK: 16:9 mock player frame with progress bar ---- */
+void draw_resume(DrawList &list, const Context &ctx, const Rect &box, const SettingsPreview &pv)
+{
+    Area a = begin_card(list, ctx, box, pv);
+    const bool on = (pv.index == 1);
+    const Palette &p = ctx.palette;
+
+    const float fw = std::round(a.w * 0.72f);
+    const float fh = std::round(fw * 9.0f / 16.0f);
+    const float fx = a.x + (a.w - fw) * 0.5f;
+    const Rect frame{fx, a.top, fw, fh};
+
+    list.gradient_rect(frame, 0, Color::rgb(0x1e2536), Color::rgb(0x0c0e16));
+    frame_border(list, ctx, frame, on);
+    tag(list, ctx, frame, on ? "RESUME ON" : "FROM START", on);
+
+    // Center play glyph: translucent circle with a right-pointing play triangle inside
+    const float cx = frame.cx(), cy = frame.cy();
+    list.circle(cx, cy, 28.0f, kWhite.with_alpha(0.12f));
+    list.triangle({cx + 2.0f - 14.0f, cy - 12.0f, 28.0f, 24.0f}, on ? p.accent : kWhite, 0.0f, 1.5708f);
+
+    // Progress bar under frame
+    const float bar_y = frame.y + frame.h + 20.0f;
+    const float bar_h = 8.0f;
+    const Rect bar_bg{fx, bar_y, fw, bar_h};
+    list.rounded_rect(bar_bg, 4.0f, kWhite.with_alpha(0.12f));
+
+    if (on)
     {
-        list.glow({s.x - 12.0f, s.y - 12.0f, 24.0f, 24.0f}, 12, 10.0f, p.accent.with_alpha(0.5f));
-        list.circle(s.x, s.y, 11.0f, p.accent);
-        ui::text(list, fonts.semibold, s.name, s.x, s.y + 5.0f, 12, kInk, Align::center);
+        const float fill_w = fw * 0.42f;
+        list.rounded_rect({fx, bar_y, fill_w, bar_h}, 4.0f, p.accent);
+        const float marker_x = fx + fill_w;
+        const float pulse = 6.0f + 1.0f * std::sin(ctx.time * 4.0f);
+        list.glow({marker_x - 8.0f, bar_y + bar_h * 0.5f - 8.0f, 16.0f, 16.0f}, 8.0f, 6.0f, p.accent.with_alpha(0.5f));
+        list.circle(marker_x, bar_y + bar_h * 0.5f, pulse, kWhite);
+    }
+    else
+    {
+        list.circle(fx + 4.0f, bar_y + bar_h * 0.5f, 5.0f, kWhite.with_alpha(0.4f));
     }
 
-    const float line_y = cy + 115.0f;
-    ui::text(list, fonts.semibold, "Press X to play the test tones.", a.x + a.w * 0.5f, line_y, 18, p.text_muted, Align::center);
-    benefit(list, ctx, a, line_y + 40.0f, pv.benefit);
+    // Caption
+    const float cap_y = bar_y + bar_h + 20.0f;
+    ui::text(list, ctx.fonts.semibold, on ? "Continues from 42:10" : "Starts from 0:00", fx, cap_y, 18, on ? p.accent : kWhite);
+
+    const float y = chips(list, ctx, a, cap_y + 24.0f, chip_labels(pv), pv.index);
+    benefit(list, ctx, a, y + 24.0f, pv.benefit);
+}
+
+/* ---- 17. VIDEO DECODER: CPU use and Heat meter bars + plain verdict ---- */
+void draw_decoder(DrawList &list, const Context &ctx, const Rect &box, const SettingsPreview &pv)
+{
+    Area a = begin_card(list, ctx, box, pv);
+    const Palette &p = ctx.palette;
+
+    // 0: Auto (Hardware preferred), 1: Hardware, 2: Software
+    const int sel = std::clamp(pv.index, 0, 2);
+    const bool is_sw = (sel == 2);
+
+    // Animated meters: jitter slightly with time
+    const float jitter = 0.015f * std::sin(ctx.time * 3.0f);
+    const float cpu_pct = is_sw ? std::clamp(0.85f + jitter, 0.70f, 0.95f)
+                                : std::clamp(0.16f + jitter, 0.10f, 0.25f);
+    const float heat_pct = is_sw ? std::clamp(0.80f + 0.01f * std::cos(ctx.time * 2.0f), 0.70f, 0.90f)
+                                 : std::clamp(0.20f + 0.01f * std::cos(ctx.time * 2.0f), 0.12f, 0.28f);
+
+    const Rect panel{a.x, a.top, a.w, 136.0f};
+    list.rounded_rect(panel, 12.0f, kWhite.with_alpha(0.04f));
+    frame_border(list, ctx, panel, !is_sw);
+
+    const Color good_col = p.accent;
+    const Color heavy_col = Color::rgb(0xf87171); // warm red
+    const Color bar_col = is_sw ? heavy_col : good_col;
+
+    // Row 1: CPU use
+    const float r1_y = panel.y + 16.0f;
+    ui::text(list, ctx.fonts.semibold, "TYPICAL CPU USE", panel.x + 16.0f, r1_y + 12.0f, 14, p.text_muted, Align::left, 1.5f);
+    char cpu_str[16];
+    std::snprintf(cpu_str, sizeof(cpu_str), "%d %%", static_cast<int>(cpu_pct * 100.0f));
+    ui::text(list, ctx.fonts.semibold, cpu_str, panel.x + panel.w - 16.0f, r1_y + 12.0f, 15, bar_col, Align::right);
+
+    const float bw = panel.w - 32.0f;
+    const Rect cpu_bg{panel.x + 16.0f, r1_y + 20.0f, bw, 8.0f};
+    list.rounded_rect(cpu_bg, 4.0f, kWhite.with_alpha(0.10f));
+    list.rounded_rect({cpu_bg.x, cpu_bg.y, bw * cpu_pct, 8.0f}, 4.0f, bar_col);
+
+    // Row 2: Heat
+    const float r2_y = r1_y + 44.0f;
+    ui::text(list, ctx.fonts.semibold, "TYPICAL HEAT", panel.x + 16.0f, r2_y + 12.0f, 14, p.text_muted, Align::left, 1.5f);
+    ui::text(list, ctx.fonts.semibold, is_sw ? "HIGH" : "LOW", panel.x + panel.w - 16.0f, r2_y + 12.0f, 15, bar_col, Align::right);
+
+    const Rect heat_bg{panel.x + 16.0f, r2_y + 20.0f, bw, 8.0f};
+    list.rounded_rect(heat_bg, 4.0f, kWhite.with_alpha(0.10f));
+    list.rounded_rect({heat_bg.x, heat_bg.y, bw * heat_pct, 8.0f}, 4.0f, bar_col);
+
+    // One-line plain verdict
+    const float v_y = panel.y + panel.h + 16.0f;
+    const Rect v_pill{a.x, v_y, a.w, 36.0f};
+    list.rounded_rect(v_pill, 10.0f, bar_col.with_alpha(0.12f));
+    list.bordered_rect(v_pill, 10.0f, Color::rgb(0, 0), 1.0f, bar_col);
+    const char *verdict = is_sw ? "Uses the CPU. Only for files hardware can't play"
+                          : (sel == 0) ? "Hardware when it can, software when it must"
+                                       : "Uses the video chip. Light on the CPU";
+    ui::text(list, ctx.fonts.semibold, ctx.fonts.semibold.font->fit(verdict, 16, v_pill.w - 24.0f), v_pill.cx(),
+             v_pill.cy() + 6.0f, 16, bar_col, Align::center);
+    ui::text(list, ctx.fonts.regular, "Meters show typical values, not live ones", a.x, v_pill.y + v_pill.h + 18.0f, 13,
+             p.text_faint);
+
+    // Clean choice chips: short names so chips never wrap or overflow
+    static const std::vector<std::string> kDecoderLabels = {"AUTO", "HARDWARE", "SOFTWARE"};
+    const float y = chips(list, ctx, a, v_y + 76.0f, kDecoderLabels, sel);
+    benefit(list, ctx, a, y + 24.0f, pv.benefit);
+}
+
+/* ---- 18. NAVIGATION SOUNDS: speaker box+cone and pulsing D-pad ---- */
+void draw_nav_sounds(DrawList &list, const Context &ctx, const Rect &box, const SettingsPreview &pv)
+{
+    Area a = begin_card(list, ctx, box, pv);
+    const bool on = (pv.index == 1);
+    const Palette &p = ctx.palette;
+
+    const Rect panel{a.x, a.top, a.w, 144.0f};
+    list.rounded_rect(panel, 12.0f, kWhite.with_alpha(0.04f));
+    frame_border(list, ctx, panel, on);
+
+    // Speaker on the left: box + cone drawn with shapes
+    const float spk_cx = panel.x + 110.0f, spk_cy = panel.cy();
+    const Color spk_col = on ? p.accent : p.text_muted;
+
+    // Speaker box
+    list.rounded_rect({spk_cx - 28.0f, spk_cy - 12.0f, 16.0f, 24.0f}, 3.0f, spk_col);
+    // Speaker cone: two triangles forming the expanding trapezoid
+    const float cone_t1[6] = {
+        spk_cx - 12.0f, spk_cy - 12.0f,
+        spk_cx + 10.0f, spk_cy - 22.0f,
+        spk_cx + 10.0f, spk_cy + 22.0f
+    };
+    const float cone_t2[6] = {
+        spk_cx - 12.0f, spk_cy - 12.0f,
+        spk_cx + 10.0f, spk_cy + 22.0f,
+        spk_cx - 12.0f, spk_cy + 12.0f
+    };
+    list.polygon(cone_t1, 3, spk_col);
+    list.polygon(cone_t2, 3, spk_col);
+
+    if (on)
+    {
+        // Sound-wave arcs pulse beside the speaker
+        for (int w = 0; w < 3; ++w)
+        {
+            const float r = 16.0f + static_cast<float>(w) * 11.0f;
+            const float pulse = std::fmod(ctx.time * 2.5f + static_cast<float>(w) * 0.33f, 1.0f);
+            const float alpha = 0.25f + 0.65f * (1.0f - pulse);
+            const Color wave_col = p.accent.with_alpha(alpha);
+            float px0 = 0.0f, py0 = 0.0f;
+            for (int step = -4; step <= 4; ++step)
+            {
+                const float angle = static_cast<float>(step) * (3.14159265f / 16.0f);
+                const float px = spk_cx + 14.0f + r * std::cos(angle);
+                const float py = spk_cy + r * std::sin(angle);
+                if (step > -4)
+                    list.line(px0, py0, px, py, 2.5f, wave_col);
+                px0 = px;
+                py0 = py;
+            }
+        }
+    }
+    else
+    {
+        // Red slash across speaker
+        list.line(spk_cx - 36.0f, spk_cy + 26.0f, spk_cx + 20.0f, spk_cy - 26.0f, 3.0f, Color::rgb(0xf87171));
+    }
+
+    // Mini D-pad on the right
+    const float dpad_cx = panel.x + panel.w - 110.0f, dpad_cy = panel.cy();
+    list.rounded_rect({dpad_cx - 9.0f, dpad_cy - 9.0f, 18.0f, 18.0f}, 4.0f, Color::rgb(0x222632));
+
+    const Rect arms[4] = {
+        {dpad_cx - 8.0f, dpad_cy - 28.0f, 16.0f, 19.0f}, // 0: Up
+        {dpad_cx + 9.0f, dpad_cy - 8.0f, 19.0f, 16.0f},  // 1: Right
+        {dpad_cx - 8.0f, dpad_cy + 9.0f, 16.0f, 19.0f},  // 2: Down
+        {dpad_cx - 28.0f, dpad_cy - 8.0f, 19.0f, 16.0f}  // 3: Left
+    };
+
+    const int active_arm = on ? (static_cast<int>(ctx.time * 3.0f) % 4) : -1;
+    for (int i = 0; i < 4; ++i)
+    {
+        const bool lit = (i == active_arm);
+        const Color arm_col = lit ? p.accent : Color::rgb(0x222632);
+        list.rounded_rect(arms[i], 3.0f, arm_col);
+        if (lit)
+            list.glow(arms[i], 3.0f, 8.0f, p.accent.with_alpha(0.5f));
+    }
+
+    // Caption
+    const float cap_y = panel.y + panel.h + 18.0f;
+    ui::text(list, ctx.fonts.semibold, on ? "Click when you move" : "Silent", a.x, cap_y, 18, on ? p.accent : p.text_muted);
+
+    const float y = chips(list, ctx, a, cap_y + 24.0f, chip_labels(pv), pv.index);
+    benefit(list, ctx, a, y + 24.0f, pv.benefit);
+}
+
+/* ---- 19. FOLDERS FIRST: 6-row mock USB browser list ---- */
+void draw_folders_first(DrawList &list, const Context &ctx, const Rect &box, const SettingsPreview &pv)
+{
+    Area a = begin_card(list, ctx, box, pv);
+    const bool on = (pv.index == 1);
+    const Palette &p = ctx.palette;
+
+    struct Item { const char *name; bool is_folder; const char *tag; };
+
+    // ON: folders first, then files
+    static const Item kItemsOn[6] = {
+        {"Action Movies", true, "DIR"},
+        {"Cartoons", true, "DIR"},
+        {"Subtitles", true, "DIR"},
+        {"Holiday.mp4", false, "MP4"},
+        {"Sample.mkv", false, "MKV"},
+        {"Trailer.mp4", false, "MP4"}
+    };
+
+    // OFF: mixed alphabetical order
+    static const Item kItemsOff[6] = {
+        {"Action Movies", true, "DIR"},
+        {"Cartoons", true, "DIR"},
+        {"Holiday.mp4", false, "MP4"},
+        {"Sample.mkv", false, "MKV"},
+        {"Subtitles", true, "DIR"},
+        {"Trailer.mp4", false, "MP4"}
+    };
+
+    const Item *items = on ? kItemsOn : kItemsOff;
+
+    const float row_h = 28.0f;
+    const Rect panel{a.x, a.top, a.w, 6.0f * row_h + 16.0f};
+    list.rounded_rect(panel, 12.0f, kWhite.with_alpha(0.04f));
+    frame_border(list, ctx, panel, on);
+
+    for (int i = 0; i < 6; ++i)
+    {
+        const float ry = panel.y + 8.0f + static_cast<float>(i) * row_h;
+        const float ix = panel.x + 14.0f, iy = ry + 6.0f;
+
+        if (items[i].is_folder)
+        {
+            // Folder icon (simple shapes): amber tab + body
+            list.rounded_rect({ix, iy, 6.0f, 3.0f}, 1.0f, Color::rgb(0xf59e0b));
+            list.rounded_rect({ix, iy + 2.0f, 16.0f, 11.0f}, 2.0f, Color::rgb(0xf59e0b));
+            ui::text(list, ctx.fonts.semibold, items[i].name, ix + 24.0f, ry + 18.0f, 14, kWhite);
+            ui::text(list, ctx.fonts.regular, items[i].tag, panel.x + panel.w - 14.0f, ry + 18.0f, 11, p.accent, Align::right);
+        }
+        else
+        {
+            // File icon (simple shapes): slate paper rect with folded corner
+            list.rounded_rect({ix + 1.0f, iy, 13.0f, 14.0f}, 1.5f, p.text_faint);
+            list.triangle({ix + 9.0f, iy, 5.0f, 5.0f}, Color::rgb(0x131722));
+            ui::text(list, ctx.fonts.regular, items[i].name, ix + 24.0f, ry + 18.0f, 14, p.text_muted);
+            ui::text(list, ctx.fonts.regular, items[i].tag, panel.x + panel.w - 14.0f, ry + 18.0f, 11, p.text_faint, Align::right);
+        }
+
+        // Faint row separator
+        if (i < 5)
+            list.line(panel.x + 12.0f, ry + row_h, panel.x + panel.w - 12.0f, ry + row_h, 1.0f, kWhite.with_alpha(0.04f));
+    }
+
+    const float y = chips(list, ctx, a, panel.y + panel.h + 20.0f, chip_labels(pv), pv.index);
+    benefit(list, ctx, a, y + 24.0f, pv.benefit);
+}
+
+/* ---- 20. KEYBOARD INPUT: EVO virtual keyboard vs native PS5 IME ---- */
+void draw_keyboard(DrawList &list, const Context &ctx, const Rect &box, const SettingsPreview &pv)
+{
+    Area a = begin_card(list, ctx, box, pv);
+    const Palette &p = ctx.palette;
+    const int sel = (pv.index == 1) ? 1 : 0;
+
+    const float gap = 14.0f;
+    const float pw = (a.w - gap) * 0.5f;
+    const float ph = 168.0f;
+    const Rect p_left{a.x, a.top, pw, ph};
+    const Rect p_right{a.x + pw + gap, a.top, pw, ph};
+
+    // --- Left Panel: EVO Keyboard ---
+    const bool sel_l = (sel == 0);
+    list.rounded_rect(p_left, 12.0f, kWhite.with_alpha(sel_l ? 0.06f : 0.02f));
+    frame_border(list, ctx, p_left, sel_l);
+    if (sel_l)
+        list.glow(p_left, 12.0f, 6.0f, p.accent.with_alpha(0.35f));
+
+    ui::text(list, ctx.fonts.semibold, "EVO KEYBOARD", p_left.cx(), p_left.y + 24.0f, 14,
+             sel_l ? p.accent : p.text_faint, Align::center);
+
+    // 3 rows of drawn key caps
+    const float kw = (pw - 36.0f) / 6.0f;
+    const float kh = 20.0f;
+    for (int r = 0; r < 3; ++r)
+    {
+        const float ky = p_left.y + 44.0f + static_cast<float>(r) * 26.0f;
+        const int cols = (r == 2) ? 5 : 6;
+        const float rx = p_left.x + (pw - (static_cast<float>(cols) * (kw + 3.0f) - 3.0f)) * 0.5f;
+        for (int c = 0; c < cols; ++c)
+        {
+            const Rect kr{rx + static_cast<float>(c) * (kw + 3.0f), ky, kw, kh};
+            const bool highlight_key = sel_l && (r == 1 && c == 2);
+            list.rounded_rect(kr, 4.0f, highlight_key ? p.accent : Color::rgb(0x282f3d, sel_l ? 1.0f : 0.4f));
+        }
+    }
+    // Spacebar at bottom
+    const Rect space_r{p_left.cx() - 40.0f, p_left.y + 128.0f, 80.0f, 16.0f};
+    list.rounded_rect(space_r, 4.0f, Color::rgb(0x282f3d, sel_l ? 1.0f : 0.4f));
+
+    if (!sel_l)
+        list.rounded_rect(p_left, 12.0f, Color::rgb(0x000000, 0.45f));
+
+    // --- Right Panel: PS5 System Keyboard ---
+    const bool sel_r = (sel == 1);
+    list.rounded_rect(p_right, 12.0f, kWhite.with_alpha(sel_r ? 0.06f : 0.02f));
+    frame_border(list, ctx, p_right, sel_r);
+    if (sel_r)
+        list.glow(p_right, 12.0f, 6.0f, p.accent.with_alpha(0.35f));
+
+    ui::text(list, ctx.fonts.semibold, "PS5 KEYBOARD", p_right.cx(), p_right.y + 24.0f, 14,
+             sel_r ? p.accent : p.text_faint, Align::center);
+
+    // Text field at upper area
+    const Rect tf{p_right.x + 16.0f, p_right.y + 40.0f, pw - 32.0f, 24.0f};
+    list.rounded_rect(tf, 4.0f, Color::rgb(0x181e2a, sel_r ? 1.0f : 0.4f));
+    list.bordered_rect(tf, 4.0f, Color::rgb(0, 0), 1.0f, sel_r ? p.accent.with_alpha(0.6f) : p.border);
+    ui::text(list, ctx.fonts.regular, "Search...", tf.x + 8.0f, tf.y + 16.0f, 12, sel_r ? p.text_muted : p.text_faint);
+
+    // System keyboard bar at the bottom with a row of keys
+    const Rect bar{p_right.x + 12.0f, p_right.y + 80.0f, pw - 24.0f, 72.0f};
+    list.rounded_rect(bar, 6.0f, Color::rgb(0x161922, sel_r ? 1.0f : 0.4f));
+    list.bordered_rect(bar, 6.0f, Color::rgb(0, 0), 1.0f, Color::rgb(0xffffff, sel_r ? 0.12f : 0.04f));
+
+    // Keys in the PS5 bar
+    const float pkw = (bar.w - 24.0f) / 6.0f;
+    for (int r = 0; r < 2; ++r)
+    {
+        const float bky = bar.y + 10.0f + static_cast<float>(r) * 26.0f;
+        for (int c = 0; c < 6; ++c)
+        {
+            const Rect bkr{bar.x + 12.0f + static_cast<float>(c) * pkw, bky, pkw - 3.0f, 20.0f};
+            list.rounded_rect(bkr, 3.0f, Color::rgb(0x232734, sel_r ? 1.0f : 0.4f));
+        }
+    }
+
+    if (!sel_r)
+        list.rounded_rect(p_right, 12.0f, Color::rgb(0x000000, 0.45f));
+
+    // Choice chips
+    static const std::vector<std::string> kKbLabels = {"VIRTUAL KEYBOARD", "NATIVE PS5 IME"};
+    const float y = chips(list, ctx, a, a.top + ph + 24.0f, kKbLabels, sel);
+    benefit(list, ctx, a, y + 24.0f, pv.benefit);
+}
+
+/* ---- 21. ASK WHICH LIVE STREAM: channel tile to quality dialog vs direct play ---- */
+void draw_ask_stream(DrawList &list, const Context &ctx, const Rect &box, const SettingsPreview &pv)
+{
+    Area a = begin_card(list, ctx, box, pv);
+    const bool on = (pv.index == 1);
+    const Palette &p = ctx.palette;
+
+    // Channel tile on the left
+    const float tile_w = 130.0f;
+    const float tile_h = 130.0f;
+    const Rect tile{a.x, a.top + 10.0f, tile_w, tile_h};
+    list.rounded_rect(tile, 14.0f, Color::rgb(0x181c28));
+    list.bordered_rect(tile, 14.0f, Color::rgb(0, 0), 1.0f, p.border);
+
+    // Red "LIVE" pill
+    const Rect live_pill{tile.x + 10.0f, tile.y + 10.0f, 40.0f, 18.0f};
+    list.rounded_rect(live_pill, 4.0f, Color::rgb(0xef4444));
+    ui::text(list, ctx.fonts.semibold, "LIVE", live_pill.cx(), live_pill.cy() + 4.5f, 10, kWhite, Align::center);
+
+    // Play glyph
+    const float tcx = tile.cx(), tcy = tile.cy() + 4.0f;
+    list.circle(tcx, tcy, 18.0f, kWhite.with_alpha(0.12f));
+    list.triangle({tcx - 8.0f, tcy - 8.0f, 20.0f, 16.0f}, p.accent, 0.0f, 1.5708f);
+    ui::text(list, ctx.fonts.semibold, "Sports 1", tcx, tile.y + tile_h - 14.0f, 12, p.text_muted, Align::center);
+
+    // Arrow to target
+    const float arrow_x1 = tile.x + tile_w + 10.0f;
+    const float arrow_x2 = a.x + 190.0f;
+    const float arrow_y = tile.cy();
+    list.line(arrow_x1, arrow_y, arrow_x2, arrow_y, 2.0f, on ? p.accent : p.text_muted);
+    list.triangle({arrow_x2 - 8.0f, arrow_y - 6.0f, 8.0f, 12.0f}, on ? p.accent : p.text_muted, 0.0f, 1.5708f);
+
+    const float target_x = arrow_x2 + 8.0f;
+    const float target_w = a.x + a.w - target_x;
+
+    if (on)
+    {
+        // Dialog mock "Choose quality" with 3 rows
+        const Rect dialog{target_x, a.top, target_w, 150.0f};
+        list.rounded_rect(dialog, 12.0f, Color::rgb(0x1a1e2a));
+        frame_border(list, ctx, dialog, true);
+
+        ui::text(list, ctx.fonts.semibold, "Choose quality", dialog.x + 14.0f, dialog.y + 22.0f, 15, kWhite);
+
+        static const char *const kQualities[3] = {"Auto", "1080p", "720p"};
+        for (int r = 0; r < 3; ++r)
+        {
+            const float qy = dialog.y + 36.0f + static_cast<float>(r) * 34.0f;
+            const Rect qr{dialog.x + 10.0f, qy, dialog.w - 20.0f, 28.0f};
+            const bool sel_q = (r == 0);
+            list.rounded_rect(qr, 6.0f, sel_q ? p.accent.with_alpha(0.20f) : kWhite.with_alpha(0.03f));
+            if (sel_q)
+                list.bordered_rect(qr, 6.0f, Color::rgb(0, 0), 1.0f, p.accent);
+            ui::text(list, ctx.fonts.semibold, kQualities[r], qr.x + 12.0f, qr.y + 18.0f, 13,
+                     sel_q ? p.accent : p.text_muted);
+        }
+    }
+    else
+    {
+        // Mock player frame labelled "Plays right away"
+        const Rect player{target_x, a.top + 10.0f, target_w, 130.0f};
+        list.gradient_rect(player, 0, Color::rgb(0x161a26), Color::rgb(0x0a0c12));
+        frame_border(list, ctx, player, false);
+
+        list.circle(player.cx(), player.cy() - 10.0f, 20.0f, kWhite.with_alpha(0.12f));
+        list.triangle({player.cx() - 6.0f, player.cy() - 18.0f, 16.0f, 16.0f}, kWhite, 0.0f, 1.5708f);
+        ui::text(list, ctx.fonts.semibold, "Plays right away", player.cx(), player.y + player.h - 16.0f, 15,
+                 p.accent, Align::center);
+    }
+
+    const float y = chips(list, ctx, a, a.top + 170.0f, chip_labels(pv), pv.index);
+    benefit(list, ctx, a, y + 24.0f, pv.benefit);
+}
+
+/* ---- 22. DEBUG OVERLAY: mock video frame with stats HUD in top-left corner ---- */
+void draw_debug_overlay(DrawList &list, const Context &ctx, const Rect &box, const SettingsPreview &pv)
+{
+    Area a = begin_card(list, ctx, box, pv);
+    const bool on = (pv.index == 1);
+    const Palette &p = ctx.palette;
+
+    const float fw = a.w;
+    const float fh = std::round(fw * 9.0f / 16.0f);
+    const Rect frame{a.x, a.top, fw, fh};
+
+    mock_scene(list, frame, 0.2f, false);
+    frame_border(list, ctx, frame, on);
+    tag_right(list, ctx, frame, on ? "HUD ON" : "HUD OFF", on);
+
+    if (on)
+    {
+        // Translucent dark stats box in the top-left corner
+        const Rect stats{frame.x + 12.0f, frame.y + 12.0f, 136.0f, 96.0f};
+        list.rounded_rect(stats, 6.0f, Color::rgb(0x000000, 0.82f));
+        list.bordered_rect(stats, 6.0f, Color::rgb(0, 0), 1.0f, Color::rgb(0xffffff, 0.18f));
+
+        char buf_fps[32], buf_buf[32], buf_mem[32];
+        const float fps = 24.0f + 0.2f * std::sin(ctx.time * 4.0f);
+        const float buf_sec = 1.2f + 0.1f * std::cos(ctx.time * 2.5f);
+        const int mem = 61 + static_cast<int>(std::sin(ctx.time * 1.5f) * 1.5f);
+        std::snprintf(buf_fps, sizeof(buf_fps), "FPS %.1f", fps);
+        std::snprintf(buf_buf, sizeof(buf_buf), "BUFFER %.1f s", buf_sec);
+        std::snprintf(buf_mem, sizeof(buf_mem), "MEMORY %d %%", mem);
+
+        const float sy = stats.y + 18.0f;
+        ui::text(list, ctx.fonts.semibold, buf_fps, stats.x + 10.0f, sy, 13, p.accent);
+        ui::text(list, ctx.fonts.regular, "DECODE HW", stats.x + 10.0f, sy + 20.0f, 13, kWhite);
+        ui::text(list, ctx.fonts.regular, buf_buf, stats.x + 10.0f, sy + 40.0f, 13, kWhite);
+        ui::text(list, ctx.fonts.regular, buf_mem, stats.x + 10.0f, sy + 60.0f, 13, kWhite);
+    }
+
+    const float y = chips(list, ctx, a, frame.y + frame.h + 20.0f, chip_labels(pv), pv.index);
+    benefit(list, ctx, a, y + 24.0f, pv.benefit);
 }
 
 } // namespace
@@ -930,6 +1871,27 @@ void draw_settings_preview(DrawList &list, const Context &ctx, const Rect &box, 
         break;
     case EVO_RMLUI_PREVIEW_SURROUND:
         draw_surround(list, ctx, box, pv);
+        break;
+    case EVO_RMLUI_PREVIEW_RESUME:
+        draw_resume(list, ctx, box, pv);
+        break;
+    case EVO_RMLUI_PREVIEW_DECODER:
+        draw_decoder(list, ctx, box, pv);
+        break;
+    case EVO_RMLUI_PREVIEW_NAV_SOUNDS:
+        draw_nav_sounds(list, ctx, box, pv);
+        break;
+    case EVO_RMLUI_PREVIEW_FOLDERS_FIRST:
+        draw_folders_first(list, ctx, box, pv);
+        break;
+    case EVO_RMLUI_PREVIEW_KEYBOARD:
+        draw_keyboard(list, ctx, box, pv);
+        break;
+    case EVO_RMLUI_PREVIEW_ASK_STREAM:
+        draw_ask_stream(list, ctx, box, pv);
+        break;
+    case EVO_RMLUI_PREVIEW_DEBUG_OVERLAY:
+        draw_debug_overlay(list, ctx, box, pv);
         break;
     default: /* INFO and every kind that has no drawing yet */
         draw_info(list, ctx, box, pv);

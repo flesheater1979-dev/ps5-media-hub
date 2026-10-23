@@ -27,9 +27,10 @@ constexpr float kBadgeMax = 170.0f;  /* a long value ("AUTO (MATCH CONTENT)") is
 const Color kWhite = Color::rgb(0xffffff);
 const Color kInk = Color::rgb(0x0b0d16);
 
-std::string fit(const ui::FontRef &font, const std::string &text, float size, float width)
+std::string fit(const ui::FontRef &font, const std::string &text, float size, float width,
+                float tracking = 0.0f)
 {
-    return font.font->fit(text, size, width);
+    return font.font->fit(text, size, width, tracking);
 }
 
 struct SectionDef
@@ -152,7 +153,8 @@ void SettingsScreen::update(float dt)
         toggles_[i].update(dt, 18.0f);
     }
 
-    Rect sidebar_target{kLeft, 210.0f + params_.section_active * (64.0f + 8.0f), 440.0f, 64.0f};
+    int sec_active = std::clamp(params_.section_active, 0, 5);
+    Rect sidebar_target{kLeft, 210.0f + sec_active * (64.0f + 8.0f), 440.0f, 64.0f};
     if (!sidebar_cursor_snapped_)
     {
         sidebar_cursor_.snap(sidebar_target);
@@ -172,6 +174,14 @@ void SettingsScreen::update(float dt)
         }
     }
 
+    float max_scroll = 0.0f;
+    if (!rows_.empty())
+    {
+        const float content_bottom = row_top(static_cast<int>(rows_.size()) - 1) +
+                                     ((rows_.back().kind == EVO_RMLUI_ROW_OPTION) ? 56.0f : 72.0f);
+        max_scroll = std::max(0.0f, content_bottom - kRowsBottom);
+    }
+
     if (focus_idx >= 0)
     {
         float h = (rows_[focus_idx].kind == EVO_RMLUI_ROW_OPTION) ? 56.0f : 72.0f;
@@ -189,10 +199,14 @@ void SettingsScreen::update(float dt)
             bottom = row_top(static_cast<int>(j)) + 56.0f;
         if (bottom - want > kRowsBottom)
             want = std::min(bottom - kRowsBottom, top - kRowsTop);
-        scroll_.target = std::max(0.0f, want);
+        scroll_.target = std::clamp(want, 0.0f, max_scroll);
         if (!row_cursor_snapped_)
             scroll_.snap(scroll_.target);
         row_target = {kLeft + 480.0f + 24.0f, top - scroll_.target, 1824.0f - (kLeft + 480.0f) - 48.0f - (preview_.kind ? kPreviewW + 24.0f : 0.0f), h};
+    }
+    else
+    {
+        scroll_.target = std::clamp(scroll_.target, 0.0f, max_scroll);
     }
 
     if (!row_cursor_snapped_ && row_target.w > 0)
@@ -222,7 +236,7 @@ void SettingsScreen::draw_row(DrawList &list, const Context &ctx, const RowData 
             list.circle(x + 10, r.cy(), 10, p.accent);
             list.circle(x + 10, r.cy(), 4, kInk);
         }
-        ui::text(list, fonts.regular, fit(fonts.regular, row.title, 24, r.w - 120), x + 34, r.cy() + 7, 24, kWhite);
+        ui::text(list, fonts.regular, fit(fonts.regular, row.title, 24, std::max(0.0f, r.w - 120.0f)), x + 34, r.cy() + 7, 24, kWhite);
         return;
     }
 
@@ -244,7 +258,7 @@ void SettingsScreen::draw_row(DrawList &list, const Context &ctx, const RowData 
         reserve += 64.0f;
     else if (row.kind == EVO_RMLUI_ROW_VALUE && !row.badge.empty())
         reserve += fonts.semibold.measure(fit(fonts.semibold, row.badge, 20, kBadgeMax), 20) + 24.0f;
-    const float text_w = std::max(120.0f, r.x + r.w - reserve - x);
+    const float text_w = std::max(0.0f, r.x + r.w - reserve - x);
     ui::text(list, fonts.regular, fit(fonts.regular, row.title, 24, text_w), x, text_y, 24, kWhite);
     if (!row.detail.empty())
     {
@@ -320,7 +334,9 @@ void SettingsScreen::draw(DrawList &list, const Context &ctx) const
         {
             list.image(icon, {r.x + 24, r.y + 16, 32, 32}, ::hui::gfx::kFullUv, ink);
         }
-        ui::text(list, focused ? fonts.semibold : fonts.regular, kSections[i].label, r.x + 72, r.cy() + 9, 26, ink);
+        ui::text(list, focused ? fonts.semibold : fonts.regular,
+                 fit(focused ? fonts.semibold : fonts.regular, kSections[i].label, 26, r.w - 72.0f - 24.0f),
+                 r.x + 72, r.cy() + 9, 26, ink);
     }
 
     Rect pane{kLeft + 480.0f, 130.0f, 1824.0f - (kLeft + 480.0f), 820.0f};
@@ -333,8 +349,10 @@ void SettingsScreen::draw(DrawList &list, const Context &ctx) const
     float px = pane.x + 48.0f;
     float py = pane.y + 56.0f;
 
-    ui::text(list, fonts.semibold, ui::upper(subtitle_), px, py, 18, p.text_muted, Align::left, 2.0f);
-    ui::text(list, fonts.display, title_, px - 2, py + 48, 40, kWhite);
+    ui::text(list, fonts.semibold, fit(fonts.semibold, ui::upper(subtitle_), 18, pane.w - 96.0f, 2.0f), px, py, 18, p.text_muted, Align::left, 2.0f);
+    const float counter_w = counter_.empty() ? 0.0f : (fonts.regular.measure(counter_, 22) + 24.0f);
+    const float title_w = std::max(0.0f, pane.w - 96.0f - counter_w);
+    ui::text(list, fonts.display, fit(fonts.display, title_, 40, title_w), px - 2, py + 48, 40, kWhite);
     if (!counter_.empty())
     {
         ui::text(list, fonts.regular, counter_, pane.x + pane.w - 48.0f, py + 48, 22, p.text_faint, Align::right);

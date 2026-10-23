@@ -95,9 +95,9 @@ struct PreviewSpec { SettingKey key; int kind; const char* benefit; };
 const PreviewSpec kPreviews[] = {
     {SettingKey::DefaultAspect, EVO_RMLUI_PREVIEW_ASPECT,
      "Sets how video fills the screen: fit keeps its shape, fill crops the edges, stretch fills the screen and distorts."},
-    {SettingKey::ResumePlayback, EVO_RMLUI_PREVIEW_INFO, "Picks a film up where you stopped instead of from the start."},
-    {SettingKey::VideoDecoder, EVO_RMLUI_PREVIEW_INFO,
-     "Hardware decoding is smoother and cooler. Software is the fallback for formats the console cannot decode."},
+    {SettingKey::ResumePlayback, EVO_RMLUI_PREVIEW_RESUME, "Picks a film up where you stopped instead of from the start."},
+    {SettingKey::VideoDecoder, EVO_RMLUI_PREVIEW_DECODER,
+     "Hardware decoding is smoother and cooler. Software is for odd formats."},
     {SettingKey::Upscaling, EVO_RMLUI_PREVIEW_UPSCALING,
      "Soft video below your screen's resolution looks crisper. Higher modes cost more GPU."},
     {SettingKey::DeepBlacks, EVO_RMLUI_PREVIEW_DEEP_BLACKS,
@@ -118,7 +118,7 @@ const PreviewSpec kPreviews[] = {
      "Sends Dolby and DTS untouched to your receiver over HDMI."},
     {SettingKey::SurroundTest, EVO_RMLUI_PREVIEW_SURROUND,
      "Plays a tone through each speaker so you can check your layout."},
-    {SettingKey::NavigationSounds, EVO_RMLUI_PREVIEW_INFO, "A soft click when you move and press buttons."},
+    {SettingKey::NavigationSounds, EVO_RMLUI_PREVIEW_NAV_SOUNDS, "A soft click when you move and press buttons."},
     {SettingKey::AutoSubtitles, EVO_RMLUI_PREVIEW_SUB_AUTO, "Loads subtitles on its own when a file has them."},
     {SettingKey::SubtitleFont, EVO_RMLUI_PREVIEW_SUB_FONT, "Picks the typeface for on-screen subtitles."},
     {SettingKey::SecondaryPosition, EVO_RMLUI_PREVIEW_SUB_POS,
@@ -126,14 +126,14 @@ const PreviewSpec kPreviews[] = {
     {SettingKey::SecondaryColour, EVO_RMLUI_PREVIEW_SUB_COLOUR, "A different colour keeps the two lines apart."},
     {SettingKey::Theme, EVO_RMLUI_PREVIEW_THEME, "Changes the colours of the whole app."},
     {SettingKey::Lightbar, EVO_RMLUI_PREVIEW_LIGHTBAR, "The DualSense light follows the theme accent."},
-    {SettingKey::FoldersFirst, EVO_RMLUI_PREVIEW_INFO, "Lists folders above files in the USB browser."},
-    {SettingKey::KeyboardInput, EVO_RMLUI_PREVIEW_INFO,
+    {SettingKey::FoldersFirst, EVO_RMLUI_PREVIEW_FOLDERS_FIRST, "Lists folders above files in the USB browser."},
+    {SettingKey::KeyboardInput, EVO_RMLUI_PREVIEW_KEYBOARD,
      "The virtual keyboard is drawn by EVO. The native one is the PS5 system keyboard."},
-    {SettingKey::AskStream, EVO_RMLUI_PREVIEW_INFO,
+    {SettingKey::AskStream, EVO_RMLUI_PREVIEW_ASK_STREAM,
      "Lets you choose the format and quality each time you open a live channel."},
     {SettingKey::CompatReport, EVO_RMLUI_PREVIEW_INFO,
      "Writes a codec report to USB0 that you can attach to a bug report."},
-    {SettingKey::DebugOverlay, EVO_RMLUI_PREVIEW_INFO, "Shows live performance numbers on screen."},
+    {SettingKey::DebugOverlay, EVO_RMLUI_PREVIEW_DEBUG_OVERLAY, "Shows live performance numbers on screen."},
     {SettingKey::DeveloperTools, EVO_RMLUI_PREVIEW_INFO, "System diagnostics and performance stats."},
     {SettingKey::ConsoleModel, EVO_RMLUI_PREVIEW_INFO,
      "The console EVO detected. Some features, like Maximum AI upscaling, need a PS5 Pro."},
@@ -347,7 +347,7 @@ SettingDef makeDef(SettingKey key, ISettingsService* settings) {
 
     case SettingKey::NavigationSounds:
         d = toggleDef(key, "NAVIGATION SOUNDS", "AUDIO FEEDBACK ON D-PAD & BUTTONS",
-                      "../icons/icon_listener.png", settings->isSoundFeedbackEnabled());
+                      "../icons/icon_speaker.png", settings->isSoundFeedbackEnabled());
         break;
 
     case SettingKey::AutoSubtitles:
@@ -916,6 +916,9 @@ bool SettingsSectionScreen::handleInput(uint32_t pressed, uint32_t held, uint32_
     }
     if (pressed & PadButtons::Left) {
         if (m_expandedIndex >= 0) {
+            /* The cursor may sit on one of the choices; those slots vanish on
+             * collapse, so return it to the setting that was open. */
+            m_selectedIndex = m_expandedIndex;
             m_expandedIndex = -1;
             evo_feedback(EVO_FB_CANCEL);
             return true;
@@ -946,6 +949,9 @@ bool SettingsSectionScreen::handleInput(uint32_t pressed, uint32_t held, uint32_
     }
     if (pressed & PadButtons::Circle) {
         if (m_expandedIndex >= 0) {
+            /* The cursor may sit on one of the choices; those slots vanish on
+             * collapse, so return it to the setting that was open. */
+            m_selectedIndex = m_expandedIndex;
             m_expandedIndex = -1;
             evo_feedback(EVO_FB_CANCEL);
             return true;

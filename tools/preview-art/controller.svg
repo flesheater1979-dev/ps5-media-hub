@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- DualSense-style controller, top view, for the Settings "Controller lightbar" preview.
+     Original artwork for EVO Player. Light bars are left unlit: the app draws the glow in the
+     theme accent over them (see draw_lightbar in evo_hui_settings_preview.cpp).
+     Render: tools/preview-art/render.sh -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 380" width="600" height="380">
+  <defs>
+    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbfcfe"/>
+      <stop offset="0.55" stop-color="#e9ecf2"/>
+      <stop offset="1" stop-color="#c9cfdb"/>
+    </linearGradient>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c2028"/>
+      <stop offset="1" stop-color="#0f1217"/>
+    </linearGradient>
+    <radialGradient id="stick" cx="0.4" cy="0.35" r="0.75">
+      <stop offset="0" stop-color="#454c59"/>
+      <stop offset="1" stop-color="#1a1d24"/>
+    </radialGradient>
+    <path id="half-body" d="M300 56 C250 56 192 58 150 72 C102 90 72 150 56 222 C46 272 40 322 62 346 C86 370 132 354 152 322 C176 284 200 262 240 262 L300 262 Z"/>
+    <path id="half-face" d="M300 64 C252 64 204 68 168 82 C128 100 116 134 126 166 C136 196 172 204 214 200 L300 200 Z"/>
+  </defs>
+
+  <!-- soft ground shadow -->
+
+  <!-- shell -->
+  <use href="#half-body" fill="url(#shell)"/>
+  <use href="#half-body" fill="url(#shell)" transform="translate(600 0) scale(-1 1)"/>
+
+  <!-- black face plate -->
+  <use href="#half-face" fill="url(#face)"/>
+  <use href="#half-face" fill="url(#face)" transform="translate(600 0) scale(-1 1)"/>
+
+  <!-- touchpad -->
+  <rect x="222" y="76" width="156" height="86" rx="16" fill="#262b34" stroke="#3d4452" stroke-width="2"/>
+  <rect x="226" y="80" width="148" height="78" rx="13" fill="none" stroke="#2f3541" stroke-width="1"/>
+
+  <!-- light bars (left unlit; the app overlays the glow) -->
+  <path d="M210 82 C203 108 203 134 212 158" fill="none" stroke="#3a404d" stroke-width="7" stroke-linecap="round"/>
+  <path d="M390 82 C397 108 397 134 388 158" fill="none" stroke="#3a404d" stroke-width="7" stroke-linecap="round"/>
+
+  <!-- create / options -->
+  <rect x="176" y="106" width="8" height="26" rx="4" fill="#323843"/>
+  <rect x="416" y="106" width="8" height="26" rx="4" fill="#323843"/>
+
+  <!-- d-pad -->
+  <g transform="translate(142 172)" fill="#2d333e" stroke="#454c59" stroke-width="1.5" stroke-linejoin="round">
+    <path d="M-9 -34 h18 v25 h25 v18 h-25 v25 h-18 v-25 h-25 v-18 h25 z"/>
+  </g>
+  <g transform="translate(142 172)" fill="#7e8798">
+    <path d="M0 -26 l6 8 h-12 z"/>
+    <path d="M0 26 l6 -8 h-12 z"/>
+    <path d="M-26 0 l8 -6 v12 z"/>
+    <path d="M26 0 l-8 -6 v12 z"/>
+  </g>
+
+  <!-- face buttons -->
+  <g transform="translate(458 172)">
+    <circle cx="0" cy="-27" r="14" fill="#262b34" stroke="#454c59" stroke-width="1.5"/>
+    <circle cx="27" cy="0" r="14" fill="#262b34" stroke="#454c59" stroke-width="1.5"/>
+    <circle cx="0" cy="27" r="14" fill="#262b34" stroke="#454c59" stroke-width="1.5"/>
+    <circle cx="-27" cy="0" r="14" fill="#262b34" stroke="#454c59" stroke-width="1.5"/>
+    <path d="M0 -34 l6.5 11 h-13 z" fill="none" stroke="#5fd39a" stroke-width="2.4" stroke-linejoin="round"/>
+    <circle cx="27" cy="0" r="6.5" fill="none" stroke="#ff7d8d" stroke-width="2.4"/>
+    <path d="M-6 21 l12 12 M6 21 l-12 12" stroke="#6fa8ff" stroke-width="2.4" stroke-linecap="round"/>
+    <rect x="-33.5" y="-6.5" width="13" height="13" rx="1.5" fill="none" stroke="#d08cf0" stroke-width="2.4"/>
+  </g>
+
+  <!-- sticks -->
+  <circle cx="232" cy="228" r="35" fill="#161920" stroke="#2f3541" stroke-width="2"/>
+  <circle cx="232" cy="228" r="26" fill="url(#stick)"/>
+  <circle cx="232" cy="228" r="17" fill="none" stroke="#5a6272" stroke-width="1.5" opacity="0.7"/>
+  <circle cx="368" cy="228" r="35" fill="#161920" stroke="#2f3541" stroke-width="2"/>
+  <circle cx="368" cy="228" r="26" fill="url(#stick)"/>
+  <circle cx="368" cy="228" r="17" fill="none" stroke="#5a6272" stroke-width="1.5" opacity="0.7"/>
+
+  <!-- PS button and mute -->
+  <circle cx="300" cy="196" r="11" fill="#1f232b" stroke="#434a58" stroke-width="1.5"/>
+  <path d="M296 191 v10 l9 -3.2 c2.5 -1 2.5 -3.4 0 -4.4 l-3.6 -1.2" fill="none" stroke="#9aa3b4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="290" y="226" width="20" height="9" rx="4.5" fill="#2a2f39" stroke="#434a58" stroke-width="1"/>
+
+  <!-- triggers peeking over the top edge -->
+  <path d="M120 70 C132 50 168 44 196 50 L196 66 C168 62 140 66 120 70 Z" fill="#cfd5e0" stroke="#aab1c0" stroke-width="1.2"/>
+  <path d="M480 70 C468 50 432 44 404 50 L404 66 C432 62 460 66 480 70 Z" fill="#cfd5e0" stroke="#aab1c0" stroke-width="1.2"/>
+</svg>

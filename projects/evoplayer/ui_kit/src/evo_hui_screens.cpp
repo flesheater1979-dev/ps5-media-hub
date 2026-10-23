@@ -1075,7 +1075,8 @@ void ListScreen::draw(DrawList &list, const Context &ctx) const
             const std::uint32_t ic = ctx.textures.icon(item.icon);
             if (ic)
                 list.image(ic, {r.x + 18, r.cy() - 14, 28, 28}, ::hui::gfx::kFullUv, ink);
-            ui::text(list, fonts.semibold, item.label, r.x + 62, r.y + 30, 22, ink);
+            ui::text(list, fonts.semibold, fit(fonts.semibold, item.label, 22, r.w - 80), r.x + 62, r.y + 30, 22,
+                     ink);
             ui::text(list, fonts.regular, fit(fonts.regular, item.desc, 16, r.w - 80), r.x + 62, r.y + 52, 16,
                      focused ? kInk.with_alpha(0.7f) : p.text_faint);
         }

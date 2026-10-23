@@ -138,6 +138,17 @@ fix needs a new GPU sync call (AcquireMem), which is a panic risk. Also
 checked: ArtCNN (MIT, anime-aimed), CuNNy (LGPL-3.0, visual novels), RAVU
 (LGPL-3.0 at repo level, per-file headers unchecked).
 
+## Sample photos in the Settings previews
+
+`projects/evoplayer/assets/icons/preview_up_*.png` and `preview_hdr_*.png` are
+derived from NASA images (public domain; NASA does not endorse EVO Player):
+the Lagoon Nebula (Hubble, `GSFC_20171208_Archive_e001955`) for the upscaling
+comparison and an ISS photograph of sunglint over the ocean (`iss031e035310`)
+for the SDR / HDR comparison. The softer upscaling versions and the SDR / HDR
+looks are simulated from the one photo; they illustrate the effect, they are not
+captures of EVO's output. `preview_controller.png` is original artwork rendered
+from `tools/preview-art/controller.svg` (`tools/preview-art/render.sh`).
+
 ## If you commit something by accident
 
 A `git rm` is not enough — the blob stays in history.

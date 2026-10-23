@@ -466,3 +466,183 @@ static void fill_provider_shelves_fixture(evo_hui_provider_params_t& p, std::vec
         p.selected_resume = "";
     }
 }
+
+static void fill_settings_pv_extra_fixture(evo_rmlui_settings_params_t &p, const std::string &kind)
+{
+    if (kind == "resume")
+    {
+        build_preview_section(p, 0, "VIDEO & DISPLAY", "DECODER, UPSCALING, 120 HZ & HDR", {
+            {EVO_RMLUI_ROW_VALUE, "VIDEO DECODER", "WHICH BACKEND DECODES VIDEO", "../icons/icon_cpu.png", "AUTO", 0, 0, "", {"AUTO", "HARDWARE", "SOFTWARE"}, 0, -1, false},
+            {EVO_RMLUI_ROW_TOGGLE, "RESUME PLAYBACK", "REMEMBER PLAYBACK POSITION", "../icons/icon_resume.png", "", 1, EVO_RMLUI_PREVIEW_RESUME, "Picks a film up where you stopped instead of from the start.", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "DEFAULT ASPECT RATIO", "HOW VIDEO FILLS THE SCREEN", "../icons/icon_aspect.png", "FIT", 0, 0, "", {"FIT", "FILL", "STRETCH"}, 0, -1, false}
+        });
+    }
+    else if (kind == "resume_off")
+    {
+        build_preview_section(p, 0, "VIDEO & DISPLAY", "DECODER, UPSCALING, 120 HZ & HDR", {
+            {EVO_RMLUI_ROW_VALUE, "VIDEO DECODER", "WHICH BACKEND DECODES VIDEO", "../icons/icon_cpu.png", "AUTO", 0, 0, "", {"AUTO", "HARDWARE", "SOFTWARE"}, 0, -1, false},
+            {EVO_RMLUI_ROW_TOGGLE, "RESUME PLAYBACK", "REMEMBER PLAYBACK POSITION", "../icons/icon_resume.png", "", 0, EVO_RMLUI_PREVIEW_RESUME, "Picks a film up where you stopped instead of from the start.", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "DEFAULT ASPECT RATIO", "HOW VIDEO FILLS THE SCREEN", "../icons/icon_aspect.png", "FIT", 0, 0, "", {"FIT", "FILL", "STRETCH"}, 0, -1, false}
+        });
+    }
+    else if (kind == "decoder")
+    {
+        build_preview_section(p, 0, "VIDEO & DISPLAY", "DECODER, UPSCALING, 120 HZ & HDR", {
+            {EVO_RMLUI_ROW_VALUE, "VIDEO DECODER", "WHICH BACKEND DECODES VIDEO", "../icons/icon_cpu.png", "HARDWARE", 0, EVO_RMLUI_PREVIEW_DECODER, "Hardware decoding is smoother and cooler. Software is for odd formats.", {"AUTO", "HARDWARE", "SOFTWARE"}, 1, 1, false},
+            {EVO_RMLUI_ROW_TOGGLE, "RESUME PLAYBACK", "REMEMBER PLAYBACK POSITION", "../icons/icon_resume.png", "", 1, 0, "", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "UPSCALING", "SHARPEN VIDEO SMALLER THAN THE SCREEN", "../icons/icon_sparkles.png", "AI", 0, 0, "", {"OFF", "SHARP", "AI"}, 2, -1, false}
+        });
+    }
+    else if (kind == "decoder_sw")
+    {
+        build_preview_section(p, 0, "VIDEO & DISPLAY", "DECODER, UPSCALING, 120 HZ & HDR", {
+            {EVO_RMLUI_ROW_VALUE, "VIDEO DECODER", "WHICH BACKEND DECODES VIDEO", "../icons/icon_cpu.png", "SOFTWARE", 0, EVO_RMLUI_PREVIEW_DECODER, "Hardware decoding is smoother and cooler. Software is for odd formats.", {"AUTO", "HARDWARE", "SOFTWARE"}, 2, 2, false},
+            {EVO_RMLUI_ROW_TOGGLE, "RESUME PLAYBACK", "REMEMBER PLAYBACK POSITION", "../icons/icon_resume.png", "", 1, 0, "", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "UPSCALING", "SHARPEN VIDEO SMALLER THAN THE SCREEN", "../icons/icon_sparkles.png", "AI", 0, 0, "", {"OFF", "SHARP", "AI"}, 2, -1, false}
+        });
+    }
+    else if (kind == "nav_sounds")
+    {
+        build_preview_section(p, 1, "AUDIO", "OUTPUT CHANNELS, SPEAKERS & SOUNDS", {
+            {EVO_RMLUI_ROW_VALUE, "OUTPUT CHANNELS", "STEREO DOWNMIXES 5.1 & 7.1 TO 2.0", "../icons/icon_volume.png", "STEREO", 0, 0, "", {"STEREO", "SURROUND 5.1"}, 0, -1, false},
+            {EVO_RMLUI_ROW_ACTION, "SURROUND SOUND TEST", "5.1 & 7.1 SPEAKER CHANNEL VERIFICATION", "../icons/icon_speaker.png", "OPEN", 0, 0, "", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_TOGGLE, "NAVIGATION SOUNDS", "AUDIO FEEDBACK ON D-PAD & BUTTONS", "../icons/icon_listener.png", "", 1, EVO_RMLUI_PREVIEW_NAV_SOUNDS, "A soft click when you move and press buttons.", {}, 0, -1, false}
+        });
+    }
+    else if (kind == "nav_sounds_off")
+    {
+        build_preview_section(p, 1, "AUDIO", "OUTPUT CHANNELS, SPEAKERS & SOUNDS", {
+            {EVO_RMLUI_ROW_VALUE, "OUTPUT CHANNELS", "STEREO DOWNMIXES 5.1 & 7.1 TO 2.0", "../icons/icon_volume.png", "STEREO", 0, 0, "", {"STEREO", "SURROUND 5.1"}, 0, -1, false},
+            {EVO_RMLUI_ROW_ACTION, "SURROUND SOUND TEST", "5.1 & 7.1 SPEAKER CHANNEL VERIFICATION", "../icons/icon_speaker.png", "OPEN", 0, 0, "", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_TOGGLE, "NAVIGATION SOUNDS", "AUDIO FEEDBACK ON D-PAD & BUTTONS", "../icons/icon_listener.png", "", 0, EVO_RMLUI_PREVIEW_NAV_SOUNDS, "A soft click when you move and press buttons.", {}, 0, -1, false}
+        });
+    }
+    else if (kind == "folders_first")
+    {
+        build_preview_section(p, 3, "INTERFACE", "THEMES, CONTROLLER & SORTING", {
+            {EVO_RMLUI_ROW_VALUE, "THEME", "COLOR PALETTE & ACCENTS", "../icons/icon_palette.png", "MIDNIGHT", 0, 0, "", {"MIDNIGHT", "DARK", "AMBER", "TEAL"}, 0, -1, true},
+            {EVO_RMLUI_ROW_TOGGLE, "FOLDERS FIRST", "USB FILE BROWSER SORTING", "../icons/icon_folder.png", "", 1, EVO_RMLUI_PREVIEW_FOLDERS_FIRST, "Lists folders above files in the USB browser.", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "KEYBOARD INPUT", "TEXT ENTRY METHOD", "../icons/icon_keyboard.png", "VIRTUAL KEYBOARD", 0, 0, "", {"VIRTUAL KEYBOARD", "NATIVE PS5 IME"}, 0, -1, false}
+        });
+    }
+    else if (kind == "folders_first_off")
+    {
+        build_preview_section(p, 3, "INTERFACE", "THEMES, CONTROLLER & SORTING", {
+            {EVO_RMLUI_ROW_VALUE, "THEME", "COLOR PALETTE & ACCENTS", "../icons/icon_palette.png", "MIDNIGHT", 0, 0, "", {"MIDNIGHT", "DARK", "AMBER", "TEAL"}, 0, -1, true},
+            {EVO_RMLUI_ROW_TOGGLE, "FOLDERS FIRST", "USB FILE BROWSER SORTING", "../icons/icon_folder.png", "", 0, EVO_RMLUI_PREVIEW_FOLDERS_FIRST, "Lists folders above files in the USB browser.", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "KEYBOARD INPUT", "TEXT ENTRY METHOD", "../icons/icon_keyboard.png", "VIRTUAL KEYBOARD", 0, 0, "", {"VIRTUAL KEYBOARD", "NATIVE PS5 IME"}, 0, -1, false}
+        });
+    }
+    else if (kind == "keyboard")
+    {
+        build_preview_section(p, 3, "INTERFACE", "THEMES, CONTROLLER & SORTING", {
+            {EVO_RMLUI_ROW_TOGGLE, "FOLDERS FIRST", "USB FILE BROWSER SORTING", "../icons/icon_folder.png", "", 1, 0, "", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "KEYBOARD INPUT", "TEXT ENTRY METHOD", "../icons/icon_keyboard.png", "VIRTUAL KEYBOARD", 0, EVO_RMLUI_PREVIEW_KEYBOARD, "The virtual keyboard is drawn by EVO. The native one is the PS5 system keyboard.", {"VIRTUAL KEYBOARD", "NATIVE PS5 IME"}, 0, 0, false},
+            {EVO_RMLUI_ROW_TOGGLE, "ASK WHICH LIVE STREAM", "PICK THE FORMAT AND QUALITY WHEN YOU OPEN A CHANNEL", "../icons/icon_tv.png", "", 1, 0, "", {}, 0, -1, false}
+        });
+    }
+    else if (kind == "keyboard_ps5")
+    {
+        build_preview_section(p, 3, "INTERFACE", "THEMES, CONTROLLER & SORTING", {
+            {EVO_RMLUI_ROW_TOGGLE, "FOLDERS FIRST", "USB FILE BROWSER SORTING", "../icons/icon_folder.png", "", 1, 0, "", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "KEYBOARD INPUT", "TEXT ENTRY METHOD", "../icons/icon_keyboard.png", "NATIVE PS5 IME", 0, EVO_RMLUI_PREVIEW_KEYBOARD, "The virtual keyboard is drawn by EVO. The native one is the PS5 system keyboard.", {"VIRTUAL KEYBOARD", "NATIVE PS5 IME"}, 1, 1, false},
+            {EVO_RMLUI_ROW_TOGGLE, "ASK WHICH LIVE STREAM", "PICK THE FORMAT AND QUALITY WHEN YOU OPEN A CHANNEL", "../icons/icon_tv.png", "", 1, 0, "", {}, 0, -1, false}
+        });
+    }
+    else if (kind == "ask_stream")
+    {
+        build_preview_section(p, 3, "INTERFACE", "THEMES, CONTROLLER & SORTING", {
+            {EVO_RMLUI_ROW_VALUE, "KEYBOARD INPUT", "TEXT ENTRY METHOD", "../icons/icon_keyboard.png", "VIRTUAL KEYBOARD", 0, 0, "", {"VIRTUAL KEYBOARD", "NATIVE PS5 IME"}, 0, -1, false},
+            {EVO_RMLUI_ROW_TOGGLE, "ASK WHICH LIVE STREAM", "PICK THE FORMAT AND QUALITY WHEN YOU OPEN A CHANNEL", "../icons/icon_tv.png", "", 1, EVO_RMLUI_PREVIEW_ASK_STREAM, "Lets you choose the format and quality each time you open a live channel.", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_ACTION, "COMPATIBILITY REPORT", "WRITES A CODEC REPORT TO USB0", "../icons/icon_report.png", "RUN", 0, 0, "", {}, 0, -1, false}
+        });
+    }
+    else if (kind == "ask_stream_off")
+    {
+        build_preview_section(p, 3, "INTERFACE", "THEMES, CONTROLLER & SORTING", {
+            {EVO_RMLUI_ROW_VALUE, "KEYBOARD INPUT", "TEXT ENTRY METHOD", "../icons/icon_keyboard.png", "VIRTUAL KEYBOARD", 0, 0, "", {"VIRTUAL KEYBOARD", "NATIVE PS5 IME"}, 0, -1, false},
+            {EVO_RMLUI_ROW_TOGGLE, "ASK WHICH LIVE STREAM", "PICK THE FORMAT AND QUALITY WHEN YOU OPEN A CHANNEL", "../icons/icon_tv.png", "", 0, EVO_RMLUI_PREVIEW_ASK_STREAM, "Lets you choose the format and quality each time you open a live channel.", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_ACTION, "COMPATIBILITY REPORT", "WRITES A CODEC REPORT TO USB0", "../icons/icon_report.png", "RUN", 0, 0, "", {}, 0, -1, false}
+        });
+    }
+    else if (kind == "debug_overlay")
+    {
+        build_preview_section(p, 4, "SYSTEM & DIAGNOSTICS", "DIAGNOSTICS & SYSTEM MANAGEMENT", {
+            {EVO_RMLUI_ROW_ACTION, "DEVELOPER TOOLS", "SYSTEM DIAGNOSTICS & PERFORMANCE STATS", "../icons/icon_developer_tools.png", "OPEN", 0, 0, "", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_TOGGLE, "DEBUG OVERLAY", "SHOWS LIVE PERFORMANCE NUMBERS ON SCREEN", "../icons/icon_activity.png", "", 1, EVO_RMLUI_PREVIEW_DEBUG_OVERLAY, "Shows live performance numbers on screen.", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_ACTION, "QUIT EVO", "RELEASE EVERYTHING, THEN CLOSE FROM THE SWITCHER", "../icons/icon_power.png", "QUIT", 0, 0, "", {}, 0, -1, false}
+        });
+    }
+    else if (kind == "debug_overlay_off")
+    {
+        build_preview_section(p, 4, "SYSTEM & DIAGNOSTICS", "DIAGNOSTICS & SYSTEM MANAGEMENT", {
+            {EVO_RMLUI_ROW_ACTION, "DEVELOPER TOOLS", "SYSTEM DIAGNOSTICS & PERFORMANCE STATS", "../icons/icon_developer_tools.png", "OPEN", 0, 0, "", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_TOGGLE, "DEBUG OVERLAY", "SHOWS LIVE PERFORMANCE NUMBERS ON SCREEN", "../icons/icon_activity.png", "", 0, EVO_RMLUI_PREVIEW_DEBUG_OVERLAY, "Shows live performance numbers on screen.", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_ACTION, "QUIT EVO", "RELEASE EVERYTHING, THEN CLOSE FROM THE SWITCHER", "../icons/icon_power.png", "QUIT", 0, 0, "", {}, 0, -1, false}
+        });
+    }
+    else if (kind == "motion_off")
+    {
+        build_preview_section(p, 5, "EXPERIMENTAL", "UNFINISHED WORK - EXPECT ARTEFACTS", {
+            {EVO_RMLUI_ROW_TOGGLE, "MATCH VIDEO FRAME RATE", "24P / 50 HZ OUTPUT DURING PLAYBACK - FALLS BACK TO 120 HZ OR 60 HZ", "../icons/icon_gauge.png", "", 0, 0, "", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "MOTION SMOOTHING", "24 -> 60 FPS ON THE GPU - SOFT EDGES AND HALOES AROUND FAST MOTION", "../icons/icon_activity.png", "", 0, EVO_RMLUI_PREVIEW_MOTION, "Pans and sports look fluid. Films can look too smooth, and fast motion can show haloes.", {"OFF", "LOW", "HIGH"}, 0, 0, false},
+            {EVO_RMLUI_ROW_VALUE, "DEEP BLACKS", "PULLS ELEVATED SHADOWS TO TRUE OLED BLACK", "../icons/icon_sparkles.png", "OFF", 0, 0, "", {"OFF", "LOW", "HIGH"}, 0, -1, false}
+        });
+    }
+    else if (kind == "refresh_60")
+    {
+        build_preview_section(p, 0, "VIDEO & DISPLAY", "DECODER, UPSCALING, 120 HZ & HDR", {
+            {EVO_RMLUI_ROW_VALUE, "AI NETWORK", "BIGGER IS SHARPER BUT HEAVIER - MAXIMUM IS FOR PS5 PRO", "../icons/icon_brain.png", "LARGE", 0, 0, "", {"AUTO", "STANDARD", "LARGE", "MAXIMUM (PRO)"}, 2, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "120 HZ OUTPUT", "SMOOTHER 24 FPS - THE TV GOES BLACK BRIEFLY ON EACH SWITCH", "../icons/icon_gauge.png", "", 0, EVO_RMLUI_PREVIEW_REFRESH, "24 fps film plays more evenly on a 120 Hz output. The TV goes black briefly on each switch.", {"OFF", "AUTO (ALWAYS 120 HZ)", "PLAYBACK ONLY"}, 0, 0, false},
+            {EVO_RMLUI_ROW_VALUE, "HDR OUTPUT", "HDR10 FOR HDR VIDEO - THE TV GOES BLACK BRIEFLY AT START & END", "../icons/icon_sun.png", "AUTO", 0, 0, "", {"OFF (TONE-MAP TO SDR)", "AUTO (MATCH CONTENT)"}, 1, -1, false}
+        });
+    }
+    else if (kind == "match_rate_off")
+    {
+        build_preview_section(p, 5, "EXPERIMENTAL", "UNFINISHED WORK - EXPECT ARTEFACTS", {
+            {EVO_RMLUI_ROW_VALUE, "DEEP BLACKS", "PULLS ELEVATED SHADOWS TO TRUE OLED BLACK", "../icons/icon_sparkles.png", "OFF", 0, 0, "", {"OFF", "LOW", "HIGH"}, 0, -1, false},
+            {EVO_RMLUI_ROW_TOGGLE, "MATCH VIDEO FRAME RATE", "24P / 50 HZ OUTPUT DURING PLAYBACK - FALLS BACK TO 120 HZ OR 60 HZ", "../icons/icon_gauge.png", "", 0, EVO_RMLUI_PREVIEW_MATCH_RATE, "Outputs the video's own rate (24p or 50 Hz) so motion has no judder.", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "MOTION SMOOTHING", "24 -> 60 FPS ON THE GPU - SOFT EDGES AND HALOES AROUND FAST MOTION", "../icons/icon_activity.png", "OFF", 0, 0, "", {"OFF", "LOW", "HIGH"}, 0, -1, false}
+        });
+    }
+    else if (kind == "channels_stereo")
+    {
+        build_preview_section(p, 1, "AUDIO", "OUTPUT CHANNELS, SPEAKERS & SOUNDS", {
+            {EVO_RMLUI_ROW_TOGGLE, "AUDIO PASSTHROUGH", "BITSTREAM DOLBY & DTS TO RECEIVER OVER HDMI", "../icons/icon_volume.png", "", 0, 0, "", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "OUTPUT CHANNELS", "STEREO DOWNMIXES 5.1 & 7.1 TO 2.0", "../icons/icon_volume.png", "STEREO (2.0)", 0, EVO_RMLUI_PREVIEW_CHANNELS, "Stereo mixes 5.1 and 7.1 down to two speakers or headphones.", {"AUTO", "STEREO (2.0)"}, 1, 1, false},
+            {EVO_RMLUI_ROW_ACTION, "SURROUND SOUND TEST", "5.1 & 7.1 SPEAKER CHANNEL VERIFICATION", "../icons/icon_speaker.png", "OPEN", 0, 0, "", {}, 0, -1, false}
+        });
+    }
+    else if (kind == "lightbar_off")
+    {
+        build_preview_section(p, 3, "INTERFACE & STORAGE", "THEMES, CONTROLS & BROWSING", {
+            {EVO_RMLUI_ROW_VALUE, "THEME", "COLOR PALETTE & ACCENTS", "../icons/icon_palette.png", "MIDNIGHT", 0, 0, "", {"MIDNIGHT", "CARBON", "EMBER", "AURORA"}, 0, -1, true},
+            {EVO_RMLUI_ROW_TOGGLE, "CONTROLLER LIGHTBAR", "DUALSENSE LIGHT FOLLOWS THE THEME ACCENT", "../icons/icon_gamepad.png", "", 0, EVO_RMLUI_PREVIEW_LIGHTBAR, "The DualSense light follows the theme accent.", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_TOGGLE, "FOLDERS FIRST", "USB FILE BROWSER SORTING", "../icons/icon_folder.png", "", 1, 0, "", {}, 0, -1, false}
+        });
+    }
+    else if (kind == "sub_font_standard")
+    {
+        build_preview_section(p, 2, "SUBTITLES", "PREFERENCES & APPEARANCE", {
+            {EVO_RMLUI_ROW_TOGGLE, "AUTO SUBTITLES", "AUTOMATICALLY LOAD SUBTITLES ON PLAYBACK", "../icons/icon_subtitles.png", "", 1, 0, "", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "DEFAULT FONT STYLE", "ON-SCREEN TEXT TYPEFACE", "../icons/icon_type.png", "STANDARD", 0, EVO_RMLUI_PREVIEW_SUB_FONT, "Picks the typeface for on-screen subtitles.", {"STANDARD", "ROUNDED", "BOLD", "CONDENSED"}, 0, 0, false},
+            {EVO_RMLUI_ROW_VALUE, "SECONDARY SUBTITLE POSITION", "WHERE THE SECOND LINE OF DIALOGUE GOES", "../icons/icon_subtitles.png", "STACKED ABOVE", 0, 0, "", {"STACKED ABOVE", "TOP OF SCREEN"}, 0, -1, false}
+        });
+    }
+    else if (kind == "sub_font_bold")
+    {
+        build_preview_section(p, 2, "SUBTITLES", "PREFERENCES & APPEARANCE", {
+            {EVO_RMLUI_ROW_TOGGLE, "AUTO SUBTITLES", "AUTOMATICALLY LOAD SUBTITLES ON PLAYBACK", "../icons/icon_subtitles.png", "", 1, 0, "", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "DEFAULT FONT STYLE", "ON-SCREEN TEXT TYPEFACE", "../icons/icon_type.png", "BOLD", 0, EVO_RMLUI_PREVIEW_SUB_FONT, "Picks the typeface for on-screen subtitles.", {"STANDARD", "ROUNDED", "BOLD", "CONDENSED"}, 2, 2, false},
+            {EVO_RMLUI_ROW_VALUE, "SECONDARY SUBTITLE POSITION", "WHERE THE SECOND LINE OF DIALOGUE GOES", "../icons/icon_subtitles.png", "STACKED ABOVE", 0, 0, "", {"STACKED ABOVE", "TOP OF SCREEN"}, 0, -1, false}
+        });
+    }
+    else if (kind == "sub_font_condensed")
+    {
+        build_preview_section(p, 2, "SUBTITLES", "PREFERENCES & APPEARANCE", {
+            {EVO_RMLUI_ROW_TOGGLE, "AUTO SUBTITLES", "AUTOMATICALLY LOAD SUBTITLES ON PLAYBACK", "../icons/icon_subtitles.png", "", 1, 0, "", {}, 0, -1, false},
+            {EVO_RMLUI_ROW_VALUE, "DEFAULT FONT STYLE", "ON-SCREEN TEXT TYPEFACE", "../icons/icon_type.png", "CONDENSED", 0, EVO_RMLUI_PREVIEW_SUB_FONT, "Picks the typeface for on-screen subtitles.", {"STANDARD", "ROUNDED", "BOLD", "CONDENSED"}, 3, 3, false},
+            {EVO_RMLUI_ROW_VALUE, "SECONDARY SUBTITLE POSITION", "WHERE THE SECOND LINE OF DIALOGUE GOES", "../icons/icon_subtitles.png", "STACKED ABOVE", 0, 0, "", {"STACKED ABOVE", "TOP OF SCREEN"}, 0, -1, false}
+        });
+    }
+}

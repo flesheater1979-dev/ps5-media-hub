@@ -174,7 +174,14 @@ enum {
     EVO_RMLUI_PREVIEW_LIGHTBAR,     /* controller light follows the accent */
     EVO_RMLUI_PREVIEW_CHANNELS,     /* speaker layout: stereo vs 5.1 */
     EVO_RMLUI_PREVIEW_PASSTHROUGH,  /* decoded in EVO vs bitstream to receiver */
-    EVO_RMLUI_PREVIEW_SURROUND      /* speaker layout with the test action */
+    EVO_RMLUI_PREVIEW_SURROUND,     /* speaker layout with the test action */
+    EVO_RMLUI_PREVIEW_RESUME,       /* 16:9 player frame with progress bar */
+    EVO_RMLUI_PREVIEW_DECODER,      /* CPU & Heat meter bars + verdict */
+    EVO_RMLUI_PREVIEW_NAV_SOUNDS,   /* speaker + mini D-pad audio feedback */
+    EVO_RMLUI_PREVIEW_FOLDERS_FIRST,/* file list: folders grouped above files */
+    EVO_RMLUI_PREVIEW_KEYBOARD,     /* EVO virtual keyboard vs native PS5 IME */
+    EVO_RMLUI_PREVIEW_ASK_STREAM,   /* live channel tile to quality dialog */
+    EVO_RMLUI_PREVIEW_DEBUG_OVERLAY /* live stats box over video frame */
 };
 
 #define EVO_RMLUI_PREVIEW_CHOICES 12  /* EVO_THEME_MAX, the longest list */
