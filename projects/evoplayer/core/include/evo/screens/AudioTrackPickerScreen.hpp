@@ -2,6 +2,8 @@
 #define EVO_AUDIO_TRACK_PICKER_SCREEN_HPP
 
 #include "evo/screens/StatefulScreen.hpp"
+#include <atomic>
+#include <pthread.h>
 #include <string>
 #include <vector>
 
@@ -49,6 +51,15 @@ private:
     void refreshTracks();
     void navigate(int delta);
     void activateSelection();
+    void goBack();
+
+    /* Reopening the stream takes seconds (reconnect, probe, decoder, buffer), so it
+     * runs on a worker while the picker shows a busy card instead of freezing. */
+    static void* switchWorker(void* self);
+    pthread_t m_thread{};
+    bool m_threadLive = false;
+    std::atomic<int> m_switchState{0};   /* 0 idle, 1 running, 2 done, 3 failed */
+    Entry m_switchEntry;
 
     bool m_hasQuality = false;      /* the stream has more than one video variant */
     std::vector<Entry> m_tracks;

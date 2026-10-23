@@ -239,6 +239,9 @@ class ListScreen
     int menu_focus_ = 0;
     std::string menu_eyebrow_, menu_title_, menu_sub_, menu_icon_;
     std::string panel_eyebrow_, panel_title_;
+    bool loading_ = false;
+    std::string loading_text_;
+    float loading_age_ = 0.0f;
     std::vector<std::pair<std::string, std::string>> panel_; /* label, value */
 
     float age_ = 0.0f;

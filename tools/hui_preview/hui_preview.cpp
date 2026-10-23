@@ -490,6 +490,7 @@ int main(int argc, char **argv)
         lp.row_count = 9;
         lp.cursor_index = -1;
         lp.panel_count = 0;
+        lp.loading = 0;
         lp.is_empty = 0;
         lp.menu_count = 0;
         for (int i = 0; i < 8; ++i)
@@ -634,6 +635,30 @@ int main(int argc, char **argv)
              }
              lp.rows[1].is_focused = 1;
              lp.cursor_index = 1;
+             lp.hint_count = 2;
+             lp.hints[0] = {"../icons/btn_cross.png", "SELECT"};
+             lp.hints[1] = {"../icons/btn_circle.png", "BACK"};
+         }},
+        {"list_audio_loading", 1, [&] {
+             clear_focus();
+             static const char *const titles[3] = {"Unknown language - track 1", "English", "Italiano"};
+             static const char *const pills[3] = {"DD+\t5.1\t48 kHz", "+PLAYING\tAC3\t2.0\t48 kHz", "AAC\t2.0\t48 kHz"};
+             lp.title = "Audio";
+             lp.subtitle = "Clarkson's Farm - S01E08 Harvesting";
+             lp.row_count = 3;
+             for (int i = 0; i < 3; ++i)
+             {
+                 lp.rows[i].title = titles[i];
+                 lp.rows[i].pills = pills[i];
+                 lp.rows[i].detail = "";
+                 lp.rows[i].badge = "";
+                 lp.rows[i].progress = -1;
+                 lp.rows[i].icon_path = "../icons/icon_aspect.png";
+             }
+             lp.rows[0].is_focused = 1;
+             lp.cursor_index = 0;
+             lp.loading = 1;
+             lp.loading_text = "Switching audio...";
              lp.hint_count = 2;
              lp.hints[0] = {"../icons/btn_cross.png", "SELECT"};
              lp.hints[1] = {"../icons/btn_circle.png", "BACK"};

@@ -397,6 +397,11 @@ typedef struct {
         const char* label;
         const char* value;
     } panel[10];
+
+    /* A busy card over the list ("Switching audio...") with animated dots, while
+     * the screen's work runs off the UI thread. Only the kit UI draws it. */
+    int         loading;
+    const char* loading_text;
 } evo_rmlui_list_params_t;
 
 /*

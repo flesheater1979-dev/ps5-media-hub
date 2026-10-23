@@ -863,6 +863,10 @@ void ListScreen::set(const evo_rmlui_list_params_t &p)
     menu_title_ = str(p.menu_title);
     menu_sub_ = str(p.menu_sub);
     menu_icon_ = str(p.menu_icon);
+    if (p.loading && !loading_)
+        loading_age_ = 0.0f;
+    loading_ = p.loading != 0;
+    loading_text_ = str(p.loading_text);
     panel_eyebrow_ = str(p.panel_eyebrow);
     panel_title_ = str(p.panel_title);
     panel_.clear();
@@ -896,6 +900,7 @@ Rect ListScreen::menu_item_rect(int index) const
 void ListScreen::update(float dt)
 {
     age_ += dt;
+    loading_age_ += dt;
     int focused = -1;
     for (std::size_t i = 0; i < rows_.size(); ++i)
         if (rows_[i].focused)
@@ -1111,6 +1116,26 @@ void ListScreen::draw(DrawList &list, const Context &ctx) const
         list.push_opacity(tween::stagger(age_, 6, 0.06f, 0.4f));
         ui::draw_hints(list, fonts, ui::GlyphStyle::dark(), hints, n, kListRight, true, layout);
         list.pop_opacity();
+    }
+
+    /* Busy card: the screen's work is running off the UI thread, so say so and keep
+     * something moving - a frozen picture reads as a hang. */
+    if (loading_)
+    {
+        list.rounded_rect({0, 0, 1920, 1080}, 0, Color::rgb(0x000000, 0.55f));
+        const Rect card{960.0f - 280.0f, 540.0f - 100.0f, 560.0f, 200.0f};
+        list.shadow({card.x, card.y + 20, card.w, card.h}, 28, 40, Color::rgb(0x000000, 0.55f));
+        list.rounded_rect(card, 28, p.bg_top.with_alpha(0.97f));
+        list.bordered_rect(card, 28, Color::rgb(0x000000, 0.0f), 1.5f, kWhite.with_alpha(0.14f));
+        for (int i = 0; i < 3; ++i)
+        {
+            const float pulse = std::max(0.0f, std::sin(loading_age_ * 6.0f - static_cast<float>(i) * 0.9f));
+            const float x = card.cx() + (static_cast<float>(i) - 1.0f) * 40.0f;
+            list.rounded_rect({x - 9.0f, card.y + 56.0f, 18.0f, 18.0f}, 9,
+                              p.accent.with_alpha(0.25f + 0.75f * pulse));
+        }
+        ui::text(list, fonts.semibold, loading_text_.empty() ? std::string("Working") : loading_text_,
+                 card.cx(), card.y + 138.0f, 28, kWhite, Align::center);
     }
 
     /* OPTIONS menu. */

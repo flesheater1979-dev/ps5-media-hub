@@ -29,6 +29,11 @@ void AudioTrackPickerScreen::onEnter() {
 }
 
 void AudioTrackPickerScreen::onExit() {
+    if (m_threadLive) {                 /* never leave the worker behind the screen */
+        pthread_join(m_thread, nullptr);
+        m_threadLive = false;
+    }
+    m_switchState = 0;
     StatefulScreen::onExit();
 }
 
@@ -128,12 +133,26 @@ void AudioTrackPickerScreen::refreshTracks() {
     }
 
     int active = playback->getActiveAudioStream();
+    int audioOrdinal = 0;
     for (const auto& t : playback->getAudioTracks()) {
         Entry e;
         e.kind = KindAudio;
         e.streamIndex = t.streamIndex;
         const char* native = evo_language_native_name(t.language.c_str());
-        e.label = native ? native : (t.language.empty() ? "UNKNOWN" : t.language);
+        /* "und" is the file saying nobody set the language: say that, and number the
+         * track so two of them can be told apart. */
+        std::string lowLang = t.language;
+        std::transform(lowLang.begin(), lowLang.end(), lowLang.begin(),
+                       [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        const bool langUnset = lowLang.empty() || lowLang == "und" || lowLang == "unk" || lowLang == "zxx";
+        ++audioOrdinal;
+        if (native) {
+            e.label = native;
+        } else if (langUnset) {
+            e.label = "Unknown language - track " + std::to_string(audioOrdinal);
+        } else {
+            e.label = t.language;
+        }
         if (!t.title.empty()) {
             e.label = t.title;
         }
@@ -182,7 +201,8 @@ void AudioTrackPickerScreen::refreshTracks() {
             chip(layout);
             chip(rate);
 
-            e.facts.emplace_back("Language", native ? native : (t.language.empty() ? "Unknown" : t.language));
+            e.facts.emplace_back("Language", native ? std::string(native)
+                                              : (langUnset ? std::string("Not set in the file") : t.language));
             if (!t.title.empty()) e.facts.emplace_back("Track title", t.title);
             if (!codec_full.empty()) e.facts.emplace_back("Codec", codec_full);
             if (!layout.empty()) e.facts.emplace_back("Channels", layout);
@@ -228,30 +248,45 @@ void AudioTrackPickerScreen::activateSelection() {
     const Entry e = m_tracks[m_selectedIndex];       /* a copy: the reopen rebuilds the list */
     evo_feedback(EVO_FB_CONFIRM);
 
-    if (e.kind == KindAuto) {
-        /* Back to EVO's own choice. A no-op when it already is. */
-        if (playback->switchVideoVariant(-1)) {
-            toast("QUALITY", "AUTO");
-        } else {
-            toast("QUALITY", "SWITCH FAILED");
-        }
-    } else if (e.kind == KindVideo) {
-        /* Already pinned to this one: nothing to reopen for. */
-        if (playback->switchVideoVariant(e.streamIndex)) {
-            toast("QUALITY", e.label.c_str());
-        } else {
-            toast("QUALITY", "SWITCH FAILED");
-        }
-    } else if (e.streamIndex != playback->getActiveAudioStream()) {
-        /* Already the live track: nothing to reopen for. */
-        if (playback->switchAudioTrack(e.streamIndex)) {
-            toast("AUDIO TRACK", e.label.c_str());
-        } else {
-            toast("AUDIO TRACK", "SWITCH FAILED");
-        }
+    /* The live audio track needs no reopen: just leave. Quality rows always reopen. */
+    if (e.kind == KindAudio && e.streamIndex == playback->getActiveAudioStream()) {
+        goBack();
+        return;
     }
+    (void)sm;
 
-    if (sm) {
+    m_switchEntry = e;
+    m_switchState = 1;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 2 * 1024 * 1024);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+    const int rc = pthread_create(&m_thread, &attr, &AudioTrackPickerScreen::switchWorker, this);
+    pthread_attr_destroy(&attr);
+    if (rc != 0) {
+        m_switchState = 0;
+        toast(e.kind == KindAudio ? "AUDIO TRACK" : "QUALITY", "SWITCH FAILED");
+        return;
+    }
+    m_threadLive = true;
+}
+
+void* AudioTrackPickerScreen::switchWorker(void* arg) {
+    auto* self = static_cast<AudioTrackPickerScreen*>(arg);
+    auto playback = Application::getInstance().getPlaybackController();
+    bool ok = false;
+    if (playback) {
+        const Entry& e = self->m_switchEntry;
+        if (e.kind == KindAuto)       ok = playback->switchVideoVariant(-1);   /* back to EVO's choice */
+        else if (e.kind == KindVideo) ok = playback->switchVideoVariant(e.streamIndex);
+        else                          ok = playback->switchAudioTrack(e.streamIndex);
+    }
+    self->m_switchState = ok ? 2 : 3;
+    return nullptr;
+}
+
+void AudioTrackPickerScreen::goBack() {
+    if (auto sm = Application::getInstance().getScreenManager()) {
         if (!sm->navigateBack()) {
             sm->navigateTo(ScreenId::Player);
         }
@@ -261,6 +296,7 @@ void AudioTrackPickerScreen::activateSelection() {
 bool AudioTrackPickerScreen::handleInput(uint32_t pressed, uint32_t held, uint32_t released) {
     (void)held;
     (void)released;
+    if (m_switchState == 1) return true;       /* busy: the reopen is running */
 
     if (pressed & PadButtons::Up)    { navigate(-1); return true; }
     if (pressed & PadButtons::Down)  { navigate(1);  return true; }
@@ -279,6 +315,22 @@ bool AudioTrackPickerScreen::handleInput(uint32_t pressed, uint32_t held, uint32
 
 void AudioTrackPickerScreen::update(double deltaMs) {
     StatefulScreen::update(deltaMs);
+    const int st = m_switchState;
+    if (st >= 2) {                             /* the worker finished: report and leave */
+        if (m_threadLive) {
+            pthread_join(m_thread, nullptr);
+            m_threadLive = false;
+        }
+        m_switchState = 0;
+        const bool audio = m_switchEntry.kind == KindAudio;
+        const char* what = audio ? "AUDIO TRACK" : "QUALITY";
+        if (st == 2) {
+            toast(what, m_switchEntry.kind == KindAuto ? "AUTO" : m_switchEntry.label.c_str());
+        } else {
+            toast(what, "SWITCH FAILED");
+        }
+        goBack();
+    }
 }
 
 void AudioTrackPickerScreen::render(uint32_t* framebuffer, int width, int height) {
@@ -332,6 +384,11 @@ void AudioTrackPickerScreen::render(uint32_t* framebuffer, int width, int height
             params.panel_eyebrow = sel.kind == KindAudio ? "TRACK DETAILS" : "QUALITY DETAILS";
             params.panel_title = sel.label.c_str();
         }
+    }
+
+    if (m_switchState == 1) {
+        params.loading = 1;
+        params.loading_text = m_switchEntry.kind == KindAudio ? "Switching audio..." : "Switching quality...";
     }
 
     params.hint_count = 2;
