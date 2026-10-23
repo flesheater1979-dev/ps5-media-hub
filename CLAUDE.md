@@ -13,6 +13,13 @@ doc before working deep in an area.
 
 **Test on the console yourself.** After any fix, run it on the PS5 yourself: `evo-remote.sh quit` → `close` → deploy → `launch`, then drive it with `screen` / `key` and read where focus went from `key`'s output or `ui`. Use `key l3` + `tools/shot.sh grab` only when you need to see pixels (layout, colour, rendering). Never ask me to test what you can test. → [tooling.md#hardware-cycle](docs/build/tooling.md#hardware-cycle)
 
+**Use agy first.** Before editing code for any issue, ask: is this mostly
+mechanical (a settings row, a screen from a worked example, boilerplate, host
+tests, reading big logs or trees)? If yes, write the agy task and run it; do not
+write it yourself. Only hardware decisions, console work, and review stay with
+Claude. State "agy: yes/no, because ..." in your first reply on an issue.
+→ [agy.md](docs/build/agy.md)
+
 **Implementing a GitHub issue?** Start at [roadmap.md](docs/planning/roadmap.md).
 Each issue body also has a "References & sequencing" block.
 
@@ -49,20 +56,18 @@ Each issue body also has a "References & sequencing" block.
   and panics once a compute queue is allocated.
   → [hardware-decode.md](docs/hardware/hardware-decode.md)
 - **Do not kill `kstuff`.** It destabilises the console into a panic.
-- **Remote Play (chiaki-ng) works on this console** (paired and streamed
-  2026-10-07; an earlier note said a jailbroken PS5 cannot pair, which was
-  wrong). It needs no PSN: the account was offline-activated with `offact` and
-  paired with **LinkDev** (a websrv app) and chiaki-ng v1.10.0 on the PC
-  (`tools/chiaki.ps1`). The steps, the result and the pitfalls are in
-  [remote-play.md](docs/build/remote-play.md). It gives the real screen and real
-  pad input, so it reaches the system dialogs that `evo-remote.sh key` cannot
-  (the native IME, the web browser). Still: don't start a stream or any console
-  action the owner has not asked for, and close EVO (`quit`, then `close`)
-  before sending payloads. The pairing survives power cuts only if the account
-  stays activated; the console's address changes (`ps5-remoteplay status`).
-  `evo-remote.sh key` itself still only injects into EVO's own pad state; for
-  tests that type text without Remote Play, set Settings → Interface & Storage
-  → `KEYBOARD INPUT` = `VIRTUAL KEYBOARD`.
+- **Remote Play (chiaki-ng) works** (paired 2026-10-07, offline-activated, no
+  PSN). It reaches the system dialogs that `evo-remote.sh key` cannot (native
+  IME, web browser). Don't start a stream or any console action the owner has
+  not asked for, and close EVO (`quit`, then `close`) before sending payloads.
+  Steps and pitfalls: [remote-play.md](docs/build/remote-play.md). For tests
+  that type text without it, set Settings → Interface & Storage →
+  `KEYBOARD INPUT` = `VIRTUAL KEYBOARD`.
+- **Bound every console-facing call with a timeout.** A resident payload never
+  closes the elfldr socket, so an unbounded call hangs.
+- **No commits until verified.** Keep iteration uncommitted; land one clean
+  commit after build, tests and the hardware check pass. "Push to PS" means
+  build + deploy only, no status poll loop.
 - **The console's `/fs` web route is read-only.** Delete over FTP
   (`tools/shot.sh clean`).
 - **Diagnostics: one file, `/mnt/usb0/evo.log`.** It holds the boot trace,
@@ -70,6 +75,13 @@ Each issue body also has a "References & sequencing" block.
   `evo-remote.sh log` pulls it. `evo_status` is the live one-line state
   (`--usb-remote` builds only). A `timeout`/`curl` timeout on an
   `evo-remote.sh` call is a normal, successful outcome.
+- **App-module code traps.** Never `#include <iostream>` (static init
+  null-derefs at load, no log). Only call libc functions EVO already uses: a
+  missing one (e.g. `strcasestr`) is a null import and SIGSEGVs at address 0.
+- **Write container scripts with the Write tool.** Python `write_text` on
+  Windows adds CRLF and breaks them inside the container.
+- **Raise `contentVersion` in `param.json` every release** (0.11.0 →
+  `01.011.000`), or ProsperoStore never offers the update.
 - **Framebuffer format is `0xAABBGGRR`** (BGRA in memory). Get it wrong and the
   colours swap silently; nothing crashes.
 
@@ -95,20 +107,13 @@ docker compose run --rm ps5-dev ./scripts/deploy-app.sh --ffpfsc   # sha256-veri
 
 # host UI renderer - any layout question, no console
 ./tools/uiview.sh --all                 # every RmlUi screen -> output/uiview/rml_*.png
-EVO_UIVIEW_IPTV_SWEEP=<m3u> ...         # walk every IPTV group with the D-pad (see the .cpp)
-
-# live health dashboard (memory, buffer, network) - on the HOST -> http://localhost:8790
-python tools/evo-dash.py
-
-# serve provider bundles / a playlist TO the console - on the HOST, not the container
-./tools/provider-server.sh
 
 # compile check only, never deploys
 docker compose run --rm ps5-dev ./scripts/build-evoplayer.sh
 ```
 
-All scripts, screenshot measurement (`shot.sh probe/scan/crop/diff`) and env
-vars: [tooling.md](docs/build/tooling.md).
+All scripts, the dev dashboard (`evo-dash.py`), `provider-server.sh` (runs on the
+HOST), screenshot measurement and env vars: [tooling.md](docs/build/tooling.md).
 
 ---
 
@@ -117,8 +122,7 @@ vars: [tooling.md](docs/build/tooling.md).
 ```
 projects/evoplayer/
   main.cpp       entry point only: crash/SIGTERM handlers -> Application::run()
-  main.c.legacy  the old monolith. NOT COMPILED. Don't edit it or read it to
-                 learn current behaviour; grep core/ instead.
+  main.c.legacy  old monolith, NOT COMPILED: don't edit or read it.
   core/          the player: Application.cpp (frame loop, soft close), screens/,
                  services/ (PlaybackController, settings, metadata)
   media/         decode, audio, evo_agc_runtime.c (GPU present + VideoOut)
@@ -159,23 +163,10 @@ Layer boundaries: [architecture.md](docs/architecture/architecture.md).
 
 ## Delegating to agy (saves Claude tokens)
 
-Bulk reading and code drafts go to the `agy` CLI as a worker; Claude writes the
-task, reviews the report and `git diff`, spot-checks claims, runs the checks, does
-every console action, and commits. agy never touches the console or git.
-
-- Write the task to `scratch/agy/task-<name>.txt` (absolute paths, the files it may
-  edit, the exact check to run, the report path under `scratch/agy/`). Run
-  `tools/agy-run.sh <name> [secs]` in the background. `tools/agy-task.md` is
-  prepended to every task (hard rules, report format). Result JSON and one line of
-  tokens per run land in `scratch/agy/` (`usage.log`).
-- Small mechanical jobs first: screens ported from a worked example, boilerplate,
-  reading large trees or logs. Not for hardware decisions or anything on the
-  console.
-- **Review before trusting.** Read the report, then `git diff`, then re-run the
-  check yourself. agy has invented file contents through its own subagents and
-  over-claimed passes; the task rules forbid subagents, but verify anyway.
-- The task needs `--dangerously-skip-permissions` to use tools headless; that is
-  why the rules in `agy-task.md` (no console, no git) are part of every prompt.
+Bulk reading and small code drafts go to the `agy` worker via
+`tools/agy-run.sh <name>`. Claude reviews the report and `git diff`, re-runs the
+checks, does every console action and commits; agy never touches the console or
+git. Never trust its report unverified. Full procedure: [agy.md](docs/build/agy.md).
 
 ## Working efficiently
 
@@ -184,26 +175,18 @@ every console action, and commits. agy never touches the console or git.
   and the memory notes by meaning or by name. Ask it first ("why can't we call
   sceVideoOutOpen", "where is seek handled") and then Read the `path:lines` it
   returns. Fall back to Grep for an exact string you already know.
-- **Before you design a fix, check the sibling projects.** `third_party/` holds ~40 PS5
-  homebrew repos (ProsperoTV, ProsperoLight, SharpProspero, Jelly5, Emby5, AnyPS5, PS5MC,
-  afterglow, spot5, VLC, kodi-ps5, the PS5 research repos, ...). Two extra `evo_search`
-  sources cover them and are left out of a plain search, so ask for them:
-  `source: commits` = commit messages of every repo on every branch ("did anyone already
-  fix AAC passthrough lip sync?"; a hit tagged `[not in checkout]` is fetched but not
-  checked out), `source: thirdparty` = their code and docs (how another app calls an API,
-  e.g. `sceVideoOutGetFlipStatus`). Do this for decode, audio, A/V sync, GPU and
-  provider bugs, then Read the file in that repo. Treat what you find as a hint to port by
-  hand: check its licence ([proprietary.md](docs/proprietary.md)), do not paste it in, and
-  verify on the console. `Jelly5` and a few others carry copies of EVO's own source, so a
-  hit on your own file name there is noise.
-- **Pick the right search:** meaning or "why" questions → `evo_search` (default sources);
-  "has someone fixed this" → `source: commits`; "how does another app do X" →
-  `source: thirdparty`; an exact identifier or string → Grep (or `evo_search` with that
-  name); `git log` / `git blame` for EVO's own history. Narrow with `path:` (for example
-  `path: third_party/ProsperoTV/`).
+- **Check the sibling repos before designing a fix** (decode, audio, A/V sync, GPU,
+  provider bugs). `third_party/` holds ~40 PS5 homebrew repos. Ask `evo_search` with
+  `source: commits` ("did anyone already fix X") or `source: thirdparty` ("how does
+  another app call Y"); narrow with `path:`. Port by hand: check the licence
+  ([proprietary.md](docs/proprietary.md)), never paste, verify on the console. Hits on
+  EVO's own file names inside Jelly5 etc. are noise. Exact strings: Grep. EVO's own
+  history: `git log` / `git blame`.
 - **Read narrow.** `evo_rmlui_app.cpp` (4k lines), `uiview_playback_rml.cpp`
   and `core/Application.cpp` are large. Grep first, then read only that range.
 - **Don't re-read a file right after editing it.**
+- **Trim command output.** Pipe builds and logs through `tail` / `grep` for the
+  failure lines; never print a full Docker build log.
 - **Batch console work:** run several `key` presses in one `docker compose run
   ... bash -c`. Each container start costs seconds.
 - **On Windows, write multi-line patch scripts to a file and run
