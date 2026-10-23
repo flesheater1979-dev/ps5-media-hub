@@ -1704,15 +1704,26 @@ void PlaybackController::tickScrubAutoCommit() {
              * wait for it, up to 3 s, then leave it up half a second so it is
              * seen. Otherwise the scrub is over before the frame can show. */
             static bool sawPreviewLoading = false;
-            if (prospero_thumbnail_is_loading() && now < m_scrubAutoCommitDeadlineMs + 3000ULL) {
-                sawPreviewLoading = true;
-                return;
-            }
-            if (sawPreviewLoading) {
+            static uint64_t waitStartMs = 0;      /* when the wait for the preview began */
+            if (prospero_thumbnail_is_loading()) {
+                if (!waitStartMs) waitStartMs = now;
+                if (now - waitStartMs < 3000ULL) {
+                    sawPreviewLoading = true;
+                    return;
+                }
+                /* A preview that never finishes (a streamed file whose second
+                 * connection hangs) must not hold the seek: the old wait pushed the
+                 * deadline out again every 3 s, so the commit never came and the
+                 * picture sat paused in the scrub for good. */
+                evo_boot_log("scrub: preview still loading after 3 s - committing the seek anyway");
+            } else if (sawPreviewLoading) {
                 sawPreviewLoading = false;
+                waitStartMs = 0;
                 m_scrubAutoCommitDeadlineMs = now + 500ULL;
                 return;
             }
+            sawPreviewLoading = false;
+            waitStartMs = 0;
             confirmScrub();
         }
     }
