@@ -44,8 +44,9 @@ typedef struct {
 
 /*
  * Give the queue one contiguous store of `bytes` for the packet data it holds.
- * Allocated on the first call and kept for the life of the process (later
- * calls are no-ops); returns 1 if the queue has a ring.
+ * Allocated on the first call and kept for the life of the process. A later
+ * call with a bigger size grows it, but only while the queue and ring are
+ * empty; otherwise it is a no-op. Returns 1 if the queue has a ring.
  *
  * Without it every queued packet keeps the demuxer's own buffer alive, one
  * mapping per packet above the allocator's slab sizes - thousands of live

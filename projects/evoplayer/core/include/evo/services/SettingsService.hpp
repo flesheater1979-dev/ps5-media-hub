@@ -85,6 +85,10 @@ public:
     void setAudioOutputChannels(AudioOutputChannels channels) override { m_audioOutputChannels = channels; }
     const char* getAudioOutputChannelsName(AudioOutputChannels channels) const override;
 
+    NetworkBuffer getNetworkBuffer() const override { return m_networkBuffer; }
+    void setNetworkBuffer(NetworkBuffer buffer) override { m_networkBuffer = buffer; }
+    const char* getNetworkBufferName(NetworkBuffer buffer) const override;
+
     VolumeBoost getVolumeBoost() const override { return m_volumeBoost; }
     void setVolumeBoost(VolumeBoost boost) override { m_volumeBoost = boost; }
     const char* getVolumeBoostName(VolumeBoost boost) const override;
@@ -122,6 +126,7 @@ private:
     HdrOutputMode m_hdrOutputMode = HdrOutputMode::Auto;
     AudioOutputChannels m_audioOutputChannels = AudioOutputChannels::Auto;
     VolumeBoost m_volumeBoost = VolumeBoost::Off;
+    NetworkBuffer m_networkBuffer = NetworkBuffer::Sec30;
     bool m_audioPassthroughEnabled = false;
     bool m_matchVideoRate = false;
     bool m_debugOverlayEnabled = false;

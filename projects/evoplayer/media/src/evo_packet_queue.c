@@ -150,9 +150,33 @@ size_t packet_queue_ring_size(PacketQueue *q)
 
 int packet_queue_use_ring(PacketQueue *q, size_t bytes)
 {
-    if (q->ring)
-        return 1;
     bytes &= ~(size_t)(RING_ALIGN - 1);
+    if (q->ring) {
+        /* Grow an idle ring when a bigger buffer is asked for (#199). Playing
+         * packets point into it, so only an empty queue and ring may move. */
+        struct PacketRing *old = q->ring;
+        if (bytes <= old->size)
+            return 1;
+        pthread_mutex_lock(&q->mutex);
+        pthread_mutex_lock(&old->mu);
+        if (q->count == 0 && old->used == 0) {
+            size_t want = bytes;
+            uint8_t *nb = NULL;
+            while (want > old->size && !(nb = (uint8_t *)malloc(want)))
+                want = (want / 2) & ~(size_t)(RING_ALIGN - 1);
+            if (nb && want > old->size) {
+                free(old->base);
+                old->base = nb;
+                old->size = want;
+                old->head = old->tail = 0;
+            } else if (nb) {
+                free(nb);
+            }
+        }
+        pthread_mutex_unlock(&old->mu);
+        pthread_mutex_unlock(&q->mutex);
+        return 1;
+    }
     struct PacketRing *r = (struct PacketRing *)calloc(1, sizeof *r);
     if (!r)
         return 0;

@@ -42,6 +42,7 @@ enum class SettingKey : int {
     HdrOutput,
     /* AUDIO */
     VolumeBoost,
+    NetworkBuffer,
     OutputChannels,
     AudioPassthrough,
     SurroundTest,
@@ -117,6 +118,8 @@ const PreviewSpec kPreviews[] = {
      "Highlights like the sun and lamps get brighter without clipping. Needs an HDR10 TV."},
     {SettingKey::VolumeBoost, EVO_RMLUI_PREVIEW_INFO,
      "Makes quiet files louder. Very loud passages are cut off cleanly instead of wrapping into noise. Has no effect on Dolby/DTS passthrough."},
+    {SettingKey::NetworkBuffer, EVO_RMLUI_PREVIEW_INFO,
+     "How far ahead network streams load. A bigger buffer rides out Wi-Fi drops but uses more memory, and very high bitrate files get less than you pick. Applies from the next file."},
     {SettingKey::OutputChannels, EVO_RMLUI_PREVIEW_CHANNELS,
      "Stereo mixes 5.1 and 7.1 down to two speakers or headphones."},
     {SettingKey::AudioPassthrough, EVO_RMLUI_PREVIEW_PASSTHROUGH,
@@ -152,7 +155,7 @@ const PreviewSpec kPreviews[] = {
 const SettingKey kVideoKeys[] = {
     SettingKey::DefaultAspect, SettingKey::ResumePlayback, SettingKey::VideoDecoder,
     SettingKey::Upscaling, SettingKey::AiNetwork, SettingKey::RefreshRate,
-    SettingKey::HdrOutput,
+    SettingKey::HdrOutput, SettingKey::NetworkBuffer,
 };
 const SettingKey kAudioKeys[] = {
     SettingKey::VolumeBoost,
@@ -332,6 +335,15 @@ SettingDef makeDef(SettingKey key, ISettingsService* settings) {
                      "../icons/icon_sun.png", 2, static_cast<int>(settings->getHdrOutputMode()));
         for (int i = 0; i < 2; ++i)
             d.opt_label[i] = settings->getHdrOutputModeName(static_cast<HdrOutputMode>(i));
+        break;
+
+    /* #199: sized when a network file opens, so it applies from the next file. */
+    case SettingKey::NetworkBuffer:
+        d = valueDef(key, "NETWORK BUFFER", "HOW FAR AHEAD STREAMS LOAD. HIGH BITRATE FILES GET LESS",
+                     "../icons/icon_gauge.png", 4,
+                     static_cast<int>(settings->getNetworkBuffer()));
+        for (int i = 0; i < 4; ++i)
+            d.opt_label[i] = settings->getNetworkBufferName(static_cast<NetworkBuffer>(i));
         break;
 
     case SettingKey::VolumeBoost:
@@ -691,6 +703,7 @@ void applyOption(SettingKey key, int opt) {
     case SettingKey::DeepBlacks:     st->setDeepBlacks(static_cast<DeepBlacks>(opt)); break;
     case SettingKey::MotionSmoothing: st->setMotionSmoothing(static_cast<MotionSmoothing>(opt)); break;
     case SettingKey::HdrOutput:      st->setHdrOutputMode(static_cast<HdrOutputMode>(opt)); break;
+    case SettingKey::NetworkBuffer:  st->setNetworkBuffer(static_cast<NetworkBuffer>(opt)); break;
     case SettingKey::VolumeBoost:    st->setVolumeBoost(static_cast<VolumeBoost>(opt)); break;
     case SettingKey::OutputChannels: st->setAudioOutputChannels(static_cast<AudioOutputChannels>(opt)); break;
     case SettingKey::SubtitleFont:   st->setSubtitleFontFace(opt); break;

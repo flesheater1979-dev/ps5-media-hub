@@ -164,15 +164,15 @@ static constexpr int kAudioPacketCapMax = 512;
  * ten-second cushion cannot. TrueHD in Matroska runs at ~1200 packets/s, so
  * the audio slot count has to follow (it held 0.4 s at 512 and, because
  * av_read_frame() interleaves, held the video read-ahead to the same span).
- * The ring is allocated once and kept for the life of the process.
+ * The ring is allocated once, kept for the life of the process, and grows when a longer buffer is chosen (#199).
  */
 static constexpr double    kRingReadAheadSeconds   = 30.0;
 static constexpr size_t    kVideoRingBytes         = 512ull << 20;
 static constexpr size_t    kAudioRingBytes         =  96ull << 20;
 static constexpr long long kVideoRingMaxBytes      = 384ll << 20;
 static constexpr long long kAudioRingMaxBytes      =  64ll << 20;
-static constexpr int       kVideoPacketCapRing     = 8192;
-static constexpr int       kAudioPacketCapRing     = 40000;
+static constexpr int       kVideoPacketCapRing     = 60000;  /* queue holds 65536 */
+static constexpr int       kAudioPacketCapRing     = 60000;
 
 /*
  * Bits per second carried by the video stream, best effort.
@@ -200,7 +200,7 @@ static long long videoBitsPerSecond(const AVFormatContext* fmt, int streamIndex)
  * stream stutters, the first question is whether the cushion was ever there.
  */
 static void sizeReadAhead(bool networkSource, const AVFormatContext* fmt,
-                          int videoIndex, double fps)
+                          int videoIndex, double fps, double ringSeconds)
 {
     if (!networkSource) {
         video_packet_cap      = 96;
@@ -214,23 +214,34 @@ static void sizeReadAhead(bool networkSource, const AVFormatContext* fmt,
 
     /* Rings first: if direct memory refuses either, the old flexible-pool
      * budget below applies unchanged. */
-    const bool ring = packet_queue_use_ring(&video_packet_queue, kVideoRingBytes) &&
-                      packet_queue_use_ring(&audio_packet_queue, kAudioRingBytes);
+    /* #199: the user's buffer length scales the rings. Memory caps the real
+     * value: the video ring tops out at 6x, the audio ring at 4x, and a ring
+     * direct memory refuses is halved by packet_queue_use_ring. */
+    const double scale = ringSeconds > kRingReadAheadSeconds
+                             ? ringSeconds / kRingReadAheadSeconds : 1.0;
+    const double vscale = std::min(scale, 6.0);
+    const double ascale = std::min(scale, 4.0);
+    const bool ring = packet_queue_use_ring(&video_packet_queue,
+                                            static_cast<size_t>(kVideoRingBytes * vscale)) &&
+                      packet_queue_use_ring(&audio_packet_queue,
+                                            static_cast<size_t>(kAudioRingBytes * ascale));
     if (ring) {
         const long long vring = static_cast<long long>(packet_queue_ring_size(&video_packet_queue));
         const long long aring = static_cast<long long>(packet_queue_ring_size(&audio_packet_queue));
         /* A quarter of each ring stays free for the demuxer's bounded overshoot. */
-        const long long vmax = std::min(kVideoRingMaxBytes, vring * 3 / 4);
-        const long long amax = std::min(kAudioRingMaxBytes, aring * 3 / 4);
+        const long long vmax = std::min(static_cast<long long>(kVideoRingMaxBytes * vscale),
+                                        vring * 3 / 4);
+        const long long amax = std::min(static_cast<long long>(kAudioRingMaxBytes * ascale),
+                                        aring * 3 / 4);
 
-        int rvcap = static_cast<int>(kRingReadAheadSeconds * safeFps);
+        int rvcap = static_cast<int>(ringSeconds * safeFps);
         if (rvcap < 96)                    rvcap = 96;
         if (rvcap > kVideoPacketCapRing)   rvcap = kVideoPacketCapRing;
         video_packet_cap = rvcap;
 
         const long long rvbps = videoBitsPerSecond(fmt, videoIndex);
         long long rvbytes = rvbps > 0
-            ? static_cast<long long>(kRingReadAheadSeconds * static_cast<double>(rvbps) / 8.0)
+            ? static_cast<long long>(ringSeconds * static_cast<double>(rvbps) / 8.0)
             : vmax;
         if (rvbytes > vmax)                        rvbytes = vmax;
         if (rvbytes < kVideoReadAheadMinBytes)     rvbytes = kVideoReadAheadMinBytes;
@@ -241,7 +252,7 @@ static void sizeReadAhead(bool networkSource, const AVFormatContext* fmt,
 
         evo_boot_log("  pb: read-ahead %.0fs (ring) -> video %d pkt / %lld MB, "
                      "audio %d pkt / %lld MB (video %lld kbit/s @ %.2f fps)",
-                     kRingReadAheadSeconds, video_packet_cap,
+                     ringSeconds, video_packet_cap,
                      video_queue_byte_cap / (1024 * 1024),
                      audio_packet_cap, audio_queue_byte_cap / (1024 * 1024),
                      rvbps / 1000, safeFps);
@@ -1506,7 +1517,10 @@ bool PlaybackController::startPlaybackSource(const PlaybackSource& source,
     {
         const bool network_source =
             filePath.rfind("http://", 0) == 0 || filePath.rfind("https://", 0) == 0;
-        sizeReadAhead(network_source, play_fmt, video_stream_index, video_fps);
+        double ringSeconds = kRingReadAheadSeconds;
+        if (ISettingsService *settings = Application::getInstance().getSettingsService())
+            ringSeconds = getNetworkBufferSeconds(settings->getNetworkBuffer());
+        sizeReadAhead(network_source, play_fmt, video_stream_index, video_fps, ringSeconds);
         pb_prebuffer_hold   = network_source ? 1 : 0;
         pb_rebuffer_enabled = network_source ? 1 : 0;
         if (network_source)

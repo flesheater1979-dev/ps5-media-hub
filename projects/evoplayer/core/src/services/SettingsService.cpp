@@ -88,6 +88,16 @@ const char* SettingsService::getAudioOutputChannelsName(AudioOutputChannels chan
     }
 }
 
+const char* SettingsService::getNetworkBufferName(NetworkBuffer buffer) const {
+    switch (buffer) {
+        case NetworkBuffer::Min1: return "1 MIN";
+        case NetworkBuffer::Min2: return "2 MIN";
+        case NetworkBuffer::Min5: return "5 MIN";
+        case NetworkBuffer::Sec30:
+        default:                  return "30 SEC";
+    }
+}
+
 const char* SettingsService::getVolumeBoostName(VolumeBoost boost) const {
     switch (boost) {
         case VolumeBoost::Plus50:  return "+50%";
@@ -189,7 +199,8 @@ bool SettingsService::saveSettings() {
         static_cast<int>(m_deepBlacks),      // line 23 (#119 deep blacks)
         m_audioPassthroughEnabled ? 1 : 0,   // line 24 (HDMI bitstream passthrough)
         m_matchVideoRate ? 1 : 0,            // line 25 (experimental: match video frame rate)
-        static_cast<int>(m_volumeBoost)      // line 26 (#166 volume boost)
+        static_cast<int>(m_volumeBoost),     // line 26 (#166 volume boost)
+        static_cast<int>(m_networkBuffer)    // line 27 (#199 network buffer)
     );
 
     std::fclose(file);
@@ -229,9 +240,10 @@ bool SettingsService::loadSettings() {
     int rawAudioPassthrough = 0;
     int rawMatchVideoRate = 0;
     int rawVolumeBoost = 0;
+    int rawNetworkBuffer = 0;
 
     int readCount = std::fscanf(file,
-        "%d\n%d\n%d\n%d\n%d\n%d\n%127[^\n]\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d",
+        "%d\n%d\n%d\n%d\n%d\n%d\n%127[^\n]\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d",
         &rawProfile,
         &rawResume,
         &rawViewMode,
@@ -257,7 +269,8 @@ bool SettingsService::loadSettings() {
         &rawDeepBlacks,
         &rawAudioPassthrough,
         &rawMatchVideoRate,
-        &rawVolumeBoost
+        &rawVolumeBoost,
+        &rawNetworkBuffer
     );
 
     std::fclose(file);
@@ -332,6 +345,9 @@ bool SettingsService::loadSettings() {
     if (readCount >= 25) m_matchVideoRate = (rawMatchVideoRate != 0);
     if (readCount >= 26 && rawVolumeBoost >= 0 && rawVolumeBoost <= 4) {
         m_volumeBoost = static_cast<VolumeBoost>(rawVolumeBoost);
+    }
+    if (readCount >= 27 && rawNetworkBuffer >= 0 && rawNetworkBuffer <= 3) {
+        m_networkBuffer = static_cast<NetworkBuffer>(rawNetworkBuffer);
     }
 
     syncThemeToRmlUi();

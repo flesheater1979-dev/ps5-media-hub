@@ -148,6 +148,25 @@ enum class VolumeBoost : int {
     Plus300 = 4
 };
 
+// Network buffer (#199): how far ahead a network stream reads. Memory caps the
+// real value for very high bitrates.
+enum class NetworkBuffer : int {
+    Sec30 = 0,
+    Min1 = 1,
+    Min2 = 2,
+    Min5 = 3
+};
+
+inline int getNetworkBufferSeconds(NetworkBuffer buffer) {
+    switch (buffer) {
+        case NetworkBuffer::Min1: return 60;
+        case NetworkBuffer::Min2: return 120;
+        case NetworkBuffer::Min5: return 300;
+        case NetworkBuffer::Sec30:
+        default:                  return 30;
+    }
+}
+
 inline int getVolumeBoostPercent(VolumeBoost boost) {
     switch (boost) {
         case VolumeBoost::Plus50:  return 50;
