@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """dualsense_dump.py - record what a real DualSense tells a host.
 
-Part of the "wake the PS5 with a pretend controller" spike (docs/build/console-wake.md):
+Part of the "wake the PS5 with a pretend controller" spike (docs/console/console-wake.md):
 to imitate the controller, a Bluetooth device has to answer the console the way
 the real one does. This reads the report descriptor and the read-only feature
 reports over USB and saves them.

@@ -43,7 +43,7 @@
 #      repository. Third-party GUI builders exist (e.g. LibProsperoPKG /
 #      PS-Multi-Tools) but they wrap the same proprietary tool. If you have a
 #      legitimate licensed copy, put it in proprietary/ and see
-#      docs/packaging.md - this script will detect and use it, and will tell
+#      docs/build/packaging.md - this script will detect and use it, and will tell
 #      you clearly when it is absent rather than silently producing something
 #      that is not a PKG.
 #
@@ -189,7 +189,7 @@ app)
 
        To build a home-screen app you need to port the launcher pattern from:
            \$PS5_PAYLOAD_SDK/samples/install_app/
-       (eboot.c + eboot.x + payload.c). See docs/packaging.md.
+       (eboot.c + eboot.x + payload.c). See docs/build/packaging.md.
 
        For ordinary homebrew distribution use instead:
            $(basename "$0") --format homebrew ${ELF}"
@@ -248,7 +248,7 @@ EOF
     echo "     sce_sys/param.json"
     echo ""
     echo "   Install it (console must be jailbroken with ftpsrv running):"
-    echo "     see docs/packaging.md - the SDK's samples/install_app 'make test'"
+    echo "     see docs/build/packaging.md - the SDK's samples/install_app 'make test'"
     echo "     target shows the exact FTP + sceAppInstUtil sequence."
     ;;
 
@@ -260,7 +260,7 @@ pkg|fpkg)
        Prospero SDK, which must not be committed to this repository. If you
        hold a legitimate licensed copy, place it at:
            proprietary/prospero-pub-cmd
-       and see docs/packaging.md.
+       and see docs/build/packaging.md.
 
        For homebrew distribution you almost certainly want:
            $(basename "$0") --format homebrew ${ELF}"

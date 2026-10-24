@@ -8,7 +8,7 @@
  * header collapses to nothing and the render path is byte-identical to before.
  * tools/prof_rmlui.sh is the only consumer and passes -DEVO_RML_PROFILE.
  *
- * Attribution model (see docs/evo-pro/gpu-rendering-plan.md §6):
+ * Attribution model (see docs/hardware/agc-runtime.md §6):
  *   update_ms  — Rml::Context::Update()  (style + layout walk)
  *   render_ms  — Rml::Context::Render()  (everything below is a subset of this)
  *     geo_quad_ms — RenderGeometry calls served entirely by the fast AA-quad blitter

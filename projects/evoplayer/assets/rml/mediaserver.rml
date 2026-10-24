@@ -4,7 +4,7 @@
     <link type="text/rcss" href="mediaserver.rcss"/>
 </head>
 <!--
-    Emby and Jellyfin (docs/addons/native-providers.md). One document for both:
+    Emby and Jellyfin (docs/providers/media-servers.md). One document for both:
     the providers set ui_embedded = "mediaserver", so this binds to the model of
     that name. A 4x2 poster grid with a detail panel, on the provider host's
     paging (L1/R1, or Down off the bottom row).

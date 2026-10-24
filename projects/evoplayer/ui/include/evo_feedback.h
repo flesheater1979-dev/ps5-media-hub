@@ -17,7 +17,7 @@
  * vibration entry point in libScePad either reports success and produces
  * nothing or rejects the call outright, while scePadSetLightBar succeeds on
  * the very same handle. The evidence and the full probe results are in
- * docs/ui-handoff.md - read that before adding it back.
+ * the git history of the deleted docs/ui-handoff.md - read that before adding it back.
  */
 #ifndef EVO_FEEDBACK_H
 #define EVO_FEEDBACK_H

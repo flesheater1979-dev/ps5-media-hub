@@ -125,7 +125,7 @@ export LD_LIBRARY_PATH="/workspace/build/rmlui-host-dist/lib:/workspace/build/rm
 # The fixture drives the actual IPTV provider, the actual evo_net HTTP client
 # and the actual bundle fetch, so it needs a server and a data root. Both are
 # local to this run: a python http.server on the loopback interface - which the
-# container can always reach, unlike the console (docs/hardware/networking.md)
+# container can always reach, unlike the console (docs/console/networking.md)
 # - and a temp directory that EVO_DATA_DIR_OVERRIDE points the data root at.
 #
 # Anything failing here is non-fatal: the provider shots are skipped and every

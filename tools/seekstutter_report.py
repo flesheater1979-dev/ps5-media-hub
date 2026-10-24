@@ -12,7 +12,7 @@ present-timing hooks — reuses their microsecond clock).
 Each tick already carries the three candidates for "where did the felt hitch
 come from": osd_us (draw_player_screen CPU rasterise + RmlUi OSD doc),
 blit_us (texture upload + YUV->RGB / composite draw), swap_us (eglSwapBuffers
-— mostly the vblank wait, so NOT a hitch source, see docs/validation.md's #8
+— mostly the vblank wait, so NOT a hitch source, see docs/build/validation.md's #8
 section on why that half is excluded from the sweep's GPU column too). This
 script does not have to guess which one: it just finds the slow tick(s) and
 prints what made them slow.

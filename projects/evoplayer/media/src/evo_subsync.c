@@ -60,7 +60,7 @@
 #define SS_EXCL_F       (SS_FPS / 2)        /* runner-up must be > 0.5 s off */
 #define SS_AGREE_F      (SS_FPS / 2)        /* a window's own peak within 0.5 s */
 /* Acceptance, in standard deviations of the summed correlation curve.
- * Calibrated on real films (tools/subsync_host.sh): see docs/build/tooling.md. */
+ * Calibrated on real films (tools/subsync_host.sh): see docs/build/validation.md. */
 /* Tears of Steel + the synthetic film: right answers z 5.1-6.1, sharp
  * 0.40-1.6; wrong SRTs z <= 2.5, sharp <= 0.20, never 2 windows agreeing. */
 #define SS_MIN_Z        4.0

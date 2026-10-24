@@ -21,7 +21,7 @@
 # Run from the HOST (needs the `gh` CLI — it is not in the dev container).
 #
 # Steps the GitHub API can NOT do yet — do them once in the web UI, see
-# docs/project-tracking.md:
+# docs/planning/project-tracking.md:
 #   - create the saved Views (Board / Priority / Roadmap / Blocked)
 #   - enable the built-in workflows (Auto-add to project, Item closed -> Done)
 #
@@ -167,4 +167,4 @@ say "synced $n_done item(s)"
 
 echo
 echo "project:  https://github.com/users/$OWNER/projects/$PNUM"
-echo "next:     docs/project-tracking.md  (views + auto-add workflow)"
+echo "next:     docs/planning/project-tracking.md  (views + auto-add workflow)"

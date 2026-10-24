@@ -1,7 +1,7 @@
 /*
  * RmlUi frame profiler — host, no console.
  *
- * Answers docs/evo-pro/gpu-rendering-plan.md §6: attribute the ~90 ms RmlUi
+ * Answers docs/hardware/agc-runtime.md §6: attribute the ~90 ms RmlUi
  * frame and decide whether Step 1 (dirty-flag the surface) alone is enough or
  * Step 2 (AGC) is required.
  *

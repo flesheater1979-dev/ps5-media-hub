@@ -3,7 +3,7 @@
  *
  * Verbatim move of the EMBEDDED_SUBTITLE_MODULE, SRT_MODULE and
  * SUBTITLE_CONTROLS regions from main.c — Track A step A4 of
- * docs/modularisation-plan.md.
+ * docs/architecture/architecture.md.
  *
  * TRANSITIONAL: still reads playback-core / resume globals from main.c and
  * the rr_text renderer as plain externs; main.c's seek + start_video_playback

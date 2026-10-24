@@ -168,7 +168,7 @@ void EvoRmlApp::SetImageColor(Rml::Element* el, const std::string& color) {
 }
 
 /*
- * Step 1 of docs/evo-pro/gpu-rendering-plan.md — see the comment on m_surface
+ * Step 1 of docs/hardware/agc-runtime.md — see the comment on m_surface
  * in evo_rmlui_app.h. Rasterise a full-screen menu document into the retained
  * m_surface only when it actually changed, then blit that surface into the
  * caller's (rotating) VideoOut buffer every frame.

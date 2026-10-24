@@ -1,5 +1,5 @@
 /* =============================================================================
- * mediaserver.rcss - Emby / Jellyfin poster grid (docs/addons/native-providers.md)
+ * mediaserver.rcss - Emby / Jellyfin poster grid (docs/providers/media-servers.md)
  *
  * On top of iptv.rcss: the layout, the 4x2 grid, the detail pane and the
  * status strip are shared; this file turns the channel card into a 2:3

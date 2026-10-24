@@ -6,12 +6,12 @@
 #   ./scripts/build-evoplayer.sh --stage 0    build a specific 4K stage
 #
 # This produces output/elf/EVOPlayer.elf purely so the payload / non-app-module
-# code path stays green (issues #31 §4, #36, docs/modularisation-plan.md parity).
+# code path stays green (issues #31 §4, #36, docs/architecture/architecture.md parity).
 # It does NOT and MUST NOT deploy or launch anything on a console. The ONLY
 # hardware path is the app module:
 #     scripts/package-app.sh --ffpfsc  &&  scripts/deploy-app.sh --ffpfsc
 # The ELF-push scripts (install-homebrew / launch / deploy) were deleted
-# 2026-09-03 - see docs/tooling.md and the `never-elf` rule.
+# 2026-09-03 - see docs/build/tooling.md and the `never-elf` rule.
 #
 # Same transitive-link fix as build-prosperoplayer.sh: pacbrew's FFmpeg is
 # built with openssl/ass/freetype/fribidi/harfbuzz, and static archives carry
@@ -41,7 +41,7 @@ if ! in_container; then
 fi
 
 need_file "${DEST}/Makefile" "projects/evoplayer is empty. Fork it first:
-       see docs/prosperoplayer-baseline.md"
+       see the issue tracker"
 load_sdk
 mkdirs
 

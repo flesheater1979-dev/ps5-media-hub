@@ -5,7 +5,7 @@
  * tracking (input layout/format/rate). Converts any decoded layout to
  * interleaved S16 at 48 kHz, matching the AudioOut port that is actually
  * open (stereo or 7.1). Verbatim move of the PROSPERO_AUDIO_RESAMPLER_STATE
- * region from main.c — Track A step A2 of docs/modularisation-plan.md.
+ * region from main.c — Track A step A2 of docs/architecture/architecture.md.
  *
  * FFmpeg-only leaf. The two pieces of external state the configure path
  * needs (open port channel count, the audio AVCodecContext) are passed in

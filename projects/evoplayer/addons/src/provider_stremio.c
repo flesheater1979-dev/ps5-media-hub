@@ -1,6 +1,6 @@
 /*
  * provider_stremio.c — Stremio addons, browsed natively
- * (docs/addons/native-providers.md, Phase B).
+ * (docs/providers/media-servers.md, Phase B).
  *
  * A Stremio addon is a small web service answering four JSON requests:
  *

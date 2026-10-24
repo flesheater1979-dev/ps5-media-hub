@@ -21,7 +21,7 @@
 # evo_compat_report.txt}, so each launch starts with a fresh log.
 #
 # This does NOT launch anything - launch safety (never stack launches) is on
-# you and ShadowMountPlus. See docs/evo-pro/phase-1b-app-module.md.
+# you and ShadowMountPlus. See docs/architecture/app-module.md.
 # =============================================================================
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 

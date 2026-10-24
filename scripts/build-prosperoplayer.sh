@@ -223,7 +223,7 @@ if ! make -C "${DEST}" "${MAKE_ARGS[@]}" > "${BUILD_LOG}" 2>&1; then
       && echo "  * API MISMATCH - likely an FFmpeg major-version incompatibility"
     echo ""
     die "ProsperoPlayer failed to build.
-       Record the findings in docs/prosperoplayer-baseline.md, then fix the
+       Record the findings in the issue tracker, then fix the
        ENVIRONMENT rather than upstream's source - the point of this step is a
        faithful baseline."
 fi

@@ -4,7 +4,7 @@
 # Builds the app module in the same pinned Docker environment developers use
 # locally, PFS-packs it into a single PPSA99039.ffpfsc image
 # (scripts/package-app.sh --ffpfsc), and publishes that as a GitHub release.
-# This is the ONLY hardware path (see CLAUDE.md / docs/tooling.md) — the old
+# This is the ONLY hardware path (see CLAUDE.md / docs/build/tooling.md) — the old
 # ELF/Media-tile/hbldr release route reached none of EVO's headline features
 # (no sceVideodec2 hardware decode, no sceAgc GPU present, no real user
 # session) and was replaced here (#36).
@@ -113,7 +113,7 @@ jobs:
       # --ffpfsc also runs the plain (no-flag) app-module build first - see
       # scripts/package-app.sh - so this is the only build step needed. No
       # --usb-remote / --agc-probe / --breadcrumbs: a release ships the same
-      # defaults docs/tooling.md documents as the normal deploy.
+      # defaults docs/build/tooling.md documents as the normal deploy.
       - name: Build and PFS-pack the app module
         run: |
           # The image's SDK ships FFmpeg 7.0.1; EVO needs 7.1.1 (AV1 fixes, and

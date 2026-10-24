@@ -1,7 +1,7 @@
 /*
  * sce_avplayer.h — libSceAvPlayer ABI (hardware demux + decode + A/V sync).
  *
- * Native-decode plan Phase 0 (docs/evo-pro/native-decode-plan.md §4), Route A.
+ * Native-decode plan Phase 0 (docs/hardware/video-decode.md §4), Route A.
  * Nothing here is linked at build time: the module is loaded and every symbol
  * resolved by NID at run time (nid_encode + kernel_dynlib_resolve in a payload;
  * sceKernelLoadStartModule + sceKernelDlsym-by-NID in the app module). Module
@@ -16,14 +16,14 @@
  * Every field there carries its byte offset in a doc-comment; this header keeps
  * those offsets in comments so a mismatch is caught by eye. The six core NIDs
  * are additionally pinned against a hardware run — see the NID table below and
- * docs/native-media-research.md#results-log (elfldr payload, fw 12.70,
+ * docs/hardware/video-decode.md#results-log (elfldr payload, fw 12.70,
  * 2026-08-09: libSceAvPlayer maps and all six resolve).
  *
  * The C# `delegate* unmanaged<...>` callback signatures are reproduced as C
  * function-pointer typedefs verbatim. SharpProspero's MediaPlayer.cs is the
  * reference implementation of the allocator + frame-buffer ("texture")
- * callbacks — see docs/evo-pro/avplayer-abi.md for the port and the
- * memory-typing diff against docs/hardware-decode.md.
+ * callbacks — see docs/hardware/video-decode.md for the port and the
+ * memory-typing diff against docs/hardware/video-decode.md.
  *
  * WHAT IS *NOT* VERIFIED
  * ----------------------
@@ -201,7 +201,7 @@ typedef struct SceAvPlayerFrameInfoEx {
 
 /* --- functions (resolve by NID at run time) ---------------------------
  * NID table — names verified against SharpProspero's LibraryImport bindings;
- * the six marked (hw) additionally match docs/native-media-research.md's
+ * the six marked (hw) additionally match docs/hardware/video-decode.md's
  * on-device resolve log (fw 12.70, elfldr payload).
  *
  *   sceAvPlayerInit             aS66RI0gGgo   (hw)
@@ -254,8 +254,8 @@ int32_t  sceAvPlayerClose(void *handle);
  *   space out). Track (addr -> off, size) in a small fixed table the player
  *   threads can read without locking the general heap.
  *
- * This is the exact detail the earlier docs/hardware-decode.md try may have
- * gotten wrong (it used WC_GARLIC type 3). See docs/evo-pro/avplayer-abi.md. */
+ * This is the exact detail the earlier docs/hardware/video-decode.md try may have
+ * gotten wrong (it used WC_GARLIC type 3). See docs/hardware/video-decode.md. */
 
 #ifdef __cplusplus
 }

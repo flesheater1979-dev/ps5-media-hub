@@ -1,7 +1,7 @@
 /*
  * evo_playback.h — the playback session: the video decode/pace/present loop,
  * the media clock, and the video thread lifecycle. Track A step A7 of
- * docs/modularisation-plan.md.
+ * docs/architecture/architecture.md.
  *
  * §4 of the plan: everything outside the playback core that reads a playback
  * global should go through the evo_pb_*() accessors below. Step A8 sweeps the

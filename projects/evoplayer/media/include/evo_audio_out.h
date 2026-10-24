@@ -4,7 +4,7 @@
  * Owns the AudioOut port handle, the block ring feeding it, the audio session
  * clock, the audio decode thread, and the audio-track switch. Verbatim move of
  * the audio-out / mix / AUDIO_TRACK_SWITCH regions from main.c — Track A step
- * A3 of docs/modularisation-plan.md.
+ * A3 of docs/architecture/architecture.md.
  *
  * TRANSITIONAL: this module still reads a dozen playback-core globals from
  * main.c (screen, player_paused, video_clock_seconds, the subtitle/resume

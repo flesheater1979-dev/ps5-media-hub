@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tools/sweep_report.py — turn the `sweep` lines in evo.log into the
-docs/validation.md codec table.
+docs/build/validation.md codec table.
 
     python3 tools/sweep_report.py output/logs/evo.log -o output/logs/sweep.md
 

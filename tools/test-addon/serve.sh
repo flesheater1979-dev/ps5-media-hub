@@ -5,7 +5,7 @@
 #   ./tools/test-addon/serve.sh [media_dir] [port]
 #
 # Defaults: media_dir "D:\Downloads\Audio Test Files", port 8100. Runs on the
-# HOST (the console must reach it; see docs/hardware/networking.md) as the
+# HOST (the console must reach it; see docs/console/networking.md) as the
 # Docker container `evo-test-addon`, replaced on every run. Then, in Nuvio (or
 # any Stremio client), add the addon:
 #

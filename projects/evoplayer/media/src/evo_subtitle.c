@@ -3,7 +3,7 @@
  *
  * Verbatim move of the EMBEDDED_SUBTITLE_MODULE, SRT_MODULE and
  * SUBTITLE_CONTROLS regions from main.c (Track A step A4 of
- * docs/modularisation-plan.md). The only edits are `static` -> external
+ * docs/architecture/architecture.md). The only edits are `static` -> external
  * linkage on the handful of symbols main.c still touches (see evo_subtitle.h)
  * and the transitional extern block below.
  */

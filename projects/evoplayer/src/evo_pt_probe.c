@@ -2,7 +2,7 @@
  * evo_pt_probe.c - can an app module put a Dolby/DTS bitstream on HDMI? (#47)
  *
  * A temporary diagnostic, driven by `evo-remote.sh ptprobe <cmd>`. The
- * September research (docs/research/audio-passthrough.md) stopped at "the
+ * September research (docs/hardware/audio.md) stopped at "the
  * output-mode switch is gated" without ever logging a return code. Reading the
  * 12.70 libSceAudioOut showed where the switch really goes:
  *

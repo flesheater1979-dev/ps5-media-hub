@@ -3,7 +3,7 @@
  *
  * Verbatim move of the audio-out ring / output thread, the audio sample mix,
  * the audio decode thread, and the AUDIO_TRACK_SWITCH region from main.c
- * (Track A step A3 of docs/modularisation-plan.md). No behaviour change: the
+ * (Track A step A3 of docs/architecture/architecture.md). No behaviour change: the
  * only edits are `static` → external linkage on the state main.c still touches
  * and the transitional extern block below for the playback-core / subtitle /
  * resume globals this code reads. All of that collapses into the evo_pb_*()

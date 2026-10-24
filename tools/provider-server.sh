@@ -5,7 +5,7 @@
 #
 # WHY THIS RUNS ON THE WINDOWS HOST AND NOT IN THE CONTAINER
 #
-# Per docs/hardware/networking.md, the PS5 cannot reach into the Docker
+# Per docs/console/networking.md, the PS5 cannot reach into the Docker
 # container on Windows bridge networking. Every other script in this repo
 # re-execs itself through `docker compose`; this one must NOT, because the
 # thing that has to be reachable is the listening socket. It therefore runs
@@ -52,7 +52,7 @@ if [[ -f /.dockerenv ]]; then
 error: provider-server.sh must run on the HOST, not in the dev container.
 
 The PS5 cannot reach a listener inside the container on Windows bridge
-networking (docs/hardware/networking.md), so a server started here would be
+networking (docs/console/networking.md), so a server started here would be
 invisible to the console even though curl from inside the container works.
 
 Run it from PowerShell or Git Bash on the host instead.

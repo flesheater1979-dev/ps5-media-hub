@@ -2,7 +2,7 @@
  * evo_audio_resample.c — libswresample configuration for the audio-out path.
  *
  * Verbatim move of the PROSPERO_AUDIO_RESAMPLER_STATE region from main.c
- * (Track A step A2 of docs/modularisation-plan.md). No behaviour change: the
+ * (Track A step A2 of docs/architecture/architecture.md). No behaviour change: the
  * two globals the configure path used to read (`evo_audio_channels`,
  * `audio_ctx`) are now passed in as `out_channels` / `audio_ctx`, and the
  * output rate is the PROSPERO_AUDIO_OUTPUT_RATE macro instead of a file-scope

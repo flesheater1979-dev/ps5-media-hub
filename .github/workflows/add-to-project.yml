@@ -2,7 +2,7 @@
 #
 # OPTIONAL. The project's own built-in "Auto-add to project" workflow already
 # does this for issues opened in THIS repo and needs no token — enable it in
-# Project ▸ ••• ▸ Workflows (see docs/project-tracking.md).
+# Project ▸ ••• ▸ Workflows (see docs/planning/project-tracking.md).
 #
 # Keep this file if you also want to catch issues TRANSFERRED in from another
 # repo, or want the add to run under your control / with field defaults later.

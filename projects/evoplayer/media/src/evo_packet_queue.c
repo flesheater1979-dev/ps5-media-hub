@@ -3,7 +3,7 @@
  * threads.
  *
  * Verbatim move of the PacketQueue helpers from main.c (Track A step A1 of
- * docs/modularisation-plan.md). No behaviour change: the demux still owns the
+ * docs/architecture/architecture.md). No behaviour change: the demux still owns the
  * two queue instances until step A5.
  */
 #include "evo_packet_queue.h"

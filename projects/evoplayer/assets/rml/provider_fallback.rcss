@@ -3,7 +3,7 @@
  *
  * The stylesheet for provider_fallback.rml. Also the worked example of the
  * RCSS subset the sceAgc backend actually implements - every property used
- * here is one docs/addons/provider-architecture.md lists as supported, and
+ * here is one docs/providers/architecture.md lists as supported, and
  * nothing here relies on anything outside it. A bundle that stays inside this
  * vocabulary renders the same on the console as it does under uiview.sh.
  *
@@ -49,7 +49,7 @@ div, span, p, img {
      * nobody wants to be looking at.
      *
      * Every bundle owes the same gutter; it is in the vocabulary section of
-     * docs/addons/provider-architecture.md for that reason.
+     * docs/providers/architecture.md for that reason.
      */
     padding-left: 200dp;
     padding-right: 64dp;

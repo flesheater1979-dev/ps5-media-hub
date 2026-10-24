@@ -7,7 +7,7 @@
 #
 # The PS5 is obviously not available to a GitHub runner, so nothing here
 # executes a payload. Hardware validation stays local and is tracked by hand in
-# docs/validation.md. CI's job is narrower: prove the environment still builds
+# docs/build/validation.md. CI's job is narrower: prove the environment still builds
 # and that every project still links.
 # =============================================================================
 name: build

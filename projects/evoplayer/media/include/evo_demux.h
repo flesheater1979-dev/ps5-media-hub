@@ -4,7 +4,7 @@
  *
  * Verbatim move of the PROSPERO_TRUE_AV_SEEK region + the two PacketQueue
  * instances + the stream indices from main.c — Track A step A5 of
- * docs/modularisation-plan.md.
+ * docs/architecture/architecture.md.
  *
  * TRANSITIONAL: still reads the playback-core decode context (play_fmt /
  * play_ctx / play_frame / play_pkt), the video-decode flags and g_pp_pb from

@@ -1,7 +1,7 @@
 /*
  * evo_playback.c — the playback session: video decode/pace/present loop, the
  * media clock, the video thread. Track A step A7 of
- * docs/modularisation-plan.md §5.
+ * docs/architecture/architecture.md §5.
  *
  * prospero_media_clock_seconds, present_pp_frame, convert_frame_via_sws,
  * prospero_video_queue_drain_nonkey, decode_next_video_frame and

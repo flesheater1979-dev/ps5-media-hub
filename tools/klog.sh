@@ -23,7 +23,7 @@
 # backoff instead of ending the capture.
 #
 # Requires ps5-payload-klogsrv to be running on the console. See
-# docs/tooling.md.
+# docs/console/diagnostics.md.
 # =============================================================================
 source "$(dirname "${BASH_SOURCE[0]}")/../scripts/common.sh"
 

@@ -5,7 +5,7 @@
  * EVO reverse-proxies the site on 127.0.0.1 and injects a small hook that
  * sends the site's own player's stream to EVO's player instead; after
  * playback EVO reopens the page the user was on. src/evo_webui.c has the
- * details and the hardware history; docs/research/web-browser-dialog.md the
+ * details and the hardware history; docs/providers/web-ui.md the
  * write-up.
  *
  * App module only; every other build gets the no-op inlines below.

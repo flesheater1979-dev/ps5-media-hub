@@ -4,7 +4,7 @@ Rasterise Lucide's `power` glyph into projects/evoplayer/assets/icons/icon_power
 
 The RmlUi icons are 72x72 RGBA PNGs, white with alpha coverage, recoloured at
 runtime by SetImageColor() (see the rail code in evo_rmlui_app.cpp), and the
-concept icons are Lucide's (ISC licence, docs/ui/icon-swap-handoff.md). The
+concept icons are Lucide's (ISC licence, the icon sources in tools/lucide_icon.sh). The
 other Lucide PNGs were rasterised from their SVGs; this one is described
 directly, because the glyph is two primitives:
 

@@ -21,7 +21,7 @@ jobs:
             👋 Welcome to **EVO Player**! Thanks for opening your first issue in this repository.
             
             - Please ensure all logs and firmware / system context are included.
-            - Check our [Roadmap](https://github.com/sainsaji/EVO-PLAYER-PS5/blob/main/docs/improvements-roadmap.md) to see related ongoing milestones.
+            - Check our [Roadmap](https://github.com/sainsaji/EVO-PLAYER-PS5/blob/main/docs/planning/roadmap.md) to see related ongoing milestones.
           pr-message: |
             🎉 Welcome and thank you for your contribution to **EVO Player**!
             

@@ -934,7 +934,7 @@ private:
      * ~120 ms frame is the render-interface raster). That render pass is what
      * needs skipping on an unchanged frame.
      *
-     * Step 1 of docs/evo-pro/gpu-rendering-plan.md: the full-screen menu
+     * Step 1 of docs/hardware/agc-runtime.md: the full-screen menu
      * documents (launch, list, browser, settings, changelog, reader,
      * surround) are opaque, cover the whole 1080p frame, and - the RCSS
      * carries no transitions or animations - never change between input

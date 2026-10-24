@@ -88,7 +88,7 @@ sdk_version_banner
 begin "firmware 12.70 support"
 # The CRT picks a kernel offset table from the running firmware version, which
 # it encodes as 0xMMmm0000 - so 12.70 is 0x12700000. Upstream crt/kernel.c
-# carries `case 0x12700000:` in the 12.00-12.70 group (see docs/sdk-audit.md);
+# carries `case 0x12700000:` in the 12.00-12.70 group (see the SDK sources (crt/kernel.c));
 # that source audit is the authoritative answer.
 #
 # The release zip ships compiled objects, not crt/kernel.c, so here we look for
@@ -115,7 +115,7 @@ if (( FW_OK )); then
     ok "SDK carries the 12.70 (0x12700000) kernel offset table"
 else
     warn "could not confirm 0x12700000 in the installed binaries."
-    warn "This is a heuristic scan, not proof - see docs/sdk-audit.md for the"
+    warn "This is a heuristic scan, not proof - see the SDK sources (crt/kernel.c) for the"
     warn "source-level audit. Confirm on hardware by running system_info,"
     warn "which prints the console's actual firmware word."
 fi

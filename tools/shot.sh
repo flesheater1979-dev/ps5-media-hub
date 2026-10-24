@@ -14,7 +14,7 @@
 #   ./tools/shot.sh diff a.bmp b.bmp  what changed between two captures
 #
 # The player writes captures when built with -DEVO_AUTOSHOT=N (capture N
-# seconds after launch) and on L3/R3 in the menus. See docs/tooling.md.
+# seconds after launch) and on L3/R3 in the menus. See docs/console/diagnostics.md.
 #
 # probe/scan/crop default to the most recently grabbed BMP, so the usual loop
 # is one `grab` followed by as many measurements as the question needs.

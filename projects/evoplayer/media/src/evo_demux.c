@@ -3,7 +3,7 @@
  *
  * Verbatim move of the PROSPERO_TRUE_AV_SEEK region, the two PacketQueue
  * instances and the stream indices from main.c (Track A step A5 of
- * docs/modularisation-plan.md). The only edits are `static` -> external
+ * docs/architecture/architecture.md). The only edits are `static` -> external
  * linkage on what main.c still touches and the transitional extern block
  * below.
  */

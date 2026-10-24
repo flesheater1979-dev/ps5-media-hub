@@ -10,7 +10,7 @@
  *
  * One record per played file, emitted as a single machine-readable `sweep`
  * line into /mnt/usb0/evo.log at file close. tools/sweep_report.py turns a
- * log full of them into the docs/validation.md table.
+ * log full of them into the docs/build/validation.md table.
  *
  * Cost: three counters on the present path and one 16-pixel glReadPixels per
  * file. Compiled in unconditionally — the numbers are as useful for a bug

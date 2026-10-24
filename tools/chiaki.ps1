@@ -7,7 +7,7 @@
   `open` starts the chiaki-ng window (which runs its own LAN discovery once it
   is open); `stream` connects to a console that is ALREADY registered.
   Registering (the PIN / PSN account step) is done by hand in the chiaki-ng
-  window - see docs/build/remote-play.md.
+  window - see docs/console/remote-play.md.
 
   Usage (from the repo root, PowerShell):
     ./tools/chiaki.ps1 where
@@ -30,7 +30,7 @@ $repo = Split-Path -Parent $PSScriptRoot
 $exe = $env:CHIAKI_NG_EXE
 if (-not $exe) { $exe = Join-Path $env:USERPROFILE "tools\chiaki-ng\app\chiaki-ng-Win\chiaki.exe" }
 if (-not (Test-Path $exe)) {
-    throw "chiaki-ng not found at $exe - see docs/build/remote-play.md (or set CHIAKI_NG_EXE)."
+    throw "chiaki-ng not found at $exe - see docs/console/remote-play.md (or set CHIAKI_NG_EXE)."
 }
 
 function Get-Ps5Host {

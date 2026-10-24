@@ -118,7 +118,7 @@
 # launch/close send the vendored controllers in tools/ps5-controllers/ (from
 # ps5-homebrew-dev-protocol). Their evidence is ShadowMount+'s debug.log, read
 # by tools/evo_lifecycle.py; elfldr accepting the bytes proves nothing.
-# Protocol, safety rules, outcome classes: docs/build/tooling.md#hardware-cycle
+# Protocol, safety rules, outcome classes: docs/console/hardware-cycle.md
 # =============================================================================
 source "$(dirname "${BASH_SOURCE[0]}")/../scripts/common.sh"
 
@@ -533,7 +533,7 @@ dbcompare)
 sweep)
     # #8 — the codec sweep. Plays every clip in a directory for a fixed window,
     # then harvests the per-file `sweep` lines EVO wrote into evo.log and renders
-    # the docs/validation.md table. Each `play` implicitly closes the previous
+    # the docs/build/validation.md table. Each `play` implicitly closes the previous
     # file (start_video_playback stops first), which is what flushes its row; the
     # trailing `stop` flushes the last one.
     SWEEP_DIR="/mnt/usb0/media/Test/Audio"
@@ -559,7 +559,7 @@ sweep)
     python3 "$(dirname "${BASH_SOURCE[0]}")/sweep_report.py" \
         "${LOG_OUT}/evo.log" -o "${LOG_OUT}/sweep.md"
     echo ""
-    echo "  table -> output/logs/sweep.md   (paste into docs/validation.md)"
+    echo "  table -> output/logs/sweep.md   (paste into docs/build/validation.md)"
     ;;
 report)
     # Re-render the table from an evo.log already on disk; no console needed.

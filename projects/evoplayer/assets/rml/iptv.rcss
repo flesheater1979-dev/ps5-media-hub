@@ -5,7 +5,7 @@
  * under /data/evoplayer/providers/iptv/.
  *
  * It stays inside the RCSS subset the sceAgc backend implements - see
- * docs/addons/provider-architecture.md. That list is not a style guide, it is
+ * docs/providers/architecture.md. That list is not a style guide, it is
  * the set of properties that actually rasterise on the console; the backend's
  * failure mode for anything outside it is a silent mis-render, which is why a
  * bundle is validated against it at load rather than trusted.
@@ -63,7 +63,7 @@ div, span, img {
  * the console's sceAgc interface and NOT by the host preview's CPU
  * rasteriser, so these panels look flat under uiview.sh and frosted on
  * hardware. That is the opposite of the usual risk - see
- * docs/addons/provider-architecture.md 6.4.
+ * docs/providers/architecture.md 6.4.
  * ------------------------------------------------------------------------ */
 
 #tv-wallpaper {

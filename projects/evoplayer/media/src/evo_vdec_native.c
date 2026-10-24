@@ -5,7 +5,7 @@
  * A port of the hardware-verified sceVideodec2 bring-up / decode / teardown
  * sequence proven inside the full PPSA99039 player on 2026-09-03 (a 1920x1088
  * NV12 H.264 frame, every call 0). The ABI transcription lives in
- * third_party/ps5-hardware-video-decoding-research/ and docs/evo-pro/videodec2-abi.md.
+ * third_party/ps5-hardware-video-decoding-research/ and docs/hardware/videodec2-abi.md.
  *
  * Real body only under EVO_APP_MODULE — sceVideodec2, a user session and the
  * GPU driver stack exist only in the registered app module. Host + payload

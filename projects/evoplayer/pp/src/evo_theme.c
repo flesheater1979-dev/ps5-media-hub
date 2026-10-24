@@ -26,7 +26,7 @@
 /* Overridable so the parser can be exercised on a host with a local
  * directory of .theme files instead of a console.
  *
- * elfldr payload: USB, as documented (docs/theming.md). App module: USB is
+ * elfldr payload: USB, as documented (docs/ui/theming.md). App module: USB is
  * ENOENT in the sandbox until tools/sandbox-unjail (task 7), so custom themes
  * come from /download0/evoplayer/themes/ instead. */
 #ifndef EVO_THEME_DIR

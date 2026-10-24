@@ -27,7 +27,7 @@
 #                                             a player build has. RmlUi renders
 #                                             through hardware command buffers
 #                                             with vsync pacing. See
-#                                             docs/evo-pro/agc-bare-metal-ui.md.
+#                                             docs/hardware/agc-runtime.md.
 #
 # Compilation uses the native-app toolchain (tools/native-app/prospero-clang18:
 # -femulated-tls -fno-plt -fno-stack-protector); the LINK + PS5-module
@@ -37,7 +37,7 @@
 # Output: output/app/PPSA99039/{eboot.bin, sce_sys/param.json, sce_module/libc.prx}
 # Deploy: ./scripts/deploy-app.sh   (FTP -> /data/homebrew/PPSA99039/)
 #
-# See docs/evo-pro/phase-1b-app-module.md.
+# See docs/architecture/app-module.md.
 # =============================================================================
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 

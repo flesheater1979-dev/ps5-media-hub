@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RmlUi frame profiler — host, no console. See docs/evo-pro/gpu-rendering-plan.md §6.
+# RmlUi frame profiler — host, no console. See docs/hardware/agc-runtime.md §6.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

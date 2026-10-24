@@ -2,7 +2,7 @@
 """
 gen_surround_icons.py - the Surround Sound Studio's listener and speaker icons
 (#106), rasterised from Lucide (https://lucide.dev, ISC licence - the icon
-source approved in docs/ui/icon-swap-handoff.md).
+source approved in the icon sources in tools/lucide_icon.sh).
 
     python3 tools/gen_surround_icons.py      # writes projects/evoplayer/assets/icons/
 

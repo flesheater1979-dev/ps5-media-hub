@@ -7,7 +7,7 @@
  * In the PPSA99039 app sandbox opendir() fails EPERM on every path (its
  * internal fstatfs step is not wired through the clean-room libc.prx shim),
  * but open(path, O_RDONLY|O_DIRECTORY) + getdents(fd, buf, n) return real
- * entries - proven on hardware 2026-09-02 (docs/evo-pro/phase-1b-app-module.md
+ * entries - proven on hardware 2026-09-02 (docs/architecture/app-module.md
  * section 5, Step A #2).
  *
  * This is a drop-in replacement for the opendir/readdir/closedir triple:
