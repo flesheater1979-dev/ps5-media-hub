@@ -211,9 +211,10 @@ void draw_info(DrawList &list, const Context &ctx, const Rect &box, const Settin
     if (!pv.icon.empty())
         if (uint32_t icon = ctx.textures.icon(pv.icon))
             list.image(icon, {tile.x + 20, tile.y + 20, 56, 56}, ::hui::gfx::kFullUv, kWhite);
+    float text_y = a.top + 148.0f;
     if (!pv.choices.empty() || pv.toggle)
-        chips(list, ctx, a, a.top + 124.0f, chip_labels(pv), pv.index);
-    benefit(list, ctx, a, a.top + (pv.choices.empty() && !pv.toggle ? 148.0f : 208.0f), pv.benefit);
+        text_y = chips(list, ctx, a, a.top + 124.0f, chip_labels(pv), pv.index) + 28.0f;
+    benefit(list, ctx, a, text_y, pv.benefit);
 }
 
 /* ---- DEEP BLACKS: OFF next to the highlighted choice. ---- */
