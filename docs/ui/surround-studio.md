@@ -1,6 +1,6 @@
 # Surround Sound Studio (#106)
 
-Settings → Playback → SURROUND SOUND TEST. A 2.5D room soundstage: speakers
+Settings → Audio → SURROUND SOUND TEST (shipped in 0.11.0, issue #106). A 2.5D room soundstage: speakers
 placed where they physically stand, a listener at the sweet spot, and a
 spatial "orb" sound source that can be moved around them.
 
@@ -13,9 +13,9 @@ spatial "orb" sound source that can be moved around them.
 | Test-tone port (8ch S16) + one-shot PCM playback | `core/src/services/SurroundTestService.cpp` |
 | Mic calibration run + analysis | `core/src/services/SpeakerCalibrationService.cpp` |
 | Calibration profile: persist + apply to playback | `media/src/evo_speaker_cal.c` (hooked in `audio_queue_push`) |
-| Document | `assets/rml/surround.{rml,rcss}`, filled by `EvoRmlApp::UpdateSurroundState` |
+| Drawing | `ui_kit/src/evo_hui_surround.cpp` (the kit); `assets/rml/surround.{rml,rcss}` is the RmlUi fallback, filled by `EvoRmlApp::UpdateSurroundState` |
 | Listener / speaker icons | `tools/gen_surround_icons.py` → `assets/icons/icon_{speaker_body,speaker_cone,listener,armchair}.png` (Lucide, ISC) |
-| Host fixtures | `tools/uiview_playback_rml.cpp` → `rml_surround`, `rml_surround_orb`, `rml_surround_calibration` |
+| Host fixtures | `tools/hui_preview/` (kit) and `tools/uiview_playback_rml.cpp` → `rml_surround`, `rml_surround_orb`, `rml_surround_calibration` |
 
 Channel indices everywhere are the AudioOut interleave, hardware-verified in
 `evo_audio_resample.c`: **FL FR FC LFE BL BR SL SR**. In 5.1, channels 4/5 are
@@ -37,13 +37,9 @@ It is panned sample-smoothly across every speaker by the DBAP gain matrix
 louder as the source nears the seat. Cross plays or pauses it. FREE ROAM only
 plays a test tone, on Cross.
 
-**Frame cost:** this screen redraws every frame. Its update goes through a
-last-value cache (`srd_set` / `srd_text`), positions are whole dp, the growing
-rings scale with `transform`, and the numeric readouts refresh at 10 Hz.
-Without that cache every element's geometry was rebuilt every frame: 180
-`CompileGeometry` calls per frame against 7.7 now (`tools/prof_rmlui.sh`,
-SURROUND scenario). The uncached version ran at about 10 fps on the console. Moving the source by hand drops an
-autopilot flight mode back to MANUAL.
+Moving the source by hand drops an autopilot flight mode back to MANUAL. The screen redraws every
+frame, so its update goes through a last-value cache and the numeric readouts refresh at 10 Hz;
+without that, every element's geometry was rebuilt each frame and the screen ran at about 10 fps.
 
 ## Auto calibration (DualSense mic)
 
@@ -84,16 +80,11 @@ is loaded at boot and again on the `/data` rebind.
 
 ## Status
 
-Host-rendered and compile-checked. **hw-verify-pending:**
-- Does the app module still load with the new `libSceAudioIn` positional import?
-  If it doesn't, the symptom is CE-108255-1 at launch with no log, and dropping
-  `libSceAudioIn` from `PRX_STUB_WANT` recovers it.
-- Mic capture and chirp detection on real speakers (see the `calibration:`
-  lines in `evo.log`).
+Shipped in 0.11.0. The repository does not record a hardware check of the microphone
+path, so treat these as the things to look at after any change to it:
+
+- The app module must still load with the `libSceAudioIn` positional import. If it does
+  not, the symptom is CE-108255-1 at launch with no log, and dropping `libSceAudioIn`
+  from `PRX_STUB_WANT` in `package-app.sh` recovers it.
+- Mic capture and chirp detection on real speakers (the `calibration:` lines in `evo.log`).
 - The calibration trims audibly applied on playback.
-
-## Gotcha found on the way
-
-RmlUi's `rgba()` parses alpha as **0–255**, not 0–1
-(`PropertyParserColour.cpp`). So `rgba(0,205,255,0.3)` is fully transparent.
-Use `#rrggbbaa`. Several other `.rcss` files still carry float alphas.

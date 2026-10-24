@@ -3,40 +3,34 @@
 How EVO Player connects to a media source that is not the USB stick, and why a
 provider brings its own UI instead of EVO drawing one for it.
 
-Supersedes `addons-emby-nuvio.md`. That document was research written during the
-elfldr-payload era: its constraint table describes a ~3.5 GB payload heap and a
-process that no longer exists, and its `evo_addon_t` sketch was never built. The
-service-protocol notes in it were accurate and are carried forward here in
-condensed form; everything about the runtime is restated for the `.ffpfsc` app
-module.
-
-Implemented by #90. Per-provider stories (Emby screens, Jellyfin, Torbox,
-Real-Debrid, Stremio/Nuvio, the full XMLTV grid) follow under the `addons`
-label and all build on this seam rather than extending it.
+Implemented by #90. What each provider does and how it is set up is in
+[media-servers.md](media-servers.md); this page is the seam they share. Per-provider
+stories follow under the `addons` label and build on this seam rather than extending it.
 
 ---
 
 ## 1. The rule this exists to enforce
 
-**The 0.6/0.7 Emby integration was wrong because EVO drew a custom UI for it.**
-
-A nine-row D-pad list that looked like EVO and nothing like Emby, that had to be
-re-authored by hand for every new source, and that could not express what any of
-those services actually look like. A channel guide is a grid. A library is a
-poster wall. Neither is a nine-row list.
+**The 0.6/0.7 Emby integration was wrong because EVO drew a custom UI for it.** A
+nine-row D-pad list that looked like EVO and nothing like Emby, re-authored by hand for
+every new source, could not express what those services look like: a channel guide is a
+grid, a library is a poster wall.
 
 So a provider is two halves with a hard line between them:
 
 | Layer | Owner | Delivery |
 |---|---|---|
 | Auth, catalog, search, link resolution, progress reporting | in-binary C behind `evo_provider_t` | compiled into the app module |
-| Screens, layout, palette, artwork treatment, navigation | the provider's own UI bundle | **fetched over HTTP at runtime**, cached under `/data/evoplayer/providers/<id>/` |
+| Screens, layout, navigation | a data-bound document over the provider's data model | an **embedded** document EVO ships for its own providers (`mediaserver`, `iptv`, `xtream`, the fallback skin), or a **bundle fetched over HTTP at run time**, cached under `/data/evoplayer/providers/<id>/` |
 
-The C half publishes a **data model**. The downloaded markup binds to it by name
-and never references an EVO element id. Arbitrary third-party *code* never
-reaches the console; the presentation is genuinely the service's own.
+The C half publishes a **data model**; the markup binds to it by name and never
+references an EVO element id. There is no per-provider C++ screen: every provider shares
+one `ProviderHostScreen`. EVO's own providers draw on one shared **shelves** layout
+(below), rasterised by the kit ([../ui/hui-kit.md](../ui/hui-kit.md)); a bundle served by
+a third party is drawn by RmlUi itself, and arbitrary third-party *code* never reaches the
+console.
 
-**EVO supplies playback, not presentation.**
+**EVO supplies playback; a provider supplies content and, if it wants, its own look.**
 
 ---
 
@@ -50,10 +44,12 @@ reaches the console; the presentation is genuinely the service's own.
 | `addons/src/evo_provider_bundle.c` | manifest parse, fetch, sha256, cache |
 | `addons/src/provider_iptv.c` | the IPTV provider — M3U/M3U8, group folders, XMLTV now/next |
 | `addons/src/provider_emby.c` | Emby on the vtable; `addon_emby.c` keeps its own API |
+| `addons/src/provider_{jellyfin,plex,stremio,nuvio,xtream}.c`, `xtream_epg.c` | the other providers ([media-servers.md](media-servers.md)) |
 | `ui_rml/src/evo_rmlui_provider.cpp` | the per-provider Rml context, data model, focus, events |
+| `ui_kit/src/evo_hui_provider.cpp` | the shelves layout, drawn by the kit |
 | `ui_rml/src/evo_rmlui_provider_art.cpp` | remote artwork → `evo:mem/` textures, LRU |
 | `core/src/screens/ProviderHostScreen.cpp` | the one screen class every provider shares |
-| `assets/rml/provider_fallback.{rml,rcss}` | the embedded fallback skin (and the binding spec) |
+| `assets/rml/{mediaserver,iptv,xtream,provider_fallback}.{rml,rcss}` | the embedded documents; `provider_fallback` is also the binding spec |
 | `assets/providers/iptv/` | the IPTV bundle — **served, not embedded** |
 | `tools/provider-server.sh` | serves bundles + a test playlist to the console |
 | `tools/gen_provider_manifest.py` | regenerates a bundle's `manifest.json` |
@@ -70,7 +66,7 @@ EVO is the `PPSA99039` app module. There is no payload heap and no 3.5 GB.
 | TLS | static OpenSSL from the pacbrew sysroot. `-lssl -lcrypto` are in the shipping binary and have been since 0.6 |
 | FFmpeg network | **on since #90** — `--enable-network --enable-openssl`, protocols `http,https,tcp,tls,crypto`, demuxers `hls` and `dash` |
 | JSON | `cJSON`, compiled unconditionally |
-| Memory | three pools, none of them 3.5 GB — see `docs/evo-pro/` and the memory-budget notes. A bundle's whole cache is capped at 8 MiB and its decoded artwork at 24 MiB, both smaller than one 4K frame |
+| Memory | three pools, none of them 3.5 GB; see [../hardware/memory-budget.md](../hardware/memory-budget.md). A bundle's whole cache is capped at 8 MiB and its decoded artwork at 24 MiB, both smaller than one 4K frame |
 | Writable storage | `/data/evoplayer` once `evo_jailbreak_self()` lands; `/download0/evoplayer` before that and it does **not** survive a relaunch (#46) |
 
 Three consequences that are easy to get wrong:
@@ -394,7 +390,7 @@ playlist and an XMLTV file with live now/next windows, prints the LAN URL and
 the `iptv.conf` to paste, and serves it.
 
 It must not run in the dev container: per
-[../hardware/networking.md](../hardware/networking.md) the PS5 cannot reach a
+[networking.md](../console/networking.md) the PS5 cannot reach a
 listener inside the container on Windows bridge networking, so the server would
 be invisible to the console even though `curl` from inside the container works.
 The script refuses to start if it detects `/.dockerenv`.
@@ -448,7 +444,7 @@ and, for a `.m3u8` or `.ts` address, the same address with the other extension
 (a guess, derived in `provider_iptv.c`). Left to itself EVO plays the first and,
 if it does not open, tries the next.
 
-With **Settings → Playback & Video → ASK WHICH LIVE STREAM** on (the default),
+With **Settings → Interface & Storage → ASK WHICH LIVE STREAM** on (the default),
 `ProviderHostScreen` does not decide. After the channel resolves it reads the
 HLS master playlist behind the listed URL (`evo_hls_variants_fetch`, an async GET
 through `evo_net`, bounded to 8 s) and opens a list:
@@ -501,25 +497,10 @@ the title back to the URL - the #9 defect again.
 
 ---
 
-## 9. Service protocol notes
+## 9. Home layout and protocol notes
 
-Condensed from the superseded research document. Endpoint detail belongs in each
-provider's own story.
-
-**Emby / Jellyfin.** Emby lives under `/emby/` and sends `X-Emby-Token`;
-Jellyfin has no prefix and sends `Authorization: MediaBrowser ... Token="..."`
-(web-version progress reports use the same split). Sign-in is
-`POST /Users/AuthenticateByName` (or Quick Connect on Jellyfin), which returns
-`AccessToken` + `User.Id`. Libraries come from `/Users/{uid}/Views`, contents
-from `/Users/{uid}/Items?ParentId=…`, a direct stream from
-`/Videos/{id}/stream?Static=true`, posters/backdrops/logos from
-`/Items/{id}/Images/{Primary|Backdrop|Logo}`, and progress from the three
-`/Sessions/Playing*` posts (`PlayMethod` DirectPlay or Transcode, real
-`IsPaused`, a `DeviceId` made once per console and saved as `device_id=`).
-Details and cast use `/Items?Ids={id}&UserId={uid}&Fields=People,…` (the older
-per-user item URL answers 404 on some servers). Watched and favourite use
-`/UserPlayedItems` and `/UserFavoriteItems` on Jellyfin, which accept POST and
-DELETE (hardware-checked). `addon_emby.c` implements all of this.
+Per-service protocol details (Emby and Jellyfin endpoints, Stremio, IPTV, Xtream, Plex) are in
+[media-servers.md](media-servers.md).
 
 ### Home layout: shelves for every provider
 
@@ -548,47 +529,21 @@ shelves. Triangle opens the item menu when the provider has `item_action` or
 `panel`; Stremio and Nuvio offer Details & cast built from the title's meta
 reply (`panel` hook, kind "details").
 
-**IPTV.** An M3U/M3U8 playlist. `#EXTINF` carries `tvg-id`, `tvg-logo` and
-`group-title` as unordered quoted attributes, and the display name is
-everything after the **last** comma on the line — splitting on the first comma
-is the classic parser bug and truncates any channel whose name contains one.
-Optional XMLTV for now/next; the full grid is out of scope. An XMLTV file for a
-few hundred channels is tens of megabytes, so `provider_iptv.c` scans the bytes
-for `<programme>` rather than building a DOM, and an EPG that exceeds
-`evo_net`'s body cap simply does not arrive and now/next stay empty.
-
-**Stremio / Nuvio (v3).** `/manifest.json` declares resources and catalogs;
-`/catalog/{type}/{id}.json` and `/stream/{type}/{id}.json` return
-`{streams:[{url|infoHash, title, …}]}`. An `infoHash` is not playable and is
-precisely the `needs_resolver` case the resolver chain exists for. Its own
-story.
-
-**Torbox / Real-Debrid.** Resolvers only: no catalog, `CAP_RESOLVE` alone.
-
 ---
 
 ## 10. Known gaps
 
-- Credentials in `/data/evoplayer` are plaintext. Out of scope for #90; needs
-  its own issue.
-- `addon_emby.c` requests `Limit=64` and does not read `TotalRecordCount`, so
-  Emby reports `has_more = 0` and shows at most 64 rows per level. An
-  Emby-screen concern, not a seam one.
-- The search path is wired through the vtable but no screen opens the keyboard
-  for it yet.
-- A quality picker over `evo_stream_choice_t[]` is not built; the chain takes
-  the first playable choice. The seam's job was to produce more than one and say
-  which is preferred.
-
----
+- Credentials in `/data/evoplayer` are plaintext.
+- A bundle's `backdrop-filter` blur looks wrong in the host preview and right on the
+  console (section 6.4).
+- Live TV search and recordings (#179), per-stream headers (#92) and a malformed playlist
+  entry failing the whole playlist (#180) are open; see [../planning/roadmap.md](../planning/roadmap.md).
 
 ## 11. See also
 
-- [rmlui-integration-guide.md](../ui/rmlui-integration-guide.md) — the RmlUi
-  migration this builds on
-- [../evo-pro/agc-bare-metal-ui.md](../evo-pro/agc-bare-metal-ui.md) — the
-  sceAgc backend, and why its failure mode is a silent mis-render
-- [../hardware/networking.md](../hardware/networking.md) — console services,
-  and why the bundle server runs on the host
-- [../build/building.md](../build/building.md) — FFmpeg profiles
-- [../build/tooling.md](../build/tooling.md) — every script
+- [media-servers.md](media-servers.md): each provider
+- [web-ui.md](web-ui.md): the system-browser fallback
+- [../ui/rmlui.md](../ui/rmlui.md): the RmlUi layer and its rules
+- [../ui/hui-kit.md](../ui/hui-kit.md): the kit that draws the shelves
+- [../console/networking.md](../console/networking.md): why the bundle server runs on the host
+- [../build/building.md](../build/building.md): FFmpeg profiles

@@ -1,46 +1,26 @@
 # projects/evoplayer
 
-The EVO Player fork. **Empty on purpose.**
+The EVO Player source: a native media player for a jailbroken PS5, built as the
+`PPSA99039` app module. It began as a fork of ProsperoPlayer (see `NOTICE`); almost
+nothing of the original remains.
 
-Do not start here. The order matters:
+| Directory | What is in it |
+|---|---|
+| `main.cpp` | entry point only: crash and SIGTERM handlers, then `Application::run()` |
+| `core/` | the player: `Application`, `ScreenManager`, screens, services, state machines |
+| `media/` | demux, decoders (`sceVideodec2` and FFmpeg), audio out, subtitles, the `sceAgc` runtime |
+| `pp/` | the presentation clock, audio clock, `pp_playback`, theme loader |
+| `ui/` | nav, focus, input, layout and keyboard-state primitives |
+| `ui_kit/` | EVO's screens drawn with the ps5-homebrew-ui kit |
+| `ui_rml/` | the RmlUi bridge, provider documents and the `sceAgc` render interface |
+| `addons/` | `evo_net`, the provider seam and the providers, the in-app updater |
+| `src/`, `include/` | boot log, jailbreak, data paths, recent and favourites, log server, dev remote |
+| `assets/`, `shaders/`, `sce_sys/` | UI documents and fonts, `.pipe` shaders, `param.json` and title art |
+| `main.c.legacy` | the old monolith. **Not compiled.** Kept for `git blame` only |
 
-1. `projects/prosperoplayer/` must build **and run on hardware** first — that
-   establishes the baseline. `./scripts/build-prosperoplayer.sh`
-2. Confirm the baseline's *existing* playback actually works on your 12.70
-   console. Record it in [../../docs/validation.md](../../docs/validation.md).
-3. Only then copy the upstream tree here and start changing it.
+Do not run `make` here; the project Makefile lacks FFmpeg's transitive link
+dependencies. Build with `scripts/package-app.sh` from the repository root.
 
-```bash
-cp -r projects/prosperoplayer/. projects/evoplayer/
-rm -rf projects/evoplayer/.git
-git add projects/evoplayer
-```
-
-Unlike `projects/prosperoplayer/` (git-ignored, always a pristine upstream
-checkout), this directory **is** committed — it is the project's own source.
-
-## First targets
-
-From EVOPlayer's own README of known limitations, all of which are
-codec/integration problems rather than UI ones:
-
-- E-AC3 / Dolby Digital Plus silent
-- FLAC / OGG support varies
-- 4K playback file-dependent
-- DTS not mentioned at all
-
-The minimal FFmpeg profile already builds `eac3`, `dca`, `flac`, `opus`,
-`vorbis` and `alac` (see `output/logs/ffmpeg-7.0.1-minimal-codecs.txt`), so if
-these still fail the problem is in the player's decode/resample/output path,
-not a missing codec. That is exactly the kind of question the `minimal` vs
-`full` FFmpeg profiles are designed to settle.
-
-Remember `AudioOut` is fixed at **48 kHz stereo S16** — anything decoded at
-another rate or layout must go through `libswresample` first. That is a strong
-candidate for the "silent E-AC3" symptom.
-
-## Keep experiments out of here
-
-Hardware decoding, the GPU renderer and libSceAvPlayer each have their own
-project (`decoder_test`, `yuv_gpu_test`, `avplayer_test`) so a dead end in one
-costs nothing elsewhere. Integrate only what is proven.
+Documentation lives in [`../../docs/`](../../docs/README.md): start with
+[architecture](../../docs/architecture/architecture.md) and
+[building](../../docs/build/building.md).

@@ -4,16 +4,20 @@ Every colour and spacing value the UI draws with lives in one struct
 (`evo_theme`, in [`pp/include/evo_theme.h`](../../projects/evoplayer/pp/include/evo_theme.h)).
 Screens ask for tokens by meaning — `surface`, `accent`, `text_secondary` —
 never for a literal colour, so swapping the theme restyles the whole player
-without touching drawing code.
+without touching drawing code. The kit screens take their palette from it
+(`evo_hui_set_theme` → `Palette::from`) and the RmlUi documents get it pushed per
+element (`evo_rmlui_set_theme`).
 
 There are two ways to get a theme in:
 
-1. **Built-in** — compiled into the ELF. Four ship today.
-2. **`.theme` file on USB** — dropped in `/mnt/usb0/evo_themes/`, discovered at
-   startup. No rebuild, no repack. This is the plug-and-play path.
+1. **Built-in** — compiled into the binary. Four ship today.
+2. **`.theme` file** — dropped in **`/data/evoplayer/themes/`** on the console (over
+   FTP), discovered at startup. No rebuild, no repack. (Host builds and the sample
+   files in [`themes/`](../../themes) use `/mnt/usb0/evo_themes/`; the app module
+   cannot see USB until the self-unjail and reads its data root instead.)
 
-Switch themes in **Settings → THEME** (press ✕ to cycle). The choice is saved
-and restored on the next launch.
+Switch themes in **Settings → Interface & Storage → THEME**; the row opens a list of
+every theme. The choice is saved by name and restored on the next launch.
 
 ---
 
@@ -30,7 +34,7 @@ and restored on the next launch.
 
 ## Writing a `.theme` file
 
-Create `/mnt/usb0/evo_themes/mytheme.theme`. Format is `key = value`, one per
+Create `/data/evoplayer/themes/mytheme.theme`. Format is `key = value`, one per
 line. `#` starts a comment **except** directly after `=`, where it introduces a
 colour literal.
 
@@ -55,7 +59,7 @@ indistinguishable from its normal one, and "something went wrong" is the one
 message that must never be ambiguous.
 
 **Any key you leave out inherits from `MIDNIGHT`.** A three-line file is a
-valid theme. You do not need to specify all 23 keys to change the accent.
+valid theme. You do not need to specify all 24 keys to change the accent.
 
 ### Colour keys
 
@@ -93,7 +97,7 @@ Pixels, authored at 1080p.
 
 ## How discovery works
 
-`evo_theme_init()` loads the built-ins, then scans `/mnt/usb0/evo_themes/` for
+`evo_theme_init()` loads the built-ins, then scans the theme directory for
 `*.theme` and appends whatever parses. The cap is `EVO_THEME_MAX` (12 total).
 A file that fails to open is skipped silently — a bad theme cannot stop the
 player from starting.
@@ -105,14 +109,11 @@ name falls back to the default.
 
 ## Notes for anyone editing the drawing code
 
-- Colours are `0xAABBGGRR` to match the framebuffer. A raw `0xFF00D7FF` is
-  **yellow** here, not cyan — build colours with `EVO_RGBA(r,g,b,a)` or
-  `RR_BGRA(r,g,b,a)`.
-- Draw through [`evo_ui.h`](../../projects/evoplayer/pp/include/evo_ui.h)
-  (`evo_ui_card`, `evo_ui_round_rect`, `evo_ui_circle`, `evo_ui_hline`) rather
-  than filling rectangles by hand. Those primitives rasterise from signed
-  distance fields, so edges carry true analytic coverage and corners stay
-  smooth. Hand-rolled fills are how the UI got its staircased edges in the
-  first place.
-- Never hardcode a colour in a screen. If a token is missing for what you need,
-  add it to `evo_theme` and to all four built-ins.
+- Colours are `0xAABBGGRR` in framebuffers to match the scanout. A raw `0xFF00D7FF` is
+  **yellow** here, not cyan — build colours with `EVO_RGBA(r,g,b,a)`.
+- RmlUi colours written as `rgba()` take an alpha of 0 to 255, not 0 to 1; use
+  `#rrggbbaa`.
+- Never hardcode a colour in a screen. If a token is missing for what you need, add it
+  to `evo_theme` and to all four built-ins, and map it in the kit's `Palette`.
+- A theme can be light (`themes/paper.theme`); check text contrast on every built-in
+  after adding a new surface (a past fix, #137, was sub-text unreadable on some themes).

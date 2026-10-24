@@ -11,7 +11,7 @@ doc before working deep in an area.
 
 **Replies:** Reply in plain, simple words: the result first, then the next step. No tables or extra detail unless I ask.
 
-**Test on the console yourself.** After any fix, run it on the PS5 yourself: `evo-remote.sh quit` → `close` → deploy → `launch`, then drive it with `screen` / `key` and read where focus went from `key`'s output or `ui`. Use `key l3` + `tools/shot.sh grab` only when you need to see pixels (layout, colour, rendering). Never ask me to test what you can test. → [tooling.md#hardware-cycle](docs/build/tooling.md#hardware-cycle)
+**Test on the console yourself.** After any fix, run it on the PS5 yourself: `evo-remote.sh quit` → `close` → deploy → `launch`, then drive it with `screen` / `key` and read where focus went from `key`'s output or `ui`. Use `key l3` + `tools/shot.sh grab` only when you need to see pixels (layout, colour, rendering). Never ask me to test what you can test. → [hardware-cycle.md](docs/console/hardware-cycle.md)
 
 **Use agy first.** Before editing code for any issue, ask: is this mostly
 mechanical (a settings row, a screen from a worked example, boilerplate, host
@@ -39,7 +39,7 @@ Each issue body also has a "References & sequencing" block.
   --ffpfsc`, deploy with `deploy-app.sh --ffpfsc`, then start it with
   `evo-remote.sh launch`. ShadowMount+ v1.7 does NOT auto-launch an updated
   image. Never push an EVO ELF. For layout questions use the host renderer
-  (`uiview.sh`), not the console.
+  (`hui_preview.sh` for the kit screens, `uiview.sh` for RmlUi), not the console.
 - **Never deploy over a running EVO, and never stack launches.** Both have
   kernel-panicked the console. Close it with `evo-remote.sh quit` (soft close:
   stop media, drain the GPU, park), then `evo-remote.sh close`. `close` is a
@@ -54,13 +54,13 @@ Each issue body also has a "References & sequencing" block.
   console every time.
 - **Never call `sceVideoOutOpen` from a payload.** It returns a bogus handle
   and panics once a compute queue is allocated.
-  → [hardware-decode.md](docs/hardware/hardware-decode.md)
+  → [video-decode.md](docs/hardware/video-decode.md)
 - **Do not kill `kstuff`.** It destabilises the console into a panic.
 - **Remote Play (chiaki-ng) works** (paired 2026-10-07, offline-activated, no
   PSN). It reaches the system dialogs that `evo-remote.sh key` cannot (native
   IME, web browser). Don't start a stream or any console action the owner has
   not asked for, and close EVO (`quit`, then `close`) before sending payloads.
-  Steps and pitfalls: [remote-play.md](docs/build/remote-play.md). For tests
+  Steps and pitfalls: [remote-play.md](docs/console/remote-play.md). For tests
   that type text without it, set Settings → Interface & Storage →
   `KEYBOARD INPUT` = `VIRTUAL KEYBOARD`.
 - **Bound every console-facing call with a timeout.** A resident payload never
@@ -106,6 +106,7 @@ docker compose run --rm ps5-dev ./scripts/deploy-app.sh --ffpfsc   # sha256-veri
 ./tools/evo-remote.sh cycle --secs 60   # whole loop, classified result in output/cycles/
 
 # host UI renderer - any layout question, no console
+./tools/hui_preview.sh                  # every kit screen -> output/uiview/hui_*.png
 ./tools/uiview.sh --all                 # every RmlUi screen -> output/uiview/rml_*.png
 
 # compile check only, never deploys
@@ -128,10 +129,11 @@ projects/evoplayer/
   media/         decode, audio, evo_agc_runtime.c (GPU present + VideoOut)
   pp/            pace, presentation clock, seek
   ui/            nav/focus/input primitives + evo_keyboard state
+  ui_kit/        EVO's own screens on the ps5-homebrew-ui kit (docs/ui/hui-kit.md)
   ui_rml/        the RmlUi UI: evo_rmlui_app/bridge/render.cpp, the sceAgc
                  render interface, evo_rmlui_provider*.cpp (provider screens)
   addons/        evo_net (HTTP/TLS), the provider seam, provider_iptv/xtream/
-                 emby/jellyfin/nuvio -> docs/addons/provider-architecture.md
+                 emby/jellyfin/nuvio -> docs/providers/architecture.md
   assets/rml/    .rml/.rcss, embedded into the binary at package time
   src/           evo_usb_remote.c (the evo_cmd / evo_status dev remote)
 scripts/         build + deploy
@@ -145,16 +147,17 @@ Layer boundaries: [architecture.md](docs/architecture/architecture.md).
 
 ## Key docs
 
-- [tooling.md](docs/build/tooling.md): every script, the hardware cycle, launch safety
-- [evo-pro/status.md](docs/evo-pro/status.md): resume here for decode/GPU work
+- [hardware-cycle.md](docs/console/hardware-cycle.md): quit, close, deploy, launch, and why
+- [tooling.md](docs/build/tooling.md): every script and tool, and where each is explained
+- [video-decode.md](docs/hardware/video-decode.md): resume here for decode work
 - [memory-budget.md](docs/hardware/memory-budget.md): direct 12 GB, flexible
   448 MB. Read it before calling EVO memory-limited, and check `map_fail` in
   `evo.log` before blaming a codec.
-- [agc-bare-metal-ui.md](docs/evo-pro/agc-bare-metal-ui.md) +
+- [agc-runtime.md](docs/hardware/agc-runtime.md) +
   [shader-compilation.md](docs/hardware/shader-compilation.md): the sceAgc UI and the shader toolchain
 - [ui/hui-kit.md](docs/ui/hui-kit.md): EVO's own screens on ps5-homebrew-ui (draw lists → sceAgc),
   the RmlUi fallback, and `tools/hui_preview.sh` (host render of every screen)
-- [provider-architecture.md](docs/addons/provider-architecture.md): the provider seam (#90)
+- [providers/architecture.md](docs/providers/architecture.md): the provider seam (#90)
 - [upscaler.md](docs/hardware/upscaler.md): FSR1 / Anime4K (#103)
 - [proprietary.md](docs/proprietary.md): licences, including the vendored GPL controllers
 - Everything else: [docs/README.md](docs/README.md)
@@ -183,7 +186,7 @@ git. Never trust its report unverified. Full procedure: [agy.md](docs/build/agy.
   EVO's own file names inside Jelly5 etc. are noise. Exact strings: Grep. EVO's own
   history: `git log` / `git blame`.
 - **Read narrow.** `evo_rmlui_app.cpp` (4k lines), `uiview_playback_rml.cpp`
-  and `core/Application.cpp` are large. Grep first, then read only that range.
+  and `core/src/Application.cpp` are large. Grep first, then read only that range.
 - **Don't re-read a file right after editing it.**
 - **Trim command output.** Pipe builds and logs through `tail` / `grep` for the
   failure lines; never print a full Docker build log.

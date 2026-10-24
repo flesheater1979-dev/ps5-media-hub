@@ -2,10 +2,18 @@
 
 Started as a go/no-go spike on whether `PPSA99039` can drive the PS5's own
 WebKit (`libSceWebBrowserDialog`). The answer was yes, so it became a feature:
-**Emby and Jellyfin are providers whose UI is their own web client**, opened
-beside EVO's nav rail, with Play rerouted to EVO's player. Stage 1 (offline
-research) is in
+Emby, Jellyfin and Nuvio could be used through their own web client, opened beside
+EVO's nav rail, with Play rerouted to EVO's player. Stage 1 (offline research) is in
 [the issue comment](https://github.com/sainsaji/EVO-PLAYER-PS5/issues/101#issuecomment-5838945530).
+
+**Since 2026-10-01 this is the optional "web version", not the everyday route.** The
+browser owns the controller (cursor, no D-pad focus), its only exits are the page's
+"Back to EVO" button or the PS button (a panic vector, so a page that fails to load is
+a trap), setup meant typing an address with the D-pad, and nothing was reported back to
+the server. Emby, Jellyfin, Plex and Nuvio are now browsed in EVO's own screens
+([media-servers.md](media-servers.md)); the web client stays behind Triangle or OPTIONS
+in the provider chooser, and for Nuvio it is where addons were first managed (EVO can
+add and remove them itself now).
 
 ## How it works
 
@@ -77,7 +85,7 @@ User agent: `Mozilla/5.0 (PlayStation; PlayStation 5/12.70) AppleWebKit/605.1.15
   unjail that was never tried, so the subsystem stays initialized for the
   session and `evo_webui_shutdown()` terminates it at exit.
 
-### Not yet verified on hardware
+### Not recorded as verified on hardware
 
 Jellyfin, the provider chooser's latest routing (IPTV's own setup page, the
 per-row Square action), HTTPS upstreams, and the `loadstart`/`play`
@@ -139,8 +147,8 @@ page inside the dialog.
 
 ## Known limits
 
-- Emby/Jellyfin are not told what EVO played: watched state and resume points
-  do not update on the server yet.
+- Through the web version, Emby and Jellyfin are not told what EVO played; the native
+  screens report progress, watched state and resume points.
 - The dialog is modal and uses the system browser's cursor UX; EVO cannot draw
   over it.
 - `Secure` cookies from an HTTPS upstream are not stored over the loopback

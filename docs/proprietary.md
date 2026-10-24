@@ -11,11 +11,10 @@ Do not commit, and do not paste into issues:
 - Console dumps, kernel dumps, `pfsSKKey` material
 - Private keys, certificates, credentials, PSN account data
 
-This repository builds entirely from open sources. Everything in
-[the validation checklist](../README.md#25-final-validation-checklist) passes
-without a single proprietary file. Proprietary material is only ever needed for
-*optional* research paths, and each of those fails loudly rather than silently
-substituting something wrong.
+This repository builds entirely from open sources. Nothing in the normal build
+([build/building.md](build/building.md)) needs a proprietary file. Proprietary material is
+only ever needed for *optional* research paths, and each of those fails loudly rather than
+silently substituting something wrong.
 
 ## Layout
 
@@ -27,66 +26,21 @@ proprietary/
 └── keys/              never share these                (ignored)
 ```
 
-## Supplying SPRX modules for SCE stub generation
+## Calling a Sony module
 
-This is the supported route to calling a Sony module the SDK has no stub for —
-`libSceVdecCore`, `libSceAvPlayer` and friends (see
-[native-media-research.md](research/native-media-research.md)).
+EVO does not need a Sony module on disk to call one. System PRXs the SDK has no link stub
+for are imported **by name**: a plain list of exported symbols in
+`tools/native-app/stubs/prx/*.syms` becomes a stub library, and the converter derives the
+NID from the name and emits a real PS5 import, so the loader maps the module from the
+console's own firmware at start ([architecture/app-module.md](architecture/app-module.md#system-prx-imports)).
+Only modules under `/system/common/lib` can be imported this way.
 
-The SDK implements it natively. `sce_stubs/Makefile`:
-
-```make
-SPRXS := $(wildcard *.sprx)
-STUBS := $(SPRXS:.sprx=.c)
-
-NID_DB     := aerolib.csv
-NID_DB_URL := https://raw.githubusercontent.com/zecoxao/sce_symbols/main/$(NID_DB)
-
-stubs: $(NID_DB) $(STUBS)
-
-%.c: %.sprx
-	$(PYTHON) genstub.py $^ > $@
-```
-
-`genstub.py` walks the module's `PT_DYNAMIC` segment with pyelftools, maps each
-exported NID back to a symbol name through `aerolib.csv`, and emits a `.c` of
-bare `asm(".global ...")` declarations. That is then linked into a `.so` the
-linker can resolve against.
-
-### Procedure
-
-1. Obtain the decrypted module legitimately, from **your own console**, and
-   place it in `proprietary/sprx/`:
-
-   ```
-   proprietary/sprx/libSceVdecCore.sprx
-   ```
-
-2. Build the SDK from source, since stub generation happens in its tree:
-
-   ```bash
-   ./scripts/shell.sh
-   ./scripts/setup-sdk.sh --from-source
-   ```
-
-3. Copy your module into the SDK's stub directory and generate:
-
-   ```bash
-   git clone https://github.com/ps5-payload-dev/sdk /tmp/sdk
-   cp /workspace/proprietary/sprx/*.sprx /tmp/sdk/sce_stubs/
-   make -C /tmp/sdk/sce_stubs stubs      # fetches aerolib.csv, runs genstub.py
-   make -C /tmp/sdk/sce_stubs            # builds the .so stubs
-   sudo make -C /tmp/sdk/sce_stubs install DESTDIR=$PS5_PAYLOAD_SDK
-   ```
-
-4. Link normally: `-lSceVdecCore`.
-
-The generated `.c` contains only symbol names, no Sony code — but the `.sprx`
-it came from must stay out of the repository regardless.
-
-> Symbols whose NID is not in `aerolib.csv` come out as raw NID strings. That
-> is a naming gap, not a failure; `prospero-nid` in the SDK's `bin/` helps
-> correlate them.
+The SDK's own route, generating a stub `.so` from a decrypted `.sprx` with
+`sce_stubs/genstub.py` and `aerolib.csv`, still exists. If you ever use it, the module
+must come from **your own console**, live in `proprietary/sprx/`, and never be committed.
+The generated `.c` holds only symbol names, but the `.sprx` it came from stays out of the
+repository regardless. Symbols whose NID is not in `aerolib.csv` come out as raw NID strings,
+which is a naming gap, not a failure.
 
 ## Licensed Sony tooling (fPKG signing)
 
@@ -97,21 +51,15 @@ SDK. If you hold a legitimate licensed copy:
 proprietary/tools/prospero-pub-cmd
 ```
 
-`scripts/package-pkg.sh` checks for it and **refuses with a clear message** when
-it is absent, rather than emitting something that is not a PKG. See
-[packaging.md](build/packaging.md) — and note that homebrew distribution does not
-need this at all.
+`scripts/package-pkg.sh` (an unused leftover) checks for it and **refuses with a clear
+message** when it is absent. EVO ships as a `.ffpfsc` image ([build/packaging.md](build/packaging.md)),
+which does not need it at all.
 
 ## Fail loudly, never substitute
 
-Per the brief: an absent optional proprietary dependency must produce a clear
-error, not a silent fallback. Current behaviour:
-
-| Missing | Behaviour |
-|---|---|
-| `proprietary/tools/prospero-pub-cmd` | `package-pkg.sh --format pkg` exits with an explanation and points at `--format homebrew` |
-| SPRX for stub generation | not consulted at all unless you run the stub flow above; `decoder_test` instead reports which modules are reachable at run time |
-| `proprietary/` missing entirely | everything in the checklist still passes |
+An absent optional proprietary dependency must produce a clear error, not a silent
+fallback. `proprietary/tools/prospero-pub-cmd` missing makes `package-pkg.sh --format pkg`
+exit with an explanation; `proprietary/` missing entirely changes nothing about the build.
 
 ## Third-party open-source code in the build
 

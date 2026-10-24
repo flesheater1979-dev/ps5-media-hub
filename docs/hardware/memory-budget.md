@@ -1,9 +1,18 @@
 # The title's memory budget — measured
 
-**Measured on hardware 2026-09-25**, app module `PPSA99039`, build
-`fd90f0f9-dirty_0925-0900`, firmware 12.70. Every figure here comes from a
-kernel query, not from an inference. If you are about to say "EVO is
-memory-limited", say which pool, and check it against this page first.
+**Measured on hardware** (the original figures 2026-09-25, app module `PPSA99039`,
+firmware 12.70). Every figure here comes from a kernel query, not from an
+inference. If you are about to say "EVO is memory-limited", say which pool, and
+check it against this page first.
+
+**Current configuration:**
+
+| Pool | Standard package | `--pro-memory` package (PS5 Pro) |
+|---|---|---|
+| Direct memory | about 11.4 GiB | about 12.6 GiB |
+| Flexible memory | **1 GiB** (`param.json` `kernel.flexibleMemorySize`; default 448 MB) | 1 GiB |
+
+The tables further down were measured with the original 448 MB flexible pool.
 
 > **Update 2026-10-07: flexible memory is now 1 GiB.** `sce_sys/param.json`
 > carries `"kernel": {"flexibleMemorySize": 1073741824}`, the most the
@@ -100,8 +109,8 @@ what the kernel says is left; plenty of flexible memory is committed by neither.
 On one run the sums read **227, 241, 224 and 197 MB** — a 44 MB spread. A
 number that moves by 44 MB was never measuring a ceiling.
 
-`docs/evo-pro/status.md` had recorded `flex_avail=281M` and a "hard ~450 MB"
-budget back on 2026-09-02, which was right. The ~180 MB figure appeared later
+An early note had recorded `flex_avail=281M` and a "hard ~450 MB"
+budget on 2026-09-02, which was right. The ~180 MB figure appeared later
 and was believed anyway.
 
 ## What it changes
@@ -109,7 +118,7 @@ and was believed anyway.
 - **The 1080p software-decode cap was wrong.** `PlaybackController.cpp`
   refused software decode above 1080p because AV1 4K's 135 MB peak was thought
   not to fit in ~125 MB. Actual free flexible memory at that moment is
-  144–192 MB. Lifted behind `/mnt/usb0/evo_sw_4k`, 4K 10-bit AV1 decoded
+  144–192 MB. Lifted behind a flag (it has since become the default; `/mnt/usb0/evo_no_sw_4k` switches it off), 4K 10-bit AV1 decoded
   **faster than real time** (`late_drop=0`, `early_sleeps` climbing,
   `flex_free=192MB`). The guard was refusing something that works.
 - **The "route software decode through direct memory" project was cancelled
@@ -121,7 +130,7 @@ and was believed anyway.
 ## Correction: 4K software decode does run flexible memory dry (#94)
 
 **Measured on hardware 2026-09-25/26**, 4K 10-bit AV1 (Netflix Chimera, raw
-`.obu` and `.mkv`) on dav1d with `/mnt/usb0/evo_sw_4k` set.
+`.obu` and `.mkv`) on dav1d with the (then opt-in) software-4K flag set.
 
 "There is no shortage" above was measured at decode-open. Two seconds into
 4K 10-bit AV1, the same pool is **empty**:
@@ -167,7 +176,7 @@ including a far one: `flex_avail` **200–235 MB** throughout, `map_fail=0`,
 ## How much direct memory EVO can actually take
 
 **Measured 2026-09-26** with the boot probe (`/mnt/usb0/evo_dm_probe`, see
-[tooling.md](../build/tooling.md)), after the GPU runtime and resident
+[diagnostics.md](../console/diagnostics.md#switches)), after the GPU runtime and resident
 hardware decoders already held their share:
 
 ```
@@ -212,5 +221,5 @@ issue and helps standard and Pro alike.
 
 - `media/src/evo_direct_mem.c` — the reporter, and EVO's pool
 - `core/src/services/PlaybackController.cpp` — the 1080p guard and its switch
-- [codec-support.md](../codec-support.md) — which codecs land on which path
-- [evo-pro/status.md](../evo-pro/status.md) — the 2026-09-02 figures that were right
+- [codec-support.md](codec-support.md) — which codecs land on which path
+- [video-decode.md](video-decode.md) — the resident decoders and how they are sized

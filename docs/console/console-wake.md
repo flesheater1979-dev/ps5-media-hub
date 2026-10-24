@@ -1,7 +1,8 @@
 # Waking the PS5 after a power cut (pretend controller)
 
-**Status (2026-10-07): plan and preparation only. No board bought, no firmware
-written, nothing tried on the console.**
+**Status: plan and preparation only (2026-10-07; tracked as issue #124).** No board
+bought, no firmware written, nothing tried on the console. Nothing in the player
+depends on it; it is a dev-console convenience.
 
 ## The problem
 

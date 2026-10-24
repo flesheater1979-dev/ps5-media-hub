@@ -1,87 +1,101 @@
 # EVO Player documentation
 
-Grouped by what you are trying to do. Start at
-[planning/roadmap.md](planning/roadmap.md) if you are picking up a GitHub issue.
+EVO Player is a native media player for a jailbroken PS5 (FW 12.70), built against the
+PS5 Payload SDK and shipped as an app module (`.ffpfsc`, title `PPSA99039`). The UI is
+the ps5-homebrew-ui kit and RmlUi on bare-metal `sceAgc`; video decodes on
+`sceVideodec2` with an FFmpeg fallback.
 
-## [build/](build/) — getting it onto the console
+Grouped by what you are trying to do. If you are picking up a GitHub issue, start at
+[planning/roadmap.md](planning/roadmap.md). The rules that must never be broken (the
+ones expensive to relearn on real hardware) are in the root [CLAUDE.md](../CLAUDE.md).
 
-| | |
-|---|---|
-| [building.md](build/building.md) | Dev environment, SDK, FFmpeg, the whole toolchain |
-| [tooling.md](build/tooling.md) | Every script, launch safety, the close path, screenshots, klog |
-| [packaging.md](build/packaging.md) | PKG packaging |
-| [validation.md](build/validation.md) | Validation checklist |
-
-## [architecture/](architecture/) — how the code is shaped
+## [architecture/](architecture/): how the code is shaped
 
 | | |
 |---|---|
-| [architecture.md](architecture/architecture.md) | Layer boundaries, what still lives in `main.c.legacy` |
-| [modularisation-plan.md](architecture/modularisation-plan.md) | The carve-up, in progress |
+| [architecture.md](architecture/architecture.md) | The layers, a frame's path, the decode strategy, the repository layout |
+| [core.md](architecture/core.md) | The C++ core: Application, services, screens, state machines, rules for code in it |
+| [app-module.md](architecture/app-module.md) | What `PPSA99039` is: `param.json`, the build tail, the sandbox and self-unjail, the traps |
 
-## [ui/](ui/) — the interface
-
-| | |
-|---|---|
-| [rmlui-integration-guide.md](ui/rmlui-integration-guide.md) | The RmlUi layer and how it binds to C state |
-| [rmlui-parity.md](ui/rmlui-parity.md) | Per-screen parity checklist |
-| [ui-handoff.md](ui/ui-handoff.md) | The legacy UI layer |
-| [theming.md](ui/theming.md) | Theme format and tokens |
-| [icon-swap-handoff.md](ui/icon-swap-handoff.md) | Icon set migration |
-| [media-tile.md](ui/media-tile.md) | Media tile and metadata handling |
-| [surround-studio.md](ui/surround-studio.md) | Surround Sound Studio (#106): room model, orb, DualSense-mic calibration |
-
-## [hardware/](hardware/) — talking to the console
+## [build/](build/): getting it built, shipped and proven
 
 | | |
 |---|---|
-| [hardware-decode.md](hardware/hardware-decode.md) | Decoder investigation and panic vectors |
-| [hardware-decode-review.md](hardware/hardware-decode-review.md) | Review of the above |
-| [gpu-notes.md](hardware/gpu-notes.md) | GPU reverse-engineering history |
-| [shader-compilation.md](hardware/shader-compilation.md) | `.pipe` → amdllpc → PAL metadata, for gfx1013 |
-| [refresh-rate-modes.md](hardware/refresh-rate-modes.md) | VideoOut mode values (23.976/24/50/119.88 Hz), the experimental MATCH VIDEO FRAME RATE, and why 24p output is refused to a game-slot app on 12.70 |
-| [upscaler.md](hardware/upscaler.md) | #103 video upscaler: Sharp (FSR1) / AI (Anime4K S/M/UL), PS5 Pro detection, `upcompare` |
-| [motion-smoothing.md](hardware/motion-smoothing.md) | #105 frame interpolation (experimental): the four passes, the artefacts it had, the debug views |
-| [psml-research.md](hardware/psml-research.md) | Sony's PSML / PSSR on the PS5 Pro: modules, Trinity mode, what EVO can and cannot reach |
-| [networking.md](hardware/networking.md) | Console services, jailbreak-lapsed symptoms |
+| [building.md](build/building.md) | Windows, Docker, the pinned toolchain, FFmpeg, shaders, daily commands |
+| [packaging.md](build/packaging.md) | `package-app.sh` flags, the `.ffpfsc` and zip, `deploy-app.sh` and its interlock |
+| [release.md](build/release.md) | Cutting a release, the CI workflows, the in-app updater |
+| [tooling.md](build/tooling.md) | Every script and tool, with a pointer to the page that explains it |
+| [validation.md](build/validation.md) | Unit tests, host harnesses, hardware checks, the codec sweep |
+| [agy.md](build/agy.md) | Delegating mechanical work to a worker agent |
 
-## [evo-pro/](evo-pro/README.md) — the app-module program
-
-Hardware decode, GPU rendering and the app-module repackage.
-**Resume here: [evo-pro/status.md](evo-pro/status.md).**
-
-## [planning/](planning/) — what to do next
+## [console/](console/): working with the dev console
 
 | | |
 |---|---|
-| [roadmap.md](planning/roadmap.md) | **Issue order and per-story references. Start here.** |
+| [hardware-cycle.md](console/hardware-cycle.md) | Quit, close, deploy, launch without panicking it; `cycle`; the services it needs |
+| [remote-control.md](console/remote-control.md) | `evo-remote.sh`: keys, `ui`, `go`, `set`, the status line |
+| [diagnostics.md](console/diagnostics.md) | `evo.log`, klog, the `:9780` endpoints, screenshots, debug switches, the files EVO keeps |
+| [networking.md](console/networking.md) | Container to console, ports, running servers on the host |
+| [remote-play.md](console/remote-play.md) | PS Remote Play from the PC for system dialogs |
+| [console-wake.md](console/console-wake.md) | A plan (not started) to wake the console after a power cut |
+
+## [hardware/](hardware/): talking to the console's silicon
+
+| | |
+|---|---|
+| [video-decode.md](hardware/video-decode.md) | `sceVideodec2`: the resident decoders, sizing, feeding, fallback, HDR and Dolby Vision |
+| [videodec2-abi.md](hardware/videodec2-abi.md) | The verified ABI and call sequence |
+| [codec-support.md](hardware/codec-support.md) | What plays, on which decoder, and what was verified |
+| [audio.md](hardware/audio.md) | The audio path, gain and delay, and bitstream passthrough |
+| [agc-runtime.md](hardware/agc-runtime.md) | The `sceAgc` runtime: what runs on the GPU, bugs fixed, how to verify a build |
+| [shader-compilation.md](hardware/shader-compilation.md) | `.pipe` to amdllpc to AGC registers, the `gfx1013` patch |
+| [agc-reference.md](hardware/agc-reference.md) | Where the `libSceAgc` ABI and frame loop came from |
+| [memory-budget.md](hardware/memory-budget.md) | Direct, flexible and heap pools, measured. Read before calling EVO memory-limited |
+| [upscaler.md](hardware/upscaler.md) | Sharp (FSR 1) and AI (Anime4K) upscaling |
+| [motion-smoothing.md](hardware/motion-smoothing.md) | Frame interpolation (experimental) |
+| [refresh-rate-modes.md](hardware/refresh-rate-modes.md) | VideoOut modes and why 24p is refused on 12.70 |
+| [psml-research.md](hardware/psml-research.md) | Sony's PSSR on the Pro and what EVO cannot reach |
+
+## [ui/](ui/): the interface
+
+| | |
+|---|---|
+| [hui-kit.md](ui/hui-kit.md) | EVO's screens on ps5-homebrew-ui: how they reach `sceAgc`, how to add one, text in every script |
+| [rmlui.md](ui/rmlui.md) | What RmlUi still does, where it lives, and the rules that cost hardware cycles |
+| [settings.md](ui/settings.md) | Every setting, the config file format, how to add a setting |
+| [theming.md](ui/theming.md) | Themes and the `.theme` format |
+| [surround-studio.md](ui/surround-studio.md) | The room soundstage and DualSense-mic calibration |
+
+## [providers/](providers/): media servers and Live TV
+
+| | |
+|---|---|
+| [architecture.md](providers/architecture.md) | The provider seam: vtable, UI bundles, playback sources, the stream picker, the shelves home |
+| [media-servers.md](providers/media-servers.md) | Each provider: setup, protocol notes, quirks, what is not built |
+| [web-ui.md](providers/web-ui.md) | The system browser as an optional "web version" |
+
+## [planning/](planning/): what to do next
+
+| | |
+|---|---|
+| [roadmap.md](planning/roadmap.md) | Open issues by area |
 | [project-tracking.md](planning/project-tracking.md) | The GitHub Project board |
-| [backlog.md](planning/backlog.md) | Ideas, not current state |
-| [improvements-roadmap.md](planning/improvements-roadmap.md) | Older planning notes |
-
-## [research/](research/) — findings, kept for the record
-
-These describe work that is finished, superseded or abandoned. They are here so
-the reasoning survives, not to be acted on.
-
-| | |
-|---|---|
-| [prosperoplayer-baseline.md](research/prosperoplayer-baseline.md) | Upstream baseline |
-| [baseline-defects.md](research/baseline-defects.md) | Defects found in it |
-| [reng-analysis-integration.md](research/reng-analysis-integration.md) | Reverse-engineering notes |
-| [native-media-research.md](research/native-media-research.md) | Native media APIs |
-| [sdk-audit.md](research/sdk-audit.md) | SDK surface audit |
-| [converter-perf.md](research/converter-perf.md) | The deleted CPU converters, and the BT.601 reference matrix |
-
-## [addons/](addons/) — media server integration
-
-| | |
-|---|---|
-| [provider-architecture.md](addons/provider-architecture.md) | **The provider seam (#90).** The `evo_provider_t` vtable, the runtime-fetched UI bundle format, the binding and RCSS rules a bundle must follow, and how a provider item reaches the player. Replaces the payload-era `addons-emby-nuvio.md` |
-| [ui/hui-kit.md](ui/hui-kit.md) | **EVO's UI on ps5-homebrew-ui.** How the kit's draw lists reach sceAgc (`ui_sdf.pipe`), which screens run on it, the RmlUi fallback, `tools/hui_preview.sh`, and how to add a screen |
 
 ## Top level
 
 | | |
 |---|---|
-| [proprietary.md](proprietary.md) | Licensing notes |
+| [proprietary.md](proprietary.md) | What is never committed, and the third-party licences in the build |
+| [images/](images/) | Screenshots. The root README uses eight (launch, player, iptv, providers, surround, browse, picker, settings); the rest are older captures |
+| [video/youtube-listing.md](video/youtube-listing.md) | Copy for the release video upload |
+| [theme-mock/ui.html](theme-mock/ui.html) | A static design mock of the home screen |
+
+## Keeping the docs true
+
+- A doc that describes code should name the file, so a reader can check it. A doc that
+  describes a result should say the date and the build it was measured on.
+- Do not keep a journal in a doc. Status belongs in the issue, the commit and the
+  [CHANGELOG](../CHANGELOG.md); a doc states how things are now. Superseded text is deleted
+  (git keeps it).
+- When code moves or is deleted, grep the docs for the old name. `python
+  tools/rag/evo_rag.py index` refreshes the search index after you change any of this.

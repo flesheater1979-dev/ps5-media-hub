@@ -1,177 +1,153 @@
-# PS5 AGC Shader Compilation Guide
+# Shader compilation
 
-This document describes how EVO Player compiles, configures, and links its GPU shaders for the PlayStation 5 using AMD's Low Level Pipeline Compiler (**LLPC**) and the bare-metal **AGC (`libSceAgc`)** graphics library.
-
----
-
-## 1. Architectural Overview
-
-The PlayStation 5 GPU is based on AMD's RDNA 2 architecture (semi-custom target **`gfx1013`** / GFXIP **`10.1.3`**). In native PS5 homebrew (`PPSA99039`), rendering bypasses standard desktop APIs (DirectX/Vulkan/OpenGL) and submits draw calls directly to the GPU command processor (CP) via **AGC (`libSceAgc`)** Draw Command Buffers (DCBs).
-
-The console firmware **does not provide runtime shader compilers**. All shaders must be compiled ahead-of-time (AOT) into raw AMDGPU machine code (ISA) paired with exact hardware register tables.
+How EVO's GPU shaders are compiled for the PS5 (an RDNA 2 part, **`gfx1013`**, GFXIP
+10.1.3) and handed to `sceAgc`. The console firmware has no runtime shader compiler, so
+every shader is compiled ahead of time to AMDGPU machine code plus the exact register
+values the hardware needs. The runtime that consumes them is
+[agc-runtime.md](agc-runtime.md).
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ 1. Pipeline Definition: .pipe files (GLSL 450 + Metadata)    │
-│    projects/evoplayer/shaders/agc/*.pipe                    │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 2. Compiler: amdllpc (patched with gfx1013 support)         │
-│    amdllpc -gfxip=10.1.3 -o=<pipeline>.pal.elf              │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 3. Disassembly & PAL Metadata Extraction:                   │
-│    - llvm-objcopy: Extract .text ISA binary                 │
-│    - llvm-readelf --symbols: Slice _amdgpu_gs/ps_main       │
-│    - llvm-readelf --notes: Parse AMDGPU Metadata YAML (PAL) │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 4. Register Derivation & Header Generation:                 │
-│    tools/build_agc_pipes.py -> <name>_pipe.h                │
-│    - VGT_ESGS_RING_ITEMSIZE, SPI registers, User SGPR map    │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 5. Runtime Hardware Registration:                           │
-│    evo_agc_shader_header.c -> sceAgcCreateShader / Link     │
-└─────────────────────────────────────────────────────────────┘
+projects/evoplayer/shaders/agc/*.pipe         AMD LLPC pipeline source (GLSL 450 + resource mapping)
+  -> amdllpc -gfxip=10.1.3 -o X.pal.elf       compiler, patched for gfx1013
+  -> llvm-objcopy --dump-section=.text        the ISA, sliced at _amdgpu_gs_main / _amdgpu_ps_main
+  -> llvm-readelf --notes                     AMDGPU Metadata (PAL) YAML
+  -> tools/build_agc_pipes.py                 derives every AGC register from that metadata
+  -> shaders/agc/<name>_pipe.h  evo_agc_pipes.h    ISA blobs + register tables (checked in)
+  -> evo_agc_shader_header.c                  builds the 0x148-byte shader header arena
+  -> sceAgcCreateShader + sceAgcLinkShaders   at runtime
 ```
 
----
-
-## 2. Pipeline Sources (`.pipe` format)
-
-Shader pipelines are located in [`projects/evoplayer/shaders/agc/`](../../projects/evoplayer/shaders/agc).
-
-Unlike raw GLSL or SPIR-V, AMD's `.pipe` format defines the entire GPU pipeline state in a single file, ensuring descriptor bindings and user-SGPR allocations live directly alongside the shader code.
-
-### Pipeline Structure
-Each `.pipe` file contains:
-- `[Version]`: LLPC pipeline specification version.
-- `[VsGlsl]`: Vertex stage GLSL (GLSL 450).
-- `[FsGlsl]`: Fragment stage GLSL.
-- `[ResourceMapping]`: Explicit declaration of descriptor sets, uniform blocks, samplers, textures, and user data registers.
-- `[GraphicsPipelineState]`: GFXIP specification (`10.1.3`), NGG mode, color buffer formats, blend modes.
-
-### Active Shaders in EVO Player
-
-| Pipeline | File | Description |
-|---|---|---|
-| **UI Screen 2D** | [`ui_screen_2d.pipe`](../../projects/evoplayer/shaders/agc/ui_screen_2d.pipe) | 2D orthogonal UI pipeline for RmlUi. Vertex buffers, texture sampling, vertex coloring, and scissor/stencil clipping. |
-| **NV12 Video** | [`video_yuv_nv12.pipe`](../../projects/evoplayer/shaders/agc/video_yuv_nv12.pipe) | Fullscreen quad with bi-planar Y + interleaved UV sampling with BT.709/BT.601 YUV-to-RGB conversion. |
-| **Planar YUV** | [`video_yuv_planar.pipe`](../../projects/evoplayer/shaders/agc/video_yuv_planar.pipe) | Fullscreen quad with tri-planar Y + U + V sampling (YUV420P, YUV422P). |
-| **P010 HDR10** | [`video_yuv_p010_hdr.pipe`](../../projects/evoplayer/shaders/agc/video_yuv_p010_hdr.pipe) | 10-bit YUV with SMPTE ST 2084 (PQ EOTF) transfer curve and BT.2020 color gamut mapping. |
-| **P010 HLG** | [`video_yuv_p010_hlg.pipe`](../../projects/evoplayer/shaders/agc/video_yuv_p010_hlg.pipe) | 10-bit YUV with ARIB STD-B67 (Hybrid Log-Gamma) transfer curve. |
-
----
-
-## 3. Video Pipeline Generator
-
-The four video pipelines share an identical vertex stage (a fullscreen quad generated mathematically from `gl_VertexIndex` without a vertex buffer) and common resource mapping.
-
-Rather than maintaining four duplicate copies, they are generated by [`tools/gen_video_pipes.py`](../../tools/gen_video_pipes.py):
+**`package-app.sh` does not rebuild shaders.** Edit a `.pipe`, run a normal build, and
+it silently ships the previously generated `*_pipe.h`. Run the commands below first.
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.amdllpc.yml \
-  run --rm ps5-dev python3 tools/gen_video_pipes.py
-```
-
-> [!TIP]
-> Always modify [`tools/gen_video_pipes.py`](../../tools/gen_video_pipes.py) when changing video shader logic; do not edit the generated video `.pipe` files by hand.
-
----
-
-## 4. The Compiler Image (`amdllpc` & `gfx1013`)
-
-### Why Public AMDVLK Needs Patching
-Public releases of AMDVLK/LLPC support `gfx1010`, `gfx1011`, `gfx1012`, and `gfx1030+`, but deliberately omit Sony's semi-custom **`gfx1013`** part from LLPC's `TargetInfo.cpp`. Running `amdllpc -gfxip=10.1.3` on unpatched tools fails with:
-```
-Invalid gfxip: gfx1013
-```
-
-However, LLVM's AMDGPU backend *does* know `gfx1013`.
-
-### The Patch (`tools/patches/llpc-add-gfx1013.py`)
-During the Docker image build ([`Dockerfile.amdllpc`](../../Dockerfile.amdllpc)), [`tools/patches/llpc-add-gfx1013.py`](../../tools/patches/llpc-add-gfx1013.py) patches LLPC's `lgc/state/TargetInfo.cpp` to clone `gfx1011` (Navi12) configuration and register `gfx1013` (`Navi10Lite`).
-
-### Building the Toolchain Image
-Building the compiler image is a one-time process:
-```bash
+# one time: the compiler image (LLVM-scale, about an hour, cached afterwards)
 docker compose -f docker-compose.yml -f docker-compose.amdllpc.yml build ps5-dev
-```
-
----
-
-## 5. Compiling Pipelines (`tools/build_agc_pipes.py`)
-
-To compile all `.pipe` files into C headers:
-
-```bash
+# after editing any .pipe or generator
 docker compose -f docker-compose.yml -f docker-compose.amdllpc.yml \
   run --rm ps5-dev python3 tools/build_agc_pipes.py
 ```
 
-### What `build_agc_pipes.py` Does
-1. **Compiles ELF**:
-   Executes `amdllpc -gfxip=10.1.3 -o=build/agc_pipes/<name>.pal.elf <name>.pipe`.
-2. **Extracts ISA**:
-   Executes `llvm-objcopy --dump-section=.text=...` to extract the binary shader code.
-3. **Symbol Slicing**:
-   Parses `llvm-readelf --symbols` to locate `_amdgpu_gs_main` (NGG vertex/geometry) and `_amdgpu_ps_main` (pixel/fragment).
-4. **Decodes PAL Metadata**:
-   Parses `llvm-readelf --notes` to extract YAML metadata containing hardware register requirements:
-   - SGPR and VGPR counts
-   - Float mode settings
-   - User SGPR register mapping (`.user_data_reg_map`)
-5. **Derives Hardware Registers**:
-   Calculates the exact 32-bit register values:
-   - `SPI_SHADER_PGM_RSRC1_GS` / `RSRC2_GS`
-   - `SPI_SHADER_PGM_RSRC1_PS` / `RSRC2_PS`
-   - `SPI_PS_INPUT_CNTL_0..31`
-   - `VGT_ESGS_RING_ITEMSIZE` (must be `1` for NGG vertex-source)
-   - `DRAW_MODIFIER` (`0x5`)
-6. **Emits Headers**:
-   - `projects/evoplayer/shaders/agc/<name>_pipe.h`: Contains ISA byte arrays and `evo_agc_pipe_desc_t`.
-   - `projects/evoplayer/shaders/agc/evo_agc_pipes.h`: Umbrella header including all compiled pipelines.
-   - `build/agc_pipes/<name>.manifest.json`: Human-readable register and layout report.
+The amdllpc image is a *different* image from the normal `ps5-dev`; a plain `docker
+compose run` has no `amdllpc` and no PyYAML, and the script says so rather than half
+working. Never hand-edit a `*_pipe.h`: they are generated.
 
----
+## The `.pipe` format
 
-## 6. Runtime Integration
+AMD's public LLPC format puts the descriptor layout **beside the shader source**, which
+is the point of using it:
 
-At application startup or renderer initialization:
+- `[Version]`, `[VsGlsl]` and `[FsGlsl]` (GLSL 450);
+- `[ResourceMapping]`: descriptor sets, uniform blocks, samplers, textures and the
+  user-data layout;
+- `[GraphicsPipelineState]`: GFXIP `10.1.3`, NGG mode, colour formats, blend.
 
-1. **[`evo_agc_shader_header.c`](../../projects/evoplayer/media/src/evo_agc_shader_header.c)**:
-   - Allocates GPU memory for the shader ISA storage (via `sceKernelAllocateDirectMemory` or transient ring).
-   - Writes register arrays into memory.
-   - Flushes CPU write caches to ensure the GPU Command Processor reads coherent data.
-2. **Pipeline Creation**:
-   - Calls `sceAgcCreateShader()` for both the GS (NGG) and PS stages.
-   - Calls `sceAgcLinkShaders()` to bind the combined graphics pipeline.
-3. **Drawing**:
-   - The user-data layout (`evo_agc_runtime_get_user_data_layout()`) dynamically configures user SGPRs:
-     - Slot 0: Driver Global Table
-     - Slot 1: Constant Buffer Table
-     - Slot 2: Vertex Buffer Table (`IndirectUserDataVaPtr`)
-     - Texture Sampler Table
-   - `sceAgcDcbDrawIndexAuto()` or `sceAgcDcbDrawIndex()` submits draw commands into the DCB.
+## What is compiled
 
----
+| Family | Files | Generated by |
+|---|---|---|
+| UI | `ui_screen_2d` (RmlUi), `ui_sdf` (the kit's SDF shader), `ui_backdrop_blur`, and the `_pq_out` twins that put graphics white at 203 nits on an HDR10 scanout | hand-written; the `_pq_out` variants by `tools/gen_hdr_ui_pipe.py` |
+| Video | `video_yuv_nv12`, `_planar`, `_p010_sdr/_hdr/_hlg`, `_dovi`, the NV12 HDR/HLG twins and the `_pq_out` variants | `tools/gen_video_pipes.py` |
+| Upscaler | `upscale_easu`, `upscale_rcas`, and the Anime4K S/M/UL convolution and accumulate passes (`upscale_a4k_*`) | `tools/gen_upscale_pipes.py` |
+| Motion smoothing | `interp_pyr`, `interp_me`, `interp_median`, `interp_warp` | `tools/gen_interp_pipes.py` |
 
-## 7. Historical Context & Critical Lessons
+The video pipelines share one fullscreen-quad vertex stage that takes **no vertex
+buffer** (it builds the quad from `gl_VertexIndex`), so edit the generator and re-run
+it; never edit the generated `.pipe` files. Two things it encodes that are easy to get
+wrong by hand: no `IndirectUserDataVaPtr` and no `[VertexInputState]`, and the
+fragment samplers sit at **set 1**, because the vertex stage already owns set 0
+binding 0 for its uniform block.
 
-EVO Player previously used a hand-rolled tool (`tools/build_agc_shaders.py` wrapping `opengnm-psbc`). That tool was deprecated and removed due to two critical hardware bugs:
+## The compiler image
 
-1. **`VGT_ESGS_RING_ITEMSIZE` Mismatch**:
-   The wrapper packaged this register as `4` instead of `1`. On PS5 hardware, non-passthrough NGG multiplied every vertex index by 4, completely wedging the GPU command processor on the first draw call and triggering an OS watchdog kill after 55 seconds.
-2. **Missing Vertex Descriptor Bindings**:
-   The wrapper omitted vertex stage descriptor declarations. Shaders executing `layout(set=0, binding=0)` read uniform matrices from unmapped registers, retiring draws and writing zero fragments with no diagnostic error.
+`gfx1013` is not in public AMDVLK. `amdllpc -gfxip=10.1.3` fails with `Invalid gfxip:
+gfx1013`, because LLPC's `TargetInfo::setTargetInfo` `gpuNameMap` lists gfx1010 to 1012
+and 1030+ and omits the PS5's semi-custom part. LLVM's own AMDGPU backend does know the
+target (`llc -march=amdgcn -mcpu=help` lists it). `tools/patches/llpc-add-gfx1013.py`
+runs once at image build (`Dockerfile.amdllpc`): it clones `setGfx1011Info` (Navi12,
+the closest GFX10.1 sibling, including its integer-dot caps) and registers
+`{"gfx1013", "Navi10Lite", ...}`; the Dockerfile `grep`s afterwards so a silently failed
+patch cannot produce a compiler-less image. If a shader ever miscompiles in a way that
+smells like a missing hardware erratum workaround, that cloned table is the first place
+to look.
 
-**By using `amdllpc` with `.pipe` files**, resource mappings are declared directly in the source and all AGC registers are derived mathematically from compiler-emitted PAL metadata, preventing silent hardware discrepancies.
+Two non-obvious build requirements:
+
+- **`dxc`.** LLPC's `gfxruntime` compiles an HLSL "advanced blend" library and fails
+  configure without Microsoft's DirectX compiler. There is no skip option (ray tracing
+  can be turned off with `-DVKI_RAY_TRACING=OFF`; this cannot).
+- **`-j4`, link jobs 1.** The AMDGPU CodeGen translation units peak at 2 to 4 GB of
+  GCC each; one per core exhausted the Docker VM twice, once taking the whole Docker
+  engine down.
+
+## What `build_agc_pipes.py` does
+
+Per pipeline: compiles with amdllpc, dumps `.text`, slices it at the two entry symbols,
+decodes the PAL metadata YAML, and **derives** every register (a port of ps5-xash3d's
+`generate_agc_metadata.py`): `SPI_SHADER_PGM_RSRC1/2` for GS and PS, `SPI_PS_INPUT_CNTL`,
+`VGT_ESGS_RING_ITEMSIZE`, the draw modifier, the user-SGPR map. It writes
+`<name>_pipe.h`, an `evo_agc_pipes.h` umbrella, and `build/agc_pipes/<name>.manifest.json`
+with the raw metadata.
+
+It refuses to emit a header rather than emit a wrong one:
+
+- the pipeline must be a relocation-free gfx1013 **NGG** pipeline;
+- the ELF must carry no unresolved relocations;
+- every required `[ResourceMapping]` node must have a user-SGPR slot. Only the
+  *vertex-buffer* table may be absent (`vtx=-1`, for the quad pipelines); a missing
+  constant-buffer or texture table is fatal, because that is exactly the silent failure
+  an older toolchain shipped: a shader read a resource through an unset pointer, drew
+  nothing and faulted nothing.
+
+Its one-line receipt per pipeline is worth reading:
+
+```
+ui_screen_2d: gs=352B ps=164B esgs_itemsize=1 draw_modifier=0x5
+              user_dwords(const=1,vtx=2,tex=1) write(vs=3,ps=2)
+```
+
+`esgs_itemsize` must be **1** and `draw_modifier` **0x5**.
+
+## User-SGPR slots are derived, never hardcoded
+
+`build_agc_pipes.py` reads PAL's `.user_data_reg_map` and fails the build if any node has
+no slot. For `ui_screen_2d` the vertex stage is:
+
+```
+slot 0 = 0x10000000 GlobalTable          (driver-supplied)
+slot 1 = 0          -> const-buffer table
+slot 2 = 0x1000000f VertexBufferTable    (from IndirectUserDataVaPtr)
+slot 3 = 0x10000003 BaseVertex           (supplied by the draw packet)
+slot 4 = 0x10000004 BaseInstance         (supplied by the draw packet)
+```
+
+The vertex-buffer table is a PAL *special*, not resource-mapping index 1, so searching
+for the node's own index finds nothing. The runtime reads the layout off the compiled
+pipeline through `evo_agc_runtime_get_user_data_layout()`; any hardcoded guess would be
+silently wrong.
+
+## Runtime integration
+
+At renderer init, `evo_agc_shader_header.c` allocates GPU memory for the ISA, writes the
+register arrays and flushes the CPU write caches so the command processor reads coherent
+data. Each pipeline then goes through `sceAgcCreateShader()` for the GS (NGG) and PS
+stages and `sceAgcLinkShaders()`. Draws use `sceAgcDcbDrawIndexAuto()` or
+`sceAgcDcbDrawIndex()` with the draw modifier from the metadata. A pipeline that fails
+here is disabled and logged, not fatal (except the UI pipeline).
+
+## Why this toolchain replaced the last one
+
+The previous chain (a wrapper around `opengnm-psbc`, now deleted) shipped two silent,
+hardware-only defects that no host test could see:
+
+1. **`VGT_ESGS_RING_ITEMSIZE` packaged as 4 instead of 1.** For NGG with a vertex source
+   stage, every vertex index is multiplied by this value before primitive exports and LDS
+   addressing. The GPU wedged on the first DCB with a real draw, `sceAgcSuspendPoint()`
+   never returned, and the OS killed the process about 55 s later.
+2. **No descriptor binding for the vertex stage.** Both vertex shaders declared
+   `layout(set=0, binding=0) uniform ...` and only the fragment stages had bindings, so
+   the projection matrix came from a slot nobody described. Draws executed, retired,
+   faulted nothing and produced exactly zero fragments.
+
+Neither is expressible in `.pipe`: `[ResourceMapping]` sits beside the shader and every
+register comes from PAL metadata. That is the argument for the migration.

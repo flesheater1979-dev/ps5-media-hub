@@ -11,12 +11,15 @@ shim that forwards `malloc`/`free`/`posix_memalign` to the system
 
 Distributed under GPL-3.0-or-later, the same as the rest of EVO Player.
 
-- `api-surface.txt` / `imports.txt` — harvested from **ProsperoLight's** link.
-  EVO re-harvests these from its own intermediate PIE in Phase 1b task 4
-  (FFmpeg / OpenSSL / libass reference symbols ProsperoLight never did), which
-  breaks `libc.prx.sha256` below — expected; EVO re-pins its own digest then.
-- `libc.prx.sha256` — the upstream ProsperoLight release digest. Valid until
-  the re-harvest above.
+- `api-surface.txt` / `imports.txt` — harvested from **ProsperoLight's** link and still
+  as vendored (EVO has not re-harvested them; EVO's FFmpeg, OpenSSL and libass imports
+  resolve against this surface or against the SDK stubs and the `libc_ext` / `evo_dns` /
+  `malloc_shim` objects in `stubs/`). A `libc`-tagged symbol that EVO starts to import
+  and this surface lacks becomes an unresolved import at load (a crash at address 0 on
+  first call). Re-harvest with `llvm-nm -u` on the intermediate PIE
+  (`output/app/.build/llvm-pie.elf`), diff, and regenerate; that breaks
+  `libc.prx.sha256` below, and EVO re-pins its own digest then.
+- `libc.prx.sha256` — the upstream ProsperoLight release digest.
 - `libc.prx` — the generated binary. **Git-ignored**; rebuilt by
   `scripts/package-app.sh` (or `--rebuild-libc`).
 

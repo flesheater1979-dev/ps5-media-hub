@@ -1,209 +1,143 @@
 # Architecture
 
-How EVO Player's code is laid out, and why the seams are where they are.
-
-For building and deploying see [building.md](../build/building.md); for the UI layer in
-particular see [ui-handoff.md](../ui/ui-handoff.md).
+How EVO Player is put together, and where each layer lives. For the C++ core
+(screens, services, state machines) read [core.md](core.md). For what the app
+module is and the traps of running in it, read [app-module.md](app-module.md).
 
 ---
 
-## The layers inside the player
+## What it runs as
 
-`projects/evoplayer/` is four things, and the boundaries are real ones — each
-inner layer compiles and runs without the one outside it.
+EVO is a **fake-signed game-category app module**, title `PPSA99039`. It has its
+own title id, `param.json`, sandbox and user session, and ShadowMountPlus mounts
+it from `/data/homebrew/PPSA99039.ffpfsc`. That context is what gives it
+`sceVideodec2` hardware decode and `sceAgc` GPU access; a payload loaded through
+elfldr or hbldr gets neither. There is one hardware path and no ELF payload.
+
+## The layers
+
+`projects/evoplayer/` is built from these layers. Each one only calls downward.
 
 ```
-  main.c            the player: FFmpeg, threads, input, screens, state
-    │
-    ├── media/      subsystems carved out of main.c. Own state and threads,
-    │               narrow interfaces. Depend on FFmpeg, not on the player.
-    │
-    ├── pp/         playback backend: pace, presentation clock, seek, theme.
-    │               No UI, no decoder ownership. (Present + VideoOut belong to
-    │               the AGC runtime in media/.)
-    │
-    ├── ui_rml/     the UI: RmlUi integration + EvoRenderInterfaceAGC, which
-    │               turns every draw into a sceAgc command buffer. Video and
-    │               UI both land on the surfaces media/evo_agc_runtime.c owns.
-    │
-    └── ui/         shared immediate-mode primitives (nav/focus/input/layout).
+main.cpp            entry point only: crash + SIGTERM handlers -> Application::run()
+  core/             the player (C++17): Application, ScreenManager, screens/, services/,
+  │                 interfaces/, fsm/, audio/ (IEC 61937 + passthrough)
+  │
+  ├── ui_kit/       EVO's own screens, drawn with the ps5-homebrew-ui kit (ui/hui-kit.md)
+  ├── ui_rml/       RmlUi: the bridge every screen call goes through, provider
+  │                 documents, the fallback, and the sceAgc render interface
+  ├── ui/           shared UI primitives in C: nav, focus, input, layout, feedback,
+  │                 the virtual keyboard state
+  │
+  ├── media/        playback engine and the GPU runtime: demux, FFmpeg + sceVideodec2
+  │                 decoders, audio out, subtitles, upscaler/interp passes,
+  │                 evo_agc_runtime.c (sceAgc + sceVideoOut)
+  ├── pp/           playback pacing: presentation clock, audio clock, pp_playback;
+  │                 theme loader
+  ├── addons/       evo_net (HTTP/TLS), the provider seam and providers, updater
+  └── src/, include/  boot log, jailbreak, data paths, recent/favourites, stats and log
+                    server, the dev remote (evo_usb_remote.c), web-UI proxy
 ```
 
-The `ui/` boundary is what makes `tools/uiview.sh` possible: because screens
-take a plain model struct and draw through a vtable, the whole interface can be
-rendered on a PC with no console involved. That is how most of the UI was
-built, and every screenshot in the README is one of those renders.
+Other trees:
 
-## Why main.c is still large, and how it is being reduced
-
-`main.c` is the original single translation unit. It is being carved down, but
-the order matters and the obvious first cut is the wrong one.
-
-Received wisdom says to pull decode/demux out first. Measuring the file says
-otherwise: **half its file-scope globals are referenced across spans of more
-than 5,000 lines, and the most smeared of them are the playback ones** —
-`g_pp_pb` is touched across 17,899 lines, `player_paused` across 17,311.
-Extracting that first would mean publishing sixty globals through a header,
-which turns a tangle into a tangle with an API.
-
-So the rule is: **carve where the globals already cluster.** The first module
-out, `media/prospero_thumbnail.c`, measured 1,096 lines with a total dependency
-on the rest of the program of two helpers and two constants — it already owned
-its thread, mutex, condition variable and request queue. The seam existed; it
-just was not a file.
-
-`media/evo_textreader.c` was written to that boundary from the start: it takes
-a path and a measuring callback and returns wrapped lines, which is why the
-text reader can be rendered on the host like any other screen.
-
-> Note that the Makefile still compiles every source in one `$(CC)` invocation
-> with no object files, so carving does not yet buy rebuild time. Splitting
-> into `.o` targets is a separate change.
-
-## The draw vtable
-
-`ui/` cannot include the asset headers — the font atlas and icons are ~1MB of
-`static const` arrays, and a second translation unit including them would
-duplicate every byte in the ELF. So `main.c` binds six function pointers at
-startup (`evo_draw_bind`) and the whole UI layer draws through them.
-
-`tools/uiview.c` supplies its own implementations of those six. That is the
-one place the two programs deliberately hold parallel code, and it is kept
-honest by comparison: render a screen on the host and diff it against a console
-capture.
-
-Anything the two would otherwise transcribe by hand is generated or shared
-instead. Icons come from a table `tools/gen_icons.py` emits, after three
-hand-written `switch` copies drifted apart; glyph lookup lives in
-`ui/include/evo_font.h`, which both call.
-
-## Two font atlases
-
-The UI font is `RR_FONT` in `assets/renderer_reset_assets.h`: a 4096×260 alpha
-atlas with four faces. Its alphabet is 69 glyphs — letters, digits and
-`/._:-+` — and nothing else. Anything outside that drew as a 12px gap, which is
-survivable in a filename and unreadable in prose.
-
-That header is a pre-generated asset with no generator in the tree, so it
-cannot be rebuilt. The missing punctuation lives in a **second** atlas,
-`assets/evo_font_punct.h`, generated by `tools/gen_icons.py`;
-`evo_font.h` resolves a character across both.
-
-The generated glyphs sit on the same baseline as the letters because
-`tools/measure_font.py` reads the real baseline, cap height and stroke weight
-out of the atlas ink rather than guessing, and their advances are measured from
-the rasterised glyph rather than declared. Re-run that script rather than
-trusting the constants if the atlas is ever replaced.
-
-## Working without a console
-
-Deploys are expensive and a stacked launch has kernel-panicked a console, so
-as much as possible is verifiable on the host:
-
-| | |
+| Path | What it is |
 |---|---|
-| `./tools/uiview.sh --all` | render every screen to PNG |
-| `python3 tools/gen_icons.py` | icons and font punctuation, with contact sheets |
-| `python3 tools/measure_font.py` | re-derive the font metrics |
+| `assets/rml/`, `assets/hui/`, `assets/fonts/`, `assets/icons/` | UI documents, kit fonts and sounds, fonts, icons. Embedded into the binary at package time by `tools/bundle_rml_assets.py` |
+| `shaders/agc/` | `.pipe` shader sources and the generated `*_pipe.h` headers ([hardware/shader-compilation.md](../hardware/shader-compilation.md)) |
+| `sce_sys/` | `param.json` and the title art |
+| `../../assets/providers/` | provider UI bundles that are **served, not embedded** ([providers/architecture.md](../providers/architecture.md)) |
+| `../../tools/native-app/` | the link tail, FSELF signing and the clean-room `libc.prx` ([app-module.md](app-module.md)) |
+| `../../tests/` | host unit tests ([build/validation.md](../build/validation.md)) |
 
-(`gl_yuv_parity.py`, which swept every `(Y,U,V)` triple against the CPU
-reference matrix, went with the OpenGL path. The BT.601 reference matrix it
-checked against is kept in [`converter-perf.md`](../research/converter-perf.md).)
+Layer rules:
 
----
+- **Screens only draw.** Focus, input and state stay in `core/`. A screen gets a
+  plain parameter struct and draws it; that is what lets the host preview render
+  every screen with no console.
+- **`media/` owns the GPU.** `evo_agc_runtime.c` is the sole owner of `sceAgc`
+  and `sceVideoOut` for the whole session. A second `sceVideoOut` open panics the
+  console.
+- **FFmpeg is behind a seam.** Video decode goes through `media/include/evo_vdec.h`
+  (`open / send / receive / flush / close`). `evo_vdec_ffmpeg.c` is pure: no
+  clocks, no sleeps. `evo_vdec_native.c` is the `sceVideodec2` backend. Pacing and
+  A/V sync live in `evo_playback.c` and `pp/`.
+
+## A frame
+
+```
+file / network ─► demux (FFmpeg) ─► packets ─► decoder ─► NV12 / P010 frame ─┐
+                                        ├── sceVideodec2 (H.264, HEVC, VP9)   │
+                                        └── FFmpeg + dav1d (everything else)  │
+audio packets ─► FFmpeg decode ─► resample ─► AudioOut (PCM 2ch or 8ch,       │
+                                  or IEC 61937 passthrough)                   │
+                                                                              ▼
+screens (kit / RmlUi) ─ draw lists ─► evo_agc_runtime.c ─ one sceAgc command buffer
+                                      per frame: video pipeline (YUV→RGB, upscale,
+                                      interpolation), then UI and OSD ─► sceVideoOut flip
+```
+
+- The render size is the panel's own (`sceVideoOutGetResolutionStatus`), not a
+  fixed 1080p.
+- YUV→RGB, tone mapping, Dolby Vision reshaping, the upscaler and motion
+  smoothing all run in AGC pixel shaders; there are no CPU converters.
+- The pad, USB and `/data` are only reachable after the self-unjail
+  ([app-module.md](app-module.md#sandbox-and-the-self-unjail)). The GPU runtime and
+  the resident decoders come up before it, because `libSceAgc*` and `libSceVideoOut`
+  go API-dead after the credential swap.
+
+## Decoding strategy
+
+Three layers, deliberately not coupled:
+
+1. **Hardware**: `sceVideodec2` for H.264, HEVC (Main and Main10) and VP9
+   (Profile 0 and 2). Resident decoders are created once at boot and reset per
+   file. See [hardware/video-decode.md](../hardware/video-decode.md).
+2. **FFmpeg 7.1.1 software**: the fallback for anything the hardware declines, and
+   the only path for MPEG-2, MPEG-4, VP8 and AV1 (libdav1d).
+3. **Policy**: Settings → Video Decoder is `AUTO` (hardware when the codec has a
+   resident decoder, otherwise FFmpeg), `NATIVE` (asks for hardware on any codec
+   and still falls back to FFmpeg when the hardware declines the stream) or
+   `FFMPEG` (always software).
+
+FFmpeg software decode stays the default and the fallback. Hardware decode is
+probed at run time, never a build-time dependency. The full codec table is in
+[hardware/codec-support.md](../hardware/codec-support.md).
 
 ## Repository layout
 
 ```
 EVO Player/
-├── Dockerfile                  pinned toolchain, every dependency justified
-├── docker-compose.yml          services, volumes, networking
-├── CMakeLists.txt              cross build -> compile_commands.json
-├── .clangd  .devcontainer/  .vscode/
-├── scripts/
-│   ├── common.sh               strict mode + ERR trap naming the failed step
-│   ├── shell.sh  build.sh  setup-sdk.sh  deploy.sh
-│   ├── build-ffmpeg.sh  build-prosperoplayer.sh  package-pkg.sh
-│   ├── gen-compile-commands.sh
-│   └── install-*-image.sh      used during docker build
+├── Dockerfile  Dockerfile.amdllpc          toolchain images (the shader compiler is the second)
+├── docker-compose.yml  docker-compose.amdllpc.yml
+│                   (Dockerfile.ps5-opengl is an unused leftover of the removed OpenGL path)
+├── scripts/        build, package and deploy (build/tooling.md)
+├── tools/          dev remote, host preview, host test harnesses, generators, RAG search
+├── tests/          host unit tests and fixtures
 ├── projects/
-│   ├── common/                 evo_ps5.h (hand-written SCE decls) + evo.mk
-│   ├── hello_world/  system_info/  videoout_test/  audioout_test/
-│   ├── gpu_test/  decoder_test/  avplayer_test/  yuv_gpu_test/
-│   ├── prosperoplayer/         upstream, unmodified (git-ignored)
-│   └── evoplayer/              the fork
-│       ├── main.c              the player (see "why main.c is still large")
-│       ├── assets/             font atlas, generated icons, punctuation
-│       ├── ui/{include,src}/   shared immediate-mode primitives (nav/focus/input)
-│       ├── ui_rml/{include,src} RmlUi integration + the one GL/EGL context
-│       ├── pp/{include,src}/   pace, presentation clock, seek, theme
-│       └── media/{include,src} subsystems carved out of main.c
-├── third_party/ffmpeg/         sources (git-ignored)
-├── output/{elf,pkg,logs}/      artifacts
-├── proprietary/                never committed
-├── tools/                      capture, klog, launch, benchmark, icon gen
-└── docs/
-    ├── building.md             full build and deploy guide
-    ├── architecture.md         this file
-    ├── tooling.md              every script and tool, and when to reach for it
-    ├── ui-handoff.md           the UI layer, and what not to re-derive
-    ├── theming.md              writing a .theme file
-    ├── converter-perf.md       host benchmarking, and what it found
-    ├── sdk-audit.md            the full SDK audit
-    ├── networking.md  packaging.md  gpu-notes.md
-    ├── provider-architecture.md the provider seam: vtable + runtime UI bundles
-    ├── native-media-research.md  proprietary.md  prosperoplayer-baseline.md
-    ├── baseline-defects.md     upstream's two defects (both fixed - history)
-    └── validation.md           what is proven vs. what is not
+│   ├── evoplayer/  the player (this document)
+│   ├── common/     shared SCE declarations and make fragments
+│   └── sandbox_probe/  the sandbox probe used to map the app sandbox
+├── assets/providers/   served provider UI bundles
+├── themes/         sample .theme files
+├── third_party/    git-ignored reference clones and submodules (FFmpeg sources, the UI kit, ...)
+├── output/         build products, logs, screenshots, cycle evidence (git-ignored)
+├── proprietary/    never committed (proprietary.md)
+└── docs/           you are here
 ```
 
-### Where to start reading
+`main.c.legacy` in `projects/evoplayer/` is the pre-C++ monolith. It is **not
+compiled**, and it is kept only for `git blame` archaeology. Do not edit it or
+treat it as a reference for current behaviour.
+
+## Where to start reading
 
 | If you want to… | Read |
 |---|---|
-| set up and build | [building.md](../build/building.md) |
-| build, deploy, capture, read logs | [tooling.md](../build/tooling.md) |
-| work on the UI | [ui-handoff.md](../ui/ui-handoff.md), then [theming.md](../ui/theming.md) |
-| work on playback performance | [converter-perf.md](../research/converter-perf.md), then [gpu-notes.md](../hardware/gpu-notes.md) |
-| get decode off the CPU | [hardware-decode.md](../hardware/hardware-decode.md), then its [review](../hardware/hardware-decode-review.md) |
-| connect to streaming servers / addons | [provider-architecture.md](../addons/provider-architecture.md) |
-| know what is actually proven | [validation.md](../build/validation.md) |
-
-Source lives on Windows via a bind mount; heavy build trees and ccache live on
-Linux named volumes.
-
-## Decoding strategy
-
-Three layers, deliberately **not** coupled:
-
-```
-Layer 1   PS5 Payload SDK   ->  native applications        WORKING
-Layer 2   custom FFmpeg     ->  demux + software decode    WORKING
-Layer 3   libSceVdec* / GNM ->  hardware acceleration      RESEARCH
-```
-
-Layers 1 and 2 must keep working with layer 3 entirely absent. Target design:
-
-```
-                    EVO Player
-                        │
-                  Media frontend
-                        │
-                    libavformat
-                        │
-          ┌─────────────┴─────────────┐
-        Video                       Audio
-          │                           │
-   ┌──────┴──────┐            ┌───────┴───────┐
- PS5 HW      FFmpeg        PS5/Sony        FFmpeg
- decoder     fallback      decoder         fallback
-   └──────┬──────┘            └───────┬───────┘
-      GPU renderer                AudioOut
-          │
-      VideoOut
-```
-
-The decoder interface should be an abstraction with the FFmpeg software path
-always available, and a hardware path selected only when run-time probing
-succeeds. **Never make hardware decode a build-time dependency.**
-
+| build and deploy | [build/building.md](../build/building.md), [build/tooling.md](../build/tooling.md) |
+| drive the console | [console/hardware-cycle.md](../console/hardware-cycle.md) |
+| change a screen | [ui/hui-kit.md](../ui/hui-kit.md), [core.md](core.md) |
+| add a setting | [ui/settings.md](../ui/settings.md) |
+| work on a media server or Live TV | [providers/architecture.md](../providers/architecture.md) |
+| work on decode, audio or GPU | [hardware/video-decode.md](../hardware/video-decode.md), [hardware/agc-runtime.md](../hardware/agc-runtime.md) |
+| check what is planned | [planning/roadmap.md](../planning/roadmap.md) |

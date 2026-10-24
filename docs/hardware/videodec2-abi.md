@@ -3,22 +3,22 @@
 **Status: hardware-verified 2026-09-01.** Every call below returned `0` on a
 PS5 (12.70) from a fake-signed *game-category app module*, decoding a 1080p
 H.264 IDR to a valid NV12 frame. Header: [sce/sce_videodec2.h](../../projects/evoplayer/media/include/sce/sce_videodec2.h).
-Context and caveats: [native-decode-plan.md](native-decode-plan.md).
+How EVO uses it (resident decoders, sizing, feeding): [video-decode.md](video-decode.md).
 
-This is Phase 0 of the native-decode plan — a transcription, not new code.
-Every struct and value here is lifted from `blackbearreloaded/ProsperoLight`
-(`src/moonlight_stream.cpp`), which decodes on the VCN block in production, and
-was re-confirmed by the `PROSPEROLIGHT_VDEC_SELF_TEST` build (an offline probe
-that runs this sequence and feeds one bundled AU through `sceVideodec2Decode`).
+This is a transcription, not new code. Every struct and value here is lifted from
+`blackbearreloaded/ProsperoLight` (`src/moonlight_stream.cpp`, a clone under
+`third_party/`), which decodes on the VCN block in production, and was re-confirmed by
+a ProsperoLight self-test build that ran this sequence and fed one bundled access unit
+through `sceVideodec2Decode`. The sequence below is the original single-decoder
+bring-up; `evo_vdec_native.c` runs it once per resident slot and per resize.
 
 ---
 
 ## 1. The one thing that mattered
 
-The prior EVO effort ([hardware-decode.md](../hardware/hardware-decode.md)) got
+An earlier effort, from an elfldr payload and an hbldr slot, got
 `sceVideodec2CreateDecoder` to succeed and then hit **errno 5200** at the
-decode ioctl, from every payload context it tried, with and without credential
-elevation.
+decode ioctl in every context it tried, with and without credential elevation.
 
 The ProsperoLight self-test hit **none of that**. Same API, same call order,
 same struct layouts. The only material difference is the **process**: a
@@ -171,44 +171,17 @@ For EVO the values come from the demuxer's `AVCodecParameters`
 
 ---
 
-## 6. What Phase 4 (`evo_vdec_native.c`) still has to answer
+## 6. Notes from using it
 
-Confirmed working: the whole sequence above, H.264 High 1080p, one IDR.
-
-Not yet tested on hardware, in rough risk order:
-
-1. **A continuous stream** — P/B frames, DPB reordering, `out.valid==0` then a
-   later frame. ProsperoLight does this against a live Moonlight host; EVO
-   would feed it demuxed file AUs. Reordering: `sceVideodec2Decode` appears to
-   output in decode order with `pts` passed through — EVO's existing PTS/DTS
-   reorder queue in the play loop still applies.
-2. **Seek** — `sceVideodec2Reset(decoder)` then feed a fresh IDR. Cheap to try.
-3. **HEVC Main / Main10** — `codec_type 974921`, `profile 1/2`, P010 output
-   into `pp_frame` (`PP_FRAME_P010`, converter change — plan §3).
-4. **Non-1080p** — `max_width/height` per clip; the decoder is sized at
-   `Create` time, so a resolution change mid-file means recreate.
-5. **`evo_direct_mem` integration** — route the pool allocations through the
-   slab manager so multi-hour playback doesn't fragment direct memory.
-6. **VideoOut interaction** — EVO already owns its VideoOut handle
-   (`pp_videoout.c`). The decoder uses the **compute-queue** path and never
-   opens video out, so the payload-only `sceVideoOutOpen` panic rule is not in
-   play here. Still: bring the decoder up *after* VideoOut, tear down *before*.
-
----
-
-## 7. Reference build
-
-The instrumented ProsperoLight lives at
-`<scratchpad>/ProsperoLight` this session. To rebuild the probe:
-
-```
-docker run --rm -v <path>/ProsperoLight:/pl -w /pl pl:build \
-  make deploy PS5_HOST=<console> DEPLOY_FORMAT=folder VDEC_SELF_TEST=1
-```
-
-The self-test is `moonlight_vdec_self_test()` in `src/moonlight_stream.cpp`
-(guarded by `PROSPEROLIGHT_VDEC_SELF_TEST`) plus `RunVdecSelfTest()` in
-`src/main.cpp`. It writes nothing the console web `/fs` route can read (app
-sandbox) — the result comes back as an on-screen notification and a screen
-tint (green = decoded frame, amber = created but decode failed, red = create
-failed).
+- **Continuous streams, seeks and display order** are handled in `evo_vdec_native.c`
+  ([video-decode.md](video-decode.md)): `sceVideodec2Reset` then a fresh keyframe for a
+  seek; PTS-sorted reordering because `OutputInfo` carries no PTS; RASL pictures dropped
+  after a random-access seek.
+- **HEVC Main10 and VP9 Profile 2** use `profile` 2 and output P010.
+- **The decoder is sized at `Create` time**, so a larger stream means recreating the slot;
+  EVO does that on demand and restores the boot size on close.
+- **VideoOut:** the decoder uses the compute-queue path and never opens VideoOut. EVO's
+  `evo_agc_runtime.c` owns VideoOut, so the payload-only `sceVideoOutOpen` panic rule is
+  not in play, but bring the decoder up after the GPU runtime and tear it down before.
+- **Memory:** the pools above come out of direct memory and the `cpu` workspace out of
+  flexible memory ([memory-budget.md](memory-budget.md)); only the flexible one is tight.

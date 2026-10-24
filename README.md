@@ -270,15 +270,18 @@ docker compose run --rm ps5-dev ./tests/run_tests.sh
 
 | Document | Purpose |
 |---|---|
-| [docs/building.md](docs/build/building.md) | Build environment, SDK, FFmpeg, packaging |
-| [docs/tooling.md](docs/build/tooling.md) | Development scripts, deployment safety, screenshots, klog |
-| [docs/architecture.md](docs/architecture/architecture.md) | Core architecture and module boundaries |
-| [docs/codec-support.md](docs/codec-support.md) | Comprehensive codec, container, and hardware decoding matrix |
-| [docs/rmlui-integration-guide.md](docs/ui/rmlui-integration-guide.md) | RmlUi interface layer integration |
-| [docs/evo-pro/agc-bare-metal-ui.md](docs/evo-pro/agc-bare-metal-ui.md) | Bare-metal `sceAgc` GPU rendering |
-| [docs/evo-pro/native-decode-plan.md](docs/evo-pro/native-decode-plan.md) | Hardware decode via `sceVideodec2` |
-| [docs/addons/provider-architecture.md](docs/addons/provider-architecture.md) | Network providers and runtime UI bundles |
-| [docs/theming.md](docs/ui/theming.md) | Theme tokens and styling specifications |
+| [docs/README.md](docs/README.md) | The index of everything below |
+| [docs/build/building.md](docs/build/building.md) | Build environment, SDK, FFmpeg, shaders |
+| [docs/build/packaging.md](docs/build/packaging.md) | Packaging the app module and deploying it |
+| [docs/console/hardware-cycle.md](docs/console/hardware-cycle.md) | Running a build on the console safely |
+| [docs/architecture/architecture.md](docs/architecture/architecture.md) | Core architecture and module boundaries |
+| [docs/hardware/codec-support.md](docs/hardware/codec-support.md) | Codec, container and hardware decoding matrix |
+| [docs/hardware/video-decode.md](docs/hardware/video-decode.md) | Hardware decode via `sceVideodec2` |
+| [docs/hardware/agc-runtime.md](docs/hardware/agc-runtime.md) | Bare-metal `sceAgc` GPU rendering |
+| [docs/ui/hui-kit.md](docs/ui/hui-kit.md) | The interface: EVO's screens on the ps5-homebrew-ui kit |
+| [docs/ui/settings.md](docs/ui/settings.md) | Every setting |
+| [docs/providers/architecture.md](docs/providers/architecture.md) | Network providers and runtime UI bundles |
+| [docs/ui/theming.md](docs/ui/theming.md) | Theme tokens and the `.theme` format |
 | [CHANGELOG.md](CHANGELOG.md) | Complete version history |
 
 ---

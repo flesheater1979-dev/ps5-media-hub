@@ -1,9 +1,10 @@
 # EVO's UI on ps5-homebrew-ui
 
 EVO's own screens are drawn with the **ps5-homebrew-ui** kit
-(`third_party/ps5-homebrew-ui`, GPL-3.0-or-later like EVO). RmlUi is still
-linked, but only for **provider screens** (their UI is fetched from the network
-at run time, see [provider-architecture.md](../addons/provider-architecture.md))
+(`third_party/ps5-homebrew-ui`, a git submodule, GPL-3.0-or-later like EVO; its changes
+are separate commits from EVO's). RmlUi is still linked ([rmlui.md](rmlui.md)), but only
+for the data binding and focus of **provider screens**, for provider UI bundles that are
+fetched from the network at run time ([../providers/architecture.md](../providers/architecture.md)),
 and as the fallback for any screen the kit cannot draw.
 
 ## How it fits
@@ -39,11 +40,17 @@ core/screens/*.cpp  ──►  evo_rmlui_update_<screen>(params)      (unchanged
 
 ## Screens on the kit
 
-Home, list (Recent / Favorites / audio tracks), file browser (with file
-operations and transfer progress), settings, player OSD (+ stats HUD, music
-view), subtitle picker, media info, about, changelog, safe-to-close, exit
-dialog and toasts. The navigation rail is drawn over every menu screen.
-Still RmlUi: Surround Studio, text reader, image viewer, provider screens. The virtual keyboard draws its keys with the kit `Keyboard` component (EVO keeps focus and text, #157).
+Everything EVO draws itself: Home, the list screens (Recent, Favourites, the audio,
+stream and chapter pickers, with pills and a details card, and a busy card while a
+switch runs on a worker), the file browser (file operations and transfer progress),
+Settings (with a live preview card for every setting, #158), the player OSD (seek
+bar, stats HUD, music view, seek preview), subtitle picker, media info, about,
+changelog, safe-to-close, dialogs, toasts, the text reader, the image viewer,
+Surround Studio, and every provider screen (shelves, details and cast, skeleton cards
+while loading). The navigation rail is drawn over every menu screen. The virtual
+keyboard draws its keys with the kit `Keyboard` component, in the native layout with
+Shift and Caps Lock state and a clear button; EVO keeps focus and text (#157, #138).
+Still RmlUi: downloaded provider bundles and the fallback skin.
 
 Screens only *draw*: focus and input stay in `core/`. Each screen animates
 towards the state in its params (springs, staggered entrances) and reports its
@@ -60,11 +67,12 @@ setting switches them.
 
 ```
 ./tools/hui_preview.sh        # every screen -> output/uiview/hui_*.png (no console)
+./tools/hui_preview.sh 1280 720           # optional size (default 1920 1080)
 ```
 
-Add a fixture in `tools/hui_preview/hui_preview.cpp` for a new screen or state. The provider screens have fixtures for each home: `shelves` (Jellyfin), `shelves_stremio`, `shelves_plex`, `shelves_iptv`, `shelves_xtream` (poster, channel and category shelves side by side) and `livetv`/`xtream`/`provider_folder` for the See all levels; see [provider-architecture.md](../addons/provider-architecture.md#home-layout-shelves-for-every-provider).
+Add a fixture in `tools/hui_preview/hui_preview.cpp` for a new screen or state. The provider screens have fixtures for each home: `shelves` (Jellyfin), `shelves_stremio`, `shelves_plex`, `shelves_iptv`, `shelves_xtream` (poster, channel and category shelves side by side) and `livetv`/`xtream`/`provider_folder` for the See all levels; see [../providers/architecture.md](../providers/architecture.md#home-layout-shelves-for-every-provider).
 Layout questions are answered there; only run the console for behaviour.
-Hardware loop: [tooling.md](../build/tooling.md#hardware-cycle).
+Hardware loop: [../console/hardware-cycle.md](../console/hardware-cycle.md).
 
 ## Adding a screen
 

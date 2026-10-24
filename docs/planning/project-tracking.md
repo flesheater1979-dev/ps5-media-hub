@@ -5,9 +5,10 @@ tracked and visualised (board, priority table, milestone timeline, blocked
 list). The dependency-ordered narrative still lives in
 [roadmap.md](roadmap.md) — this doc is only about the board.
 
-> **Not stood up yet** — the tooling below is committed but the board itself
-> needs a `gh auth refresh -s project` + one script run + a few UI clicks.
-> Tracked in **issue #52**.
+> **The board exists** (project #5 on `sainsaji`, private, about 60 items). The
+> steps below are how it was built and how to rebuild or resync it; the saved
+> views and the built-in workflows are set up by hand in the web UI, so check
+> them there before assuming they are on.
 
 ---
 
@@ -38,8 +39,7 @@ list). The dependency-ordered narrative still lives in
    filing new issues) to resync the fields.
 
 3. **Blocked-by / sub-issue relationships** need nothing — GitHub issue
-   dependencies and sub-issues render on the board automatically. They're
-   already wired for the open graph (see roadmap.md § Dependency graph).
+   dependencies and sub-issues render on the board automatically.
 
 ---
 

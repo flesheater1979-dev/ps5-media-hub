@@ -10,7 +10,7 @@
   https://github.com/sainsaji/ps5-upscalar-research.
 
 A 720p or 1080p file on a 4K panel used to get one bilinear fetch inside the
-YUV→RGB shader. **Settings → Playback & Video → UPSCALING** now offers:
+YUV→RGB shader. **Settings → Video & Display → UPSCALING** now offers:
 
 | Mode | What runs | Network |
 |---|---|---|
@@ -46,7 +46,7 @@ older files keep Off / Auto.
 | Piece | File |
 |---|---|
 | Pass generator (FSR1 port, Anime4K hook translation) | `tools/gen_upscale_pipes.py` |
-| Generated pipelines (21) | `projects/evoplayer/shaders/agc/upscale_*.pipe` + `_pipe.h` |
+| Generated pipelines (58: EASU, RCAS, and the S, M and UL convolution and accumulate passes) | `projects/evoplayer/shaders/agc/upscale_*.pipe` + `_pipe.h` |
 | Anime4K sources, unchanged, MIT | `third_party/anime4k/` |
 | Upscale stage | `agc_upscale_*` in `media/src/evo_agc_runtime.c`, called from `evo_agc_blit_yuv` |
 | API | `evo_agc_upscale_set_mode / _label / _take_downgrade` in `evo_agc_runtime.h` |

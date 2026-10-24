@@ -363,8 +363,8 @@ Also: a text reader, and a font that can finally spell a comma.
   first forty lines. Someone who wants to *use* EVO Player needed none of it.
   707 lines to 175: what it is, how to install it, what it does, the controls.
   Nothing was deleted; the developer guide moved intact to
-  [docs/building.md](docs/building.md).
-- **[docs/architecture.md](docs/architecture.md) is new** — the layers inside
+  [docs/build/building.md](docs/build/building.md).
+- **[docs/architecture/architecture.md](docs/architecture/architecture.md) is new** — the layers inside
   the player, why `main.c` is carved in the order it is (with the measurement
   that argues against the obvious first cut), the draw vtable, the two font
   atlases, and what can be verified without a console.
@@ -373,7 +373,7 @@ Also: a text reader, and a font that can finally spell a comma.
   characters and would have gone on reporting a comma as unsupported long
   after the comma was added; `tools/gen_icons.py` now emits the punctuation
   alphabet into a header small enough for the UI layer to include.
-- The font warnings in [docs/ui-handoff.md](docs/ui-handoff.md) said prose
+- The font warnings in `docs/ui-handoff.md` (since deleted) said prose
   could not be written and a prompt "cannot ask a question mark's worth of
   question". Both were true and are not any more.
 
@@ -696,7 +696,7 @@ A rebuild of the interface, and the tooling to work on it without a console.
 - **Haptics.** Built, tested on hardware, and taken out: every vibration
   entry point in `libScePad` either reports success and does nothing or
   rejects the call, while `scePadSetLightBar` succeeds on the same handle.
-  Sound and lightbar remain. Evidence is in `docs/ui-handoff.md` so nobody
+  Sound and lightbar remain. The evidence was recorded in `docs/ui-handoff.md` (since deleted; see git history) so nobody
   re-derives it.
 
 ### Tooling

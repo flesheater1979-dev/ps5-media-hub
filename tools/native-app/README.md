@@ -8,8 +8,8 @@ Copyright (C) 2026 EVO Player contributors  (vendoring + EVO integration)
 
 This directory is the **link + package tail** for building EVO Player as a
 fake-signed, game-category **app module** (`PPSA99039`) instead of an
-hbldr/elfldr payload. It is what Phase 1b needs — see
-[docs/evo-pro/phase-1b-app-module.md](../../docs/evo-pro/phase-1b-app-module.md).
+hbldr/elfldr payload. It is what the app module build needs; see
+[docs/architecture/app-module.md](../../docs/architecture/app-module.md).
 
 Compilation still uses EVO's normal toolchain and per-object build; only the
 **final link, the LLVM-PIE → PS5-module conversion, the FSELF signing, and the
@@ -21,8 +21,7 @@ Compilation still uses EVO's normal toolchain and per-object build; only the
 Forked verbatim from **`blackbearreloaded/ps5-native-app-boilerplate`**
 (`a15ab71`, GPL-3.0-or-later) by way of its downstream **ProsperoLight**
 (`github.com/blackbearreloaded/ProsperoLight`, clone commit
-`103264dfe2761d35772671792fff4f013a573e70`), which is the tree the Phase 1
-hardware gate ran against on 2026-09-01.
+`103264dfe2761d35772671792fff4f013a573e70`), which is the tree the first app-module hardware check ran against on 2026-09-01.
 
 The local reference clone lives at `third_party/ProsperoLight/` (git-ignored);
 see its `README.EVO.md`. Files were copied from:
@@ -40,7 +39,7 @@ see its `README.EVO.md`. Files were copied from:
 All upstream SPDX + copyright headers are kept intact. Upstream files are
 verbatim (LF-normalised via `dos2unix`) **except**:
 
-- **`ps5-pie.ld`** — Phase 1b task 4 added `PROVIDE_HIDDEN(__eh_frame[_hdr]_{start,end})`
+- **`ps5-pie.ld`** — EVO added `PROVIDE_HIDDEN(__eh_frame[_hdr]_{start,end})`
   in the `.eh_frame[_hdr]` output sections. `libunwind.a` references those
   bounds; a custom `-T` script must define them (the SDK's default script does).
 - **`stubs/libc_ext.c`** — NEW, EVO-authored, small. Just `_setjmp`/`_longjmp`
@@ -124,7 +123,7 @@ docker compose run --rm ps5-dev ./scripts/package-app.sh --rebuild-libc
 ```
 
 The generated binary is verified byte-for-byte against `runtime/libc.prx.sha256`
-(and the pinned raw/signed digests inside the builder script). EVO will
-**re-harvest** `runtime/api-surface.txt` from its own link in Phase 1b task 4
-(FFmpeg / OpenSSL / libass add symbols); that intentionally breaks the pinned
-digest and EVO re-pins its own.
+(and the pinned raw/signed digests inside the builder script). The surface has not been
+re-harvested from EVO's own link; if EVO ever imports a `libc` symbol it lacks,
+re-harvest it (see `runtime/README.md`), which intentionally breaks the pinned digest
+and means re-pinning EVO's own.
