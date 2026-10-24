@@ -113,6 +113,7 @@ class ChangelogScreen
     std::string detail_tagline_;
     std::vector<Item> items_;
     int item_total_ = 0;
+    int item_offset_ = 0;
 
     hui::ui::SpringRect ring_;
     bool ring_snapped_ = false;

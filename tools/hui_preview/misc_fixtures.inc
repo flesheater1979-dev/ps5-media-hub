@@ -61,7 +61,7 @@ static void fill_changelog_fixture(evo_rmlui_changelog_params_t& p)
     p.detail_tagline = r.tagline;
     p.item_total = r.item_count;
     p.item_count = 0;
-    for (int i = 0; i < r.item_count && i < EVO_RMLUI_CL_ITEMS; ++i)
+    for (int i = 0; i < r.item_count && i < EVO_RMLUI_CL_ITEMS_MAX; ++i)
     {
         int kind = static_cast<int>(r.items[i].kind);
         p.items[i].kind = kindLabel[(kind < 0 || kind > 4) ? 0 : kind];

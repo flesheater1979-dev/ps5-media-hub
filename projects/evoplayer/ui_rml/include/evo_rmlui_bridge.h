@@ -515,6 +515,8 @@ typedef struct {
  * Raising this needs the pane to scroll first.
  */
 #define EVO_RMLUI_CL_ITEMS    12
+/* The kit screen scrolls, so it takes up to this many (RmlUi still reads 12). */
+#define EVO_RMLUI_CL_ITEMS_MAX 40
 
 typedef struct {
     const char* version;
@@ -542,7 +544,8 @@ typedef struct {
     const char* detail_tagline;
     int         item_count;
     int         item_total;    /* to report anything the panel could not fit */
-    evo_rmlui_cl_item_t items[EVO_RMLUI_CL_ITEMS];
+    evo_rmlui_cl_item_t items[EVO_RMLUI_CL_ITEMS_MAX];
+    int         item_offset;   /* first item shown (kit screen scrolls with L1 / R1) */
 } evo_rmlui_changelog_params_t;
 
 /*
@@ -948,7 +951,7 @@ void evo_rmlui_render_settings(uint32_t* framebuffer, int width, int height);
 /* About & Support Screen API */
 typedef struct {
     const char* app_name;        /* "EVO PLAYER PRO" */
-    const char* version;         /* "v0.12.5" */
+    const char* version;         /* "v0.13.0" */
     const char* build_tag;       /* "PS5 HOMEBREW" */
     const char* tagline;         /* "CINEMATIC MEDIA PLAYER FOR PLAYSTATION 5 HOMEBREW" */
     const char* themes_info;     /* "X AVAILABLE - DROP .THEME FILES ON USB0" */

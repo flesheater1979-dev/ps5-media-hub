@@ -404,7 +404,7 @@ void ChangelogScreen::set(const evo_rmlui_changelog_params_t &p)
     detail_version_ = str(p.detail_version);
     detail_tagline_ = str(p.detail_tagline);
     items_.clear();
-    for (int i = 0; i < p.item_count && i < 12; ++i)
+    for (int i = 0; i < p.item_count && i < EVO_RMLUI_CL_ITEMS_MAX; ++i)
     {
         Item item;
         item.kind = str(p.items[i].kind);
@@ -412,6 +412,7 @@ void ChangelogScreen::set(const evo_rmlui_changelog_params_t &p)
         items_.push_back(item);
     }
     item_total_ = p.item_total;
+    item_offset_ = p.item_offset;
 }
 
 void ChangelogScreen::enter()
@@ -485,11 +486,13 @@ void ChangelogScreen::draw(DrawList &list, const Context &ctx) const
     const float more_h = 34.0f;
     float cy = 400.0f;
     int shown = 0;
-    for (const Item &item : items_)
+    const int first = std::max(0, std::min(item_offset_, (int)items_.size() - 1));
+    for (size_t idx = first; idx < items_.size(); ++idx)
     {
+        const Item &item = items_[idx];
         const int lines = std::min<int>(2, std::max<std::size_t>(1, fonts.regular.font->wrap(item.text, 18, text_w).size()));
         const float row_h = 30.0f + 26.0f * (lines - 1) + 14.0f;
-        const bool last = shown + 1 == (int)items_.size() && item_total_ <= (int)items_.size();
+        const bool last = idx + 1 == items_.size() && item_total_ <= (int)items_.size();
         if (cy + row_h > bottom - (last ? 0.0f : more_h))
             break;
 
@@ -507,10 +510,16 @@ void ChangelogScreen::draw(DrawList &list, const Context &ctx) const
         ++shown;
     }
 
-    if (item_total_ > shown)
+    const int below = item_total_ - first - shown;
+    if (first > 0 || below > 0)
     {
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), "+%d more", item_total_ - shown);
+        char buf[64];
+        if (first > 0 && below > 0)
+            std::snprintf(buf, sizeof(buf), "%d above, %d more  -  L1 / R1 to scroll", first, below);
+        else if (below > 0)
+            std::snprintf(buf, sizeof(buf), "+%d more  -  R1 to scroll", below);
+        else
+            std::snprintf(buf, sizeof(buf), "%d above  -  L1 to scroll back", first);
         ui::text(list, fonts.regular, buf, rx + 160, cy + 22, 18, p.text_faint);
     }
 }

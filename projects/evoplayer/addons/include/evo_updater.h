@@ -37,7 +37,7 @@ typedef enum {
 
 typedef struct {
     evo_upd_state_t state;
-    char     latest[24];     /* "v0.12.6" */
+    char     latest[24];     /* "v0.13.1" */
     char     notes[4096];   /* release notes, cut to fit */
     uint64_t done, total;    /* download bytes */
     char     error[160];

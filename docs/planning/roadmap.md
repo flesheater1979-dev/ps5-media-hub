@@ -1,6 +1,6 @@
 # Roadmap
 
-What is open, grouped by area, as of **2026-10-24** (v0.12.5 released; 36 open issues).
+What is open, grouped by area, as of **2026-10-24** (v0.13.0 prepared; 36 open issues).
 GitHub is the live source: `gh issue list --state open`, or the "EVO Player Roadmap"
 project board ([project-tracking.md](project-tracking.md)). This page is the map across
 them. Each issue body ends with a "References & sequencing" block naming the docs and files
@@ -15,15 +15,14 @@ The v0.8.0 to v1.1.0 milestones are all closed. v0.11.0 still lists four issues 
 are `priority: medium` and `priority: low`; `hw-verify-pending` marks code that is in but
 not yet seen on a console.
 
-## Landed since v0.12.5 (unreleased)
+## Landed in v0.13.0
 
 In-app updater (#120), volume boost (#166), audio delay (#170), the playback diagnostics
 panel (#167), the network buffer setting (#199), a preview card for every setting (#158),
 stream and audio pickers with pills and a details card and a busy card during a switch,
 Pro memory mode (#143), faster console testing (`set`, `focus`, `verify`, per-feature
 checks, #201), a pad scrub that always commits, and backing out of playback keeping the
-selection on the played item (#214). See [../../CHANGELOG.md](../../CHANGELOG.md) when the
-next release is cut.
+selection on the played item (#214). See [../../CHANGELOG.md](../../CHANGELOG.md).
 
 ## Verification and diagnostics
 

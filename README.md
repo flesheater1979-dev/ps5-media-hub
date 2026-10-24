@@ -10,7 +10,19 @@ Plays video from USB drives, internal storage, network shares (FTP), Live TV (IP
 
 ---
 
-## What's New in v0.12.5
+## What's New in v0.13.0
+
+- **In-app updater:** a side card offers the new version, downloads and verifies it, installs it with one rename, and closes EVO.
+- **Chapters:** L1 / R1 jump between chapters, the seek bar shows chapter ticks, R3 opens a chapter picker. The OSD shows when the video ends and the time remaining.
+- **Volume boost, audio delay and network buffer:** new settings, plus a playback diagnostics panel with HDR, audio output and dropped frames.
+- **Shelves for every provider:** one home layout for Jellyfin, Emby, Stremio, Nuvio and Plex, with a details block (description, rating, cast), and an Xtream TV guide.
+- **Better pickers and keyboard:** stream and audio pickers with pills and a details card, a native-style virtual keyboard, PGS picture subtitles, and a preview card for every setting.
+- **Fixes:** VP9 Profile 2 on hardware, AAC without silence, low frame rate video at the right speed, and a pad scrub that always commits.
+- **Scrolling changelog:** L1 / R1 scroll a long release in the in-app changelog.
+
+Full notes: [CHANGELOG.md](CHANGELOG.md).
+
+### Highlights from v0.12.5
 
 - **Native Plex Integration:** PIN-based linking via `plex.tv/link`, automatic local LAN server discovery, native library/episode browsing, direct stream playback, and timeline watched status reporting.
 - **Multiple USB & M.2 Drives:** Detects `/mnt/usb0`–`/mnt/usb7` and `/mnt/ext0`–`/mnt/ext1`. Displays a drive picker when multiple drives are connected and provides cross-drive search.

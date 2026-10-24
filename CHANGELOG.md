@@ -5,6 +5,54 @@ into the GitHub release notes, so keep the headings in the form `## 0.1.0`.
 
 ---
 
+## 0.13.0
+
+![](https://img.shields.io/badge/Release-v0.13.0-blueviolet?style=flat-square) ![](https://img.shields.io/badge/PS5%20Hardware-Verified-0070d1?style=flat-square&logo=playstation&logoColor=white) ![](https://img.shields.io/badge/Firmware-below%2013.60-blue?style=flat-square)
+
+**EVO updates itself, and every provider gets shelves.** 0.13.0 adds an in-app updater, chapter navigation, a richer playback panel, volume boost and audio delay, one shelves home with a details block for Jellyfin, Emby, Stremio, Nuvio and Plex, an Xtream TV guide, and a long list of playback fixes. The changelog screen now scrolls: press L1 / R1 to move through a long release.
+
+Download **`PPSA99039.ffpfsc`** and deploy it with ShadowMountPlus, or the folder-title **`.zip`**, then launch EVO from the Games row. Or install it straight from the console with **[ProsperoStore](https://github.com/blackbearreloaded/ProsperoStore)**, the native PS5 app store for [homebrew.page](https://homebrew.page). Runs on any jailbroken PS5 below firmware 13.60. PS5 Pro owners can use the `-pro` package for the larger memory mode.
+
+Questions, bugs or ideas? Join the **[EVO Player Discord](https://discord.gg/MyNnCWNU5)**.
+
+### ![](https://img.shields.io/badge/UPDATES-9c27b0?style=flat-square) Updater
+
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **In-app updater.** A side card offers the new version, downloads it, verifies it, installs it with one rename, and closes EVO so the next launch runs the new build.
+
+### ![](https://img.shields.io/badge/PLAYBACK-e91e63?style=flat-square) Playback
+
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Chapters.** Jump between chapters with L1 / R1, see chapter ticks on the seek bar, and pick one from the R3 chapter list.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Ends-at and time remaining** on the playback OSD.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Volume boost** and an **audio delay** of -500 to +500 ms that shifts the video against the audio clock.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Network buffer** setting: 30 seconds, 1, 2 or 5 minutes. The rings scale with it and grow when idle.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Playback diagnostics panel** showing HDR, the audio output mode, dropped frames and the source. It stays on or off as you left it.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Picture subtitles (PGS)** decode and draw.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Stream and audio pickers** show pills and a details card. Switching audio or quality runs on a worker with a busy card instead of freezing the picker, and tracks with no language read "Unknown language - track N".
+- ![](https://img.shields.io/badge/FIXED-4caf50?style=flat-square) **VP9 Profile 2** decodes on the hardware decoder at 1080p and 4K.
+- ![](https://img.shields.io/badge/FIXED-4caf50?style=flat-square) **AAC is decoded to PCM**, never passed through, which stops the silence some receivers gave for AAC.
+- ![](https://img.shields.io/badge/FIXED-4caf50?style=flat-square) **Video below about 22 fps** no longer plays at 0.65x with cut-up audio.
+- ![](https://img.shields.io/badge/FIXED-4caf50?style=flat-square) **A pad scrub always commits.** The wait for the preview frame is capped at 3 seconds, so a hung preview can no longer leave playback paused.
+- ![](https://img.shields.io/badge/FIXED-4caf50?style=flat-square) **Backing out of playback** keeps the selection on the item you played.
+
+### ![](https://img.shields.io/badge/PROVIDERS-e91e63?style=flat-square) Media Servers & Addons
+
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **One shelves home for every provider**, with a scroll hint. Jellyfin and Emby also get an item menu, a transcode fallback and skip intro.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Details block on the shelves**: description, rating pills, facts, cast headshots and icons for the focused item.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Xtream TV guide** (XMLTV) for channels. The Xtream home is a channel row per category, loaded near the focus.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Add and remove Nuvio addons** inside EVO.
+- ![](https://img.shields.io/badge/IMPROVED-ff8c00?style=flat-square) **Posters** load on their own network workers, WebP artwork decodes, and the art cache is 128 MiB.
+- ![](https://img.shields.io/badge/FIXED-4caf50?style=flat-square) Home and Recent artwork shows again and is no longer stretched; Stremio resume right after launch loads the addon manifests first; Plex sign-in works after a cancel or an expired code.
+
+### ![](https://img.shields.io/badge/INTERFACE-2196f3?style=flat-square) Interface & Settings
+
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Preview card for every setting** that shows the real effect, and Back out of an open row keeps the cursor.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Native-style virtual keyboard** with Shift, Caps Lock, a clear button and button icons on the keys. The phone keyboard mirrors the field for every prompt.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Fonts for every script** on the kit screens, and more subtitle encodings.
+- ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Pro memory mode.** A separate `-pro` package for the PS5 Pro, with a Memory row in Settings.
+- ![](https://img.shields.io/badge/IMPROVED-ff8c00?style=flat-square) **The changelog scrolls.** Releases with more items than fit the card scroll with L1 / R1.
+
+---
+
 ## 0.12.5
 
 ![](https://img.shields.io/badge/Release-v0.12.5-blueviolet?style=flat-square) ![](https://img.shields.io/badge/PS5%20Hardware-Verified-0070d1?style=flat-square&logo=playstation&logoColor=white) ![](https://img.shields.io/badge/Firmware-below%2013.60-blue?style=flat-square)
