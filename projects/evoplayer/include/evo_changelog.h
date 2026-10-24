@@ -29,7 +29,7 @@ typedef struct evo_changelog_release {
  * Release 0.13.0
  *
  * The full notes are in CHANGELOG.md. This list is longer than the detail card,
- * so the screen scrolls it (L1 / R1).
+ * so the screen scrolls it (right stick).
  */
 static const evo_changelog_item EVO_CL_0130[] = {
     { EVO_CL_NEW,      "IN-APP UPDATER - DOWNLOADS, VERIFIES AND INSTALLS THE NEW VERSION" },

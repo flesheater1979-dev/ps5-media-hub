@@ -545,7 +545,7 @@ typedef struct {
     int         item_count;
     int         item_total;    /* to report anything the panel could not fit */
     evo_rmlui_cl_item_t items[EVO_RMLUI_CL_ITEMS_MAX];
-    int         item_offset;   /* first item shown (kit screen scrolls with L1 / R1) */
+    float       scroll_stick;  /* right stick Y, -1..1: the kit screen scrolls the detail card */
 } evo_rmlui_changelog_params_t;
 
 /*

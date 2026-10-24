@@ -9,7 +9,7 @@ into the GitHub release notes, so keep the headings in the form `## 0.1.0`.
 
 ![](https://img.shields.io/badge/Release-v0.13.0-blueviolet?style=flat-square) ![](https://img.shields.io/badge/PS5%20Hardware-Verified-0070d1?style=flat-square&logo=playstation&logoColor=white) ![](https://img.shields.io/badge/Firmware-below%2013.60-blue?style=flat-square)
 
-**EVO updates itself, and every provider gets shelves.** 0.13.0 adds an in-app updater, chapter navigation, a richer playback panel, volume boost and audio delay, one shelves home with a details block for Jellyfin, Emby, Stremio, Nuvio and Plex, an Xtream TV guide, and a long list of playback fixes. The changelog screen now scrolls: press L1 / R1 to move through a long release.
+**EVO updates itself, and every provider gets shelves.** 0.13.0 adds an in-app updater, chapter navigation, a richer playback panel, volume boost and audio delay, one shelves home with a details block for Jellyfin, Emby, Stremio, Nuvio and Plex, an Xtream TV guide, and a long list of playback fixes. The changelog screen now scrolls: use the right stick to scroll a long release.
 
 Download **`PPSA99039.ffpfsc`** and deploy it with ShadowMountPlus, or the folder-title **`.zip`**, then launch EVO from the Games row. Or install it straight from the console with **[ProsperoStore](https://github.com/blackbearreloaded/ProsperoStore)**, the native PS5 app store for [homebrew.page](https://homebrew.page). Runs on any jailbroken PS5 below firmware 13.60. PS5 Pro owners can use the `-pro` package for the larger memory mode.
 
@@ -49,7 +49,7 @@ Questions, bugs or ideas? Join the **[EVO Player Discord](https://discord.gg/MyN
 - ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Native-style virtual keyboard** with Shift, Caps Lock, a clear button and button icons on the keys. The phone keyboard mirrors the field for every prompt.
 - ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Fonts for every script** on the kit screens, and more subtitle encodings.
 - ![](https://img.shields.io/badge/NEW-007acc?style=flat-square) **Pro memory mode.** A separate `-pro` package for the PS5 Pro, with a Memory row in Settings.
-- ![](https://img.shields.io/badge/IMPROVED-ff8c00?style=flat-square) **The changelog scrolls.** Releases with more items than fit the card scroll with L1 / R1.
+- ![](https://img.shields.io/badge/IMPROVED-ff8c00?style=flat-square) **The changelog scrolls.** Releases with more items than fit the card scroll with the right stick.
 
 ---
 

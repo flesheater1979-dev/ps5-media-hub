@@ -1404,6 +1404,10 @@ int Application::run() {
             const float kStickDeadzone = 0.18f;
             m_leftStickX = (std::abs(rawLx) > kStickDeadzone) ? rawLx : 0.0f;
             m_leftStickY = (std::abs(rawLy) > kStickDeadzone) ? rawLy : 0.0f;
+            const float rawRx = (static_cast<float>(padData.rightStick.x) - 128.0f) / 128.0f;
+            const float rawRy = (static_cast<float>(padData.rightStick.y) - 128.0f) / 128.0f;
+            m_rightStickX = (std::abs(rawRx) > kStickDeadzone) ? rawRx : 0.0f;
+            m_rightStickY = (std::abs(rawRy) > kStickDeadzone) ? rawRy : 0.0f;
 
             // Synthesize stick tilt events into directional pad masks
             static bool s_stickLeft = false, s_stickRight = false, s_stickUp = false, s_stickDown = false;

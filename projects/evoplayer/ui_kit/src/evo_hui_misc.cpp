@@ -2,6 +2,7 @@
 
 #include "ui/glyphs.hpp"
 #include "ui/components/progress.hpp"
+#include "ui/components/scroll_area.hpp"
 #include "ui/widgets.hpp"
 
 #include <algorithm>
@@ -401,6 +402,8 @@ void ChangelogScreen::set(const evo_rmlui_changelog_params_t &p)
         r.focused = p.releases[i].is_focused != 0;
         releases_.push_back(r);
     }
+    if (str(p.detail_version) != detail_version_)
+        scroll_.scroll_to(0.0f, 0.0f, true);
     detail_version_ = str(p.detail_version);
     detail_tagline_ = str(p.detail_tagline);
     items_.clear();
@@ -412,7 +415,7 @@ void ChangelogScreen::set(const evo_rmlui_changelog_params_t &p)
         items_.push_back(item);
     }
     item_total_ = p.item_total;
-    item_offset_ = p.item_offset;
+    stick_ = p.scroll_stick;
 }
 
 void ChangelogScreen::enter()
@@ -422,6 +425,9 @@ void ChangelogScreen::enter()
 
 void ChangelogScreen::update(float dt)
 {
+    if (stick_ != 0.0f)
+        scroll_.scroll_by(0.0f, stick_ * std::fabs(stick_) * 1500.0f * dt);
+    scroll_.update(dt);
     Rect target;
     for (size_t i = 0; i < releases_.size(); ++i)
     {
@@ -478,50 +484,49 @@ void ChangelogScreen::draw(DrawList &list, const Context &ctx) const
     ui::text(list, fonts.display, detail_version_, rx + 40, 330, 40, kWhite);
     ui::text(list, fonts.regular, detail_tagline_, rx + 40, 360, 20, p.text_muted);
 
-    // Rows are sized by how many lines their text wraps to, and the list stops
-    // at the card's bottom edge (leaving room for "+N more") instead of
-    // running past it.
+    // The rows live in a kit ScrollArea: the right stick scrolls them, the
+    // edges fade and a thumb shows the position. A row is as tall as its text
+    // wraps (one or two lines).
     const float text_w = card.w - 200.0f;
-    const float bottom = card.y + card.h - 28.0f;
-    const float more_h = 34.0f;
-    float cy = 400.0f;
-    int shown = 0;
-    const int first = std::max(0, std::min(item_offset_, (int)items_.size() - 1));
-    for (size_t idx = first; idx < items_.size(); ++idx)
+    const Rect view{rx + 40, 392.0f, card.w - 80.0f, card.y + card.h - 392.0f - 20.0f};
+    float content_h = 0.0f;
+    std::vector<float> heights;
+    heights.reserve(items_.size());
+    for (const Item &item : items_)
+    {
+        const int lines = std::min<int>(2, std::max<std::size_t>(1, fonts.regular.font->wrap(item.text, 18, text_w).size()));
+        heights.push_back(30.0f + 26.0f * (lines - 1) + 14.0f);
+        content_h += heights.back();
+    }
+    scroll_.set_bounds(view);
+    scroll_.set_content_size(view.w, content_h);
+
+    ui::Canvas canvas{list, fonts, 0, ctx.time};
+    scroll_.begin(canvas);
+    float cy = 8.0f;
+    for (size_t idx = 0; idx < items_.size(); ++idx)
     {
         const Item &item = items_[idx];
-        const int lines = std::min<int>(2, std::max<std::size_t>(1, fonts.regular.font->wrap(item.text, 18, text_w).size()));
-        const float row_h = 30.0f + 26.0f * (lines - 1) + 14.0f;
-        const bool last = idx + 1 == items_.size() && item_total_ <= (int)items_.size();
-        if (cy + row_h > bottom - (last ? 0.0f : more_h))
-            break;
+        const Rect row{0.0f, cy, view.w, heights[idx]};
+        const float vis = scroll_.visibility(row);
+        if (vis > 0.01f)
+        {
+            Color kind_color;
+            if (item.kind == "FIXED") kind_color = Color::rgb(0x30d158);
+            else if (item.kind == "IMPROVED") kind_color = Color::rgb(0x8a8fff);
+            else if (item.kind == "REMOVED") kind_color = Color::rgb(0xff5a5f);
+            else kind_color = p.accent; // NEW
 
-        Color kind_color;
-        if (item.kind == "FIXED") kind_color = Color::rgb(0x30d158);
-        else if (item.kind == "IMPROVED") kind_color = Color::rgb(0x8a8fff);
-        else if (item.kind == "REMOVED") kind_color = Color::rgb(0xff5a5f);
-        else kind_color = p.accent; // NEW
-
-        list.rounded_rect({rx + 40, cy, 100, 30}, 15, kind_color.with_alpha(0.15f));
-        ui::text(list, fonts.semibold, item.kind, rx + 90, cy + 21, 13, kind_color, Align::center, 1.0f);
-
-        ui::paragraph(list, fonts.regular, item.text, rx + 160, cy + 22, 18, text_w, 26.0f, kWhite, 2);
-        cy += row_h;
-        ++shown;
+            list.push_opacity(vis);
+            list.rounded_rect({0.0f, cy, 100, 30}, 15, kind_color.with_alpha(0.15f));
+            ui::text(list, fonts.semibold, item.kind, 50.0f, cy + 21, 13, kind_color, Align::center, 1.0f);
+            ui::paragraph(list, fonts.regular, item.text, 120.0f, cy + 22, 18, text_w, 26.0f, kWhite, 2);
+            list.pop_opacity();
+        }
+        cy += heights[idx];
     }
-
-    const int below = item_total_ - first - shown;
-    if (first > 0 || below > 0)
-    {
-        char buf[64];
-        if (first > 0 && below > 0)
-            std::snprintf(buf, sizeof(buf), "%d above, %d more  -  L1 / R1 to scroll", first, below);
-        else if (below > 0)
-            std::snprintf(buf, sizeof(buf), "+%d more  -  R1 to scroll", below);
-        else
-            std::snprintf(buf, sizeof(buf), "%d above  -  L1 to scroll back", first);
-        ui::text(list, fonts.regular, buf, rx + 160, cy + 22, 18, p.text_faint);
-    }
+    scroll_.end(canvas);
+    scroll_.draw(canvas);
 }
 
 bool ChangelogScreen::focus(FocusInfo *out) const

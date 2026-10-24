@@ -18,7 +18,7 @@ Plays video from USB drives, internal storage, network shares (FTP), Live TV (IP
 - **Shelves for every provider:** one home layout for Jellyfin, Emby, Stremio, Nuvio and Plex, with a details block (description, rating, cast), and an Xtream TV guide.
 - **Better pickers and keyboard:** stream and audio pickers with pills and a details card, a native-style virtual keyboard, PGS picture subtitles, and a preview card for every setting.
 - **Fixes:** VP9 Profile 2 on hardware, AAC without silence, low frame rate video at the right speed, and a pad scrub that always commits.
-- **Scrolling changelog:** L1 / R1 scroll a long release in the in-app changelog.
+- **Scrolling changelog:** the right stick scrolls a long release in the in-app changelog.
 
 Full notes: [CHANGELOG.md](CHANGELOG.md).
 

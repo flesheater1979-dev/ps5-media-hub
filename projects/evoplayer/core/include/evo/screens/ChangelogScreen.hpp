@@ -23,7 +23,6 @@ private:
 
     int m_cursorIndex = 0;
     int m_scrollOffset = 0;
-    int m_itemScroll = 0;
 };
 
 } // namespace evo

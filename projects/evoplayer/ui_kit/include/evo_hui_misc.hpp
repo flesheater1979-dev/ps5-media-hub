@@ -11,6 +11,7 @@
 #include "gfx/draw_list.hpp"
 #include "ui/fonts.hpp"
 #include "ui/motion.hpp"
+#include "ui/components/scroll_area.hpp"
 
 #include <string>
 #include <vector>
@@ -113,7 +114,8 @@ class ChangelogScreen
     std::string detail_tagline_;
     std::vector<Item> items_;
     int item_total_ = 0;
-    int item_offset_ = 0;
+    float stick_ = 0.0f;
+    mutable hui::ui::ScrollArea scroll_;
 
     hui::ui::SpringRect ring_;
     bool ring_snapped_ = false;

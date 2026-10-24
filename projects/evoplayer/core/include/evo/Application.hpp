@@ -75,6 +75,10 @@ public:
     IFileTransferService* getFileTransferService() const override { return m_fileTransferService.get(); }
     ScreenManager* getScreenManager() const override { return m_screenManager.get(); }
 
+    void getRightStick(float* x, float* y) const {
+        if (x) *x = m_rightStickX;
+        if (y) *y = m_rightStickY;
+    }
     void getLeftStick(float* x, float* y) const {
         if (x) *x = m_leftStickX;
         if (y) *y = m_leftStickY;
@@ -117,6 +121,8 @@ private:
     int m_padHandle = -1;
     float m_leftStickX = 0.0f;
     float m_leftStickY = 0.0f;
+    float m_rightStickX = 0.0f;
+    float m_rightStickY = 0.0f;
     uint32_t m_padButtons = 0;
     bool  m_touchActive = false;
     float m_touchX = 0.0f;

@@ -18,7 +18,6 @@ void ChangelogScreen::onEnter() {
     StatefulScreen::onEnter();
     m_cursorIndex = 0;
     m_scrollOffset = 0;
-    m_itemScroll = 0;
 }
 
 void ChangelogScreen::onExit() {
@@ -41,7 +40,6 @@ void ChangelogScreen::navigate(int delta) {
         evo_feedback(EVO_FB_MOVE);
     }
 
-    m_itemScroll = 0;
     if (m_cursorIndex < m_scrollOffset) {
         m_scrollOffset = m_cursorIndex;
     } else if (m_cursorIndex >= m_scrollOffset + EVO_RMLUI_CL_RELEASES) {
@@ -59,19 +57,6 @@ bool ChangelogScreen::handleInput(uint32_t pressed, uint32_t held, uint32_t rele
     }
     if (pressed & PadButtons::Down) {
         navigate(1);
-        return true;
-    }
-    if (pressed & (PadButtons::L1 | PadButtons::R1)) {
-        /* Releases longer than the detail card scroll; about 11 rows always fit. */
-        const int count = EVO_CHANGELOG_RELEASES[m_cursorIndex].item_count;
-        const int maxScroll = count > 11 ? count - 11 : 0;
-        const int next = std::max(0, std::min(maxScroll, m_itemScroll + ((pressed & PadButtons::R1) ? 1 : -1)));
-        if (next != m_itemScroll) {
-            m_itemScroll = next;
-            evo_feedback(EVO_FB_MOVE);
-        } else {
-            evo_feedback(EVO_FB_BOUNDARY);
-        }
         return true;
     }
     if (pressed & (PadButtons::Left | PadButtons::Circle | PadButtons::Cross)) {
@@ -121,7 +106,9 @@ void ChangelogScreen::render(uint32_t* framebuffer, int width, int height) {
         p.detail_version = curRelease.version;
         p.detail_tagline = curRelease.tagline;
         p.item_total = curRelease.item_count;
-        p.item_offset = m_itemScroll;
+        float sx = 0.0f, sy = 0.0f;
+        Application::getInstance().getRightStick(&sx, &sy);
+        p.scroll_stick = sy;
 
         for (int i = 0; i < curRelease.item_count && i < EVO_RMLUI_CL_ITEMS_MAX; ++i) {
             int kind = static_cast<int>(curRelease.items[i].kind);
