@@ -9,7 +9,7 @@
  * Three separate jobs, in order of how much damage getting them wrong does:
  *
  *   1. PATH SAFETY. A manifest entry names where its file is written and,
- *      later, what LoadDocument opens. An entry of "../../../data/evoplayer/
+ *      later, what LoadDocument opens. An entry of "../../../data/ps5-media-hub/
  *      emby.conf" would have this code write a downloaded file over stored
  *      credentials. evo_bundle_path() is the only way to turn a bundle-relative
  *      name into a real path and it refuses anything that could leave the

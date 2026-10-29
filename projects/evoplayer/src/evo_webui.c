@@ -6,7 +6,7 @@
  * lands in evo.log (and klog) with a "web:" prefix.
  *
  * What the hardware runs established (2026-09-26, FW 12.70):
- *   run 1  the dialog loads, opens from PPSA99039 and draws over the AGC plane;
+ *   run 1  the dialog loads, opens from PPSA99179 and draws over the AGC plane;
  *          the library's own CallbackInitParam route is a dead end (a guessed
  *          block is accepted, but the dialog never closes on the callback URL
  *          and GetResult refuses every callback-result buffer, 0x80b8000a).

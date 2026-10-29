@@ -4,12 +4,12 @@
  * sceVideodec2 hardware-decode backend (evo_vdec_native.c).
  *
  * Native-decode plan Phase 4 (#31). The backend is a near-verbatim port of the
- * hardware-verified sceVideodec2 bring-up proven in the PPSA99039 player —
+ * hardware-verified sceVideodec2 bring-up proven in the PPSA99179 player —
  * see docs/hardware/videodec2-abi.md.
  *
  * Everything here is a hard stub on host + payload builds: evo_vdec_native.c
  * compiles its real body only under EVO_APP_MODULE (sceVideodec2 + a real
- * user session + the GPU driver stack exist only in the PPSA99039 app module).
+ * user session + the GPU driver stack exist only in the PPSA99179 app module).
  * Off that path evo_vdec_native_probe() returns 0 and evo_vdec_native_open()
  * returns NULL, so the dispatcher always has FFmpeg to fall back to.
  */

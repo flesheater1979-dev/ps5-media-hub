@@ -15,7 +15,7 @@
  *   logic  - this vtable, compiled into the app module. Auth, catalog, search,
  *            link resolution, progress reporting. C, in-binary, trusted.
  *   look   - the provider's OWN .rml/.rcss bundle, fetched at runtime over
- *            HTTP and cached under /data/evoplayer/providers/<id>/. Markup and
+ *            HTTP and cached under /data/ps5-media-hub/providers/<id>/. Markup and
  *            styling only; see evo_provider_bundle.h.
  *
  * The logic half publishes a data model. The downloaded markup binds to it by
@@ -56,7 +56,7 @@ extern "C" {
  */
 #define EVO_PROVIDER_API_VERSION 1
 
-/* A provider id is a directory name under /data/evoplayer/providers/, so it is
+/* A provider id is a directory name under /data/ps5-media-hub/providers/, so it is
  * deliberately narrow: lowercase ASCII, digits, '-' and '_'. Validated by
  * evo_provider_id_valid() rather than trusted. */
 #define EVO_PROVIDER_MAX_ID       24

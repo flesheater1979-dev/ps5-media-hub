@@ -322,7 +322,7 @@ bool EvoRmlApp::Initialize(int width, int height) {
      * the /app0 sandbox's broken directory traversal never comes into play.
      * The remaining entries are host/dev fallbacks (fopen against loose
      * files) for when the bundle hasn't been (re)generated. The old
-     * /data/evoplayer/app/ and /data/homebrew/EVOPlayer/ search paths - the
+     * /data/ps5-media-hub/app/ and /data/homebrew/EVOPlayer/ search paths - the
      * #44 out-of-band FTP sync target - are gone: that sync is removed
      * (deploy-app.sh), and shipping a self-contained .ffpfsc means those
      * loose console-side copies must have zero effect on rendering. */
@@ -355,7 +355,7 @@ bool EvoRmlApp::Initialize(int width, int height) {
             Rml::LoadFontFace(p + "NotoSansThai-Bold.ttf", true);
             /* CJK is 4-8 MB a script, too big to embed in the binary: load
              * whichever Noto Sans CJK subset files are in the data folder
-             * (/data/evoplayer/fonts/NotoSansSC-Regular.otf, ...JP, ...KR). */
+             * (/data/ps5-media-hub/fonts/NotoSansSC-Regular.otf, ...JP, ...KR). */
 #if defined(EVO_AGC_DEVICE)
             for (const char* cjk : { "NotoSansSC-Regular.otf", "NotoSansJP-Regular.otf",
                                      "NotoSansKR-Regular.otf" }) {

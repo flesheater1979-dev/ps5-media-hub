@@ -346,7 +346,7 @@ Rml::TextureHandle EvoRenderInterface::LoadTexture(Rml::Vector2i& texture_dimens
     if (!data) {
         /* Not bundled (or the bundle is stale/missing) - fall back to disk,
          * same prefixes evo_rmlui_app.cpp tries for .rml/.rcss/fonts. The
-         * #44 out-of-band /data/evoplayer/app/assets/ sync target and the
+         * #44 out-of-band /data/ps5-media-hub/app/assets/ sync target and the
          * defunct ELF-payload /data/homebrew/EVOPlayer/ path are gone - #60
          * makes the package self-contained instead of leaning on either. */
         std::vector<std::string> candidates = {

@@ -394,3 +394,9 @@ output/confbak/
 
 # Local-only tool, not part of EVO.
 tools/mydebrid/
+
+# Media Hub private account state and local artifacts
+/hub-private/
+/dist/
+*.token
+*.secret

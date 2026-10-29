@@ -305,7 +305,7 @@ class EvoPanel:
         self.pkg_mode.trace_add("write", lambda *_: self._refresh_cmd_preview())
         self._refresh_cmd_preview()
 
-        dp = self._section(t, "Deploy  ·  scripts/deploy-app.sh  (FTP → /data/homebrew/PPSA99039)")
+        dp = self._section(t, "Deploy  ·  scripts/deploy-app.sh  (FTP → /data/homebrew/PPSA99179)")
         self.deploy_ffpfsc = tk.BooleanVar(value=True)
         ttk.Checkbutton(dp, text="--ffpfsc  (upload the PFS image)", variable=self.deploy_ffpfsc).pack(anchor="w")
         drow = ttk.Frame(dp)

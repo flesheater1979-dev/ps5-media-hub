@@ -3,7 +3,7 @@
  *
  * A bundle is the "look" half of a provider (see evo_provider.h): the markup
  * and styling the service authors for itself, fetched over HTTP at runtime and
- * cached under /data/evoplayer/providers/<id>/. Emby looks like Emby; IPTV is
+ * cached under /data/ps5-media-hub/providers/<id>/. Emby looks like Emby; IPTV is
  * a channel grid. EVO renders it and supplies the data; it does not design it.
  *
  * WHY THIS IS SAFE TO DOWNLOAD
@@ -137,7 +137,7 @@ const char *evo_bundle_status_str(evo_bundle_status_t st);
 
 /*
  * The cache directory for `provider_id`, with no trailing slash:
- * "/data/evoplayer/providers/iptv". Returns NULL if the id is not valid.
+ * "/data/ps5-media-hub/providers/iptv". Returns NULL if the id is not valid.
  * The buffer is per-thread static - use it immediately.
  */
 const char *evo_bundle_dir(const char *provider_id);

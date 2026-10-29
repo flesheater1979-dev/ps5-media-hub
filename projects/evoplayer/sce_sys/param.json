@@ -7,10 +7,10 @@
   "attribute": 1644167168,
   "attribute2": 0,
   "attribute3": 524352,
-  "conceptId": "99039",
+  "conceptId": "99179",
   "contentBadgeType": 1,
-  "contentId": "UP9000-PPSA99039_00-EVOPLAYER0000000",
-  "contentVersion": "01.013.000",
+  "contentId": "UP9000-PPSA99179_00-PS5MEDIAHUB00000",
+  "contentVersion": "00.001.000",
   "downloadDataSize": 256,
   "gameIntent": {
     "permittedIntents": [
@@ -25,7 +25,7 @@
   "localizedParameters": {
     "defaultLanguage": "en-US",
     "en-US": {
-      "titleName": "EVO Player"
+      "titleName": "PS5 Media Hub (Test)"
     }
   },
   "masterVersion": "01.00",
@@ -36,6 +36,6 @@
   },
   "requiredSystemSoftwareVersion": "0x0000000000000000",
   "sdkVersion": "0x0000000000000000",
-  "titleId": "PPSA99039",
+  "titleId": "PPSA99179",
   "versionFileUri": ""
 }

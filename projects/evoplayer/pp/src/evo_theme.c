@@ -28,7 +28,7 @@
  *
  * elfldr payload: USB, as documented (docs/ui/theming.md). App module: USB is
  * ENOENT in the sandbox until tools/sandbox-unjail (task 7), so custom themes
- * come from /download0/evoplayer/themes/ instead. */
+ * come from /download0/ps5-media-hub/themes/ instead. */
 #ifndef EVO_THEME_DIR
 #ifdef EVO_APP_MODULE
 #define EVO_THEME_DIR evo_data_path("themes")

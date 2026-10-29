@@ -10,7 +10,7 @@ are never touched.
 
 What goes:
   /data/homebrew/<TITLE_ID>.ffpfsc and /data/homebrew/<TITLE_ID>/   the app
-  /data/evoplayer/          settings, recent, favourites, resume points,
+  /data/ps5-media-hub/          settings, recent, favourites, resume points,
                             provider logins + playlists, web sessions,
                             speaker calibration
   /mnt/usb0/evo*, /mnt/usb0/pp_4k_stage*   logs, screenshots, dev-remote files
@@ -25,8 +25,8 @@ Never run this against a running EVO: deploy-app.sh --fresh checks first.
 import ftplib
 import sys
 
-TITLE_ID = "PPSA99039"
-DATA_DIR = "/data/evoplayer"
+TITLE_ID = "PPSA99179"
+DATA_DIR = "/data/ps5-media-hub"
 USB = "/mnt/usb0"
 
 

@@ -3,7 +3,7 @@
  * evo_vdec.h seam. Native-decode plan Phase 4 (#31).
  *
  * A port of the hardware-verified sceVideodec2 bring-up / decode / teardown
- * sequence proven inside the full PPSA99039 player on 2026-09-03 (a 1920x1088
+ * sequence proven inside the full PPSA99179 player on 2026-09-03 (a 1920x1088
  * NV12 H.264 frame, every call 0). The ABI transcription lives in
  * third_party/ps5-hardware-video-decoding-research/ and docs/hardware/videodec2-abi.md.
  *

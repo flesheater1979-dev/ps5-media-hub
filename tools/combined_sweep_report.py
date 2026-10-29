@@ -56,7 +56,7 @@ last_42 = sessions[-42:]
 out = []
 out.append('# EVO Player Comprehensive Video & Audio Codec Validation Report')
 out.append('')
-out.append('- **Hardware Platform**: PlayStation 5 Retail (Disc/Digital) running ShadowMount+ Homebrew (`PPSA99039`)')
+out.append('- **Hardware Platform**: PlayStation 5 Retail (Disc/Digital) running ShadowMount+ Homebrew (`PPSA99179`)')
 out.append('- **Total Media Clips Swept**: **42 clips**')
 out.append('  - **Video Codec Suite**: 25 clips (`/mnt/usb0/media/Test/Codecs`)')
 out.append('  - **Audio & Surround Suite**: 17 clips (`/mnt/usb0/media/Test/Audio`)')

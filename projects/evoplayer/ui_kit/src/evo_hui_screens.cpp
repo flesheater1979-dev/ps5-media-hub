@@ -275,10 +275,10 @@ int rail_items(RailItem *out)
     out[n++] = {"Home", "../icons/icon_home.png"};
     out[n++] = {"Browse", "../icons/icon_browse_usb.png"};
     if (EVO_ENABLE_EMBY)
-        out[n++] = {"Providers", "../icons/icon_emby.png"};
+        out[n++] = {"Movies & TV", "../icons/icon_emby.png"};
     out[n++] = {"Settings", "../icons/icon_settings.png"};
     out[n++] = {"About", "../icons/icon_about_support.png"};
-    out[n++] = {"Quit EVO", "../icons/icon_power.png"};
+    out[n++] = {"Quit Media Hub", "../icons/icon_power.png"};
     return n;
 }
 
@@ -342,7 +342,7 @@ void NavRail::draw(DrawList &list, const Context &ctx) const
     if (e > 0.01f)
     {
         list.push_opacity(e);
-        ui::text(list, fonts.display, "EVO", 112, 104, 34, kWhite);
+        ui::text(list, fonts.display, "MEDIA HUB", 112, 104, 28, kWhite);
         list.pop_opacity();
     }
 

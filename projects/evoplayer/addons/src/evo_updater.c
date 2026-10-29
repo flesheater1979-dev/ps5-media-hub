@@ -27,7 +27,7 @@
 
 #define UPD_RELEASE_API  "https://api.github.com/repos/sainsaji/EVO-PLAYER-PS5/releases/latest"
 #define UPD_DOWNLOAD_PFX "https://github.com/sainsaji/EVO-PLAYER-PS5/releases/download/"
-#define UPD_TITLE_ID     "PPSA99039"
+#define UPD_TITLE_ID     "PPSA99179"
 #define UPD_MIN_BYTES    (1u << 20)
 #define UPD_MAX_BYTES    (512u << 20)
 
@@ -197,6 +197,8 @@ static int spawn(void *(*fn)(void *))
 
 void evo_updater_check(int prefer_pro)
 {
+    /* PS5 Media Hub: upstream self-updates disabled. */
+    (void)prefer_pro; return;
     pthread_mutex_lock(&s_mx);
     const int ok = !s_busy && s_st.state != EVO_UPD_DOWNLOADING && s_st.state != EVO_UPD_READY
                    && s_st.state != EVO_UPD_APPLIED;
@@ -296,6 +298,8 @@ out:
 
 int evo_updater_download(void)
 {
+    /* PS5 Media Hub: upstream self-updates disabled. */
+    return 0;
     pthread_mutex_lock(&s_mx);
     int ok = !s_busy && s_st.state == EVO_UPD_AVAILABLE;
     pthread_mutex_unlock(&s_mx);
@@ -327,6 +331,8 @@ void evo_updater_cancel(void)
 
 int evo_updater_apply(void)
 {
+    /* PS5 Media Hub: upstream self-updates disabled. */
+    return 0;
     pthread_mutex_lock(&s_mx);
     const int ok = s_st.state == EVO_UPD_READY;
     pthread_mutex_unlock(&s_mx);

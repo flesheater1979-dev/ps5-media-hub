@@ -24,7 +24,7 @@
 #   ./tools/provider-server.sh [--port 8099] [--host <ip>]
 #
 # Then, on the console, point the IPTV provider at it. The provider reads
-# /data/evoplayer/iptv.conf; the fastest way to write it is over FTP:
+# /data/ps5-media-hub/iptv.conf; the fastest way to write it is over FTP:
 #
 #   playlist=http://<host>:<port>/media/iptv.m3u
 #   xmltv=http://<host>:<port>/media/epg.xml
@@ -184,7 +184,7 @@ cat <<EOF
  provider bundle server: ${BASE}
 =========================================================================
 
- Write this to /data/evoplayer/iptv.conf on the console (over FTP), then
+ Write this to /data/ps5-media-hub/iptv.conf on the console (over FTP), then
  open the provider screen:
 
    playlist=${BASE}/media/iptv.m3u

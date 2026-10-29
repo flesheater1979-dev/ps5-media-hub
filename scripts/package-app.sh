@@ -34,8 +34,8 @@
 # conversion + FSELF signing + dist assembly come from tools/native-app/
 # (vendored from ps5-native-app-boilerplate / ProsperoLight - see its README).
 #
-# Output: output/app/PPSA99039/{eboot.bin, sce_sys/param.json, sce_module/libc.prx}
-# Deploy: ./scripts/deploy-app.sh   (FTP -> /data/homebrew/PPSA99039/)
+# Output: output/app/PPSA99179/{eboot.bin, sce_sys/param.json, sce_module/libc.prx}
+# Deploy: ./scripts/deploy-app.sh   (FTP -> /data/homebrew/PPSA99179/)
 #
 # See docs/architecture/app-module.md.
 # =============================================================================
@@ -283,7 +283,7 @@ else
     begin "compiling ${APP_NAME} objects (${TCC} ${TFLAGS[*]})"
     # EVO's Makefile owns the source list, include paths and -D flags; we only
     # add the native-app link-tail flags via EXTRA_CFLAGS.
-    # EVO_APP_MODULE: routes data paths to /download0/evoplayer and directory
+    # EVO_APP_MODULE: routes data paths to /download0/ps5-media-hub and directory
     # enumeration through getdents (opendir fails EPERM in the sandbox).
     # Build fingerprint — main()'s FIRST notification, so a stale ShadowMount /
     # cached mount is caught immediately instead of costing a console session.

@@ -13,7 +13,7 @@
  * screens are EVO's own (rml/mediaserver.rml, the same poster grid as Emby and
  * Jellyfin) and nothing runs in the PS5 browser.
  *
- * The user's addons are a list of manifest URLs in /data/evoplayer/addons.json.
+ * The user's addons are a list of manifest URLs in /data/ps5-media-hub/addons.json.
  * Only streams with a direct http(s) `url` are offered; torrent-only streams
  * (infoHash) need a debrid resolver and are skipped.
  *

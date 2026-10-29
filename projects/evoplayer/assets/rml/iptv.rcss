@@ -2,7 +2,7 @@
  * IPTV provider bundle - stylesheet (#90)
  *
  * NOT an EVO Player stylesheet. Fetched at runtime with main.rml and cached
- * under /data/evoplayer/providers/iptv/.
+ * under /data/ps5-media-hub/providers/iptv/.
  *
  * It stays inside the RCSS subset the sceAgc backend implements - see
  * docs/providers/architecture.md. That list is not a style guide, it is

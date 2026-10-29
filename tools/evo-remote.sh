@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# tools/evo-remote.sh — scriptable dev remote for the PPSA99039 app module.
+# tools/evo-remote.sh — scriptable dev remote for the PPSA99179 app module.
 #
 # One deployed build (built with --usb-remote) is driven over FTP with no
 # controller and no rebuild between tests. It writes /mnt/usb0/evo_status once
@@ -11,7 +11,7 @@
 #   PS5_HOST=192.168.0.6 ./tools/evo-remote.sh <subcommand>
 #
 #   build [--breadcrumbs ...]               package --usb-remote + deploy .ffpfsc
-#   launch                                  launch PPSA99039 with no controller
+#   launch                                  launch PPSA99179 with no controller
 #                                           (title-aware controller -> elfldr
 #                                           :9021). Refused while ShadowMount
 #                                           shows it resident or the heartbeat
@@ -205,7 +205,7 @@ evo_ui() { PS5_HOST="${PS5_HOST}" FTP_PORT="${FTP_PORT}" \
            python3 "$(dirname "${BASH_SOURCE[0]}")/evo_ui.py" "$@"; }
 
 # --- lifecycle: controllers + ShadowMount evidence ---------------------------
-TITLE_ID="PPSA99039"
+TITLE_ID="PPSA99179"
 ELF_PORT="${PS5_ELF_PORT:-9021}"
 CTRL_SRC="$(dirname "${BASH_SOURCE[0]}")/ps5-controllers"
 CTRL_OUT="${OUTPUT_DIR}/controllers"
@@ -457,7 +457,7 @@ build)
     del_files "${USB_STATUS}" "${USB_LOG}" || true
     "${SCRIPTS_DIR}/deploy-app.sh" --ffpfsc
     echo ""
-    echo "  >>> launch PPSA99039 from the Games row (ShadowMount+ remounted) <<<"
+    echo "  >>> launch PPSA99179 from the Games row (ShadowMount+ remounted) <<<"
     ;;
 launch) do_launch ;;
 quit)   do_quit ;;

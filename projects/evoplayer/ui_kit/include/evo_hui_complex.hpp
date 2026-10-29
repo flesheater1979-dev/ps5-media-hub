@@ -6,7 +6,7 @@
  * signed distance fields (stb_truetype) into an atlas that grows as text
  * appears, and the kit draws that atlas like any other font. Thai and the
  * Indic scripts use Noto faces embedded in the binary; Chinese, Japanese and
- * Korean use the Noto Sans CJK files in /data/evoplayer/fonts when they are
+ * Korean use the Noto Sans CJK files in /data/ps5-media-hub/fonts when they are
  * there (4-8 MB each, too big to embed).
  */
 #pragma once

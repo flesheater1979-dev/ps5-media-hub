@@ -4,7 +4,7 @@
 /*
  * Module: evo_recent
  *
- * Recent-files database. Persists to /data/evoplayer/evo_recent.txt.
+ * Recent-files database. Persists to /data/ps5-media-hub/evo_recent.txt.
  * Stores the last 25 played files with path, title, position and duration.
  *
  * Public surface:

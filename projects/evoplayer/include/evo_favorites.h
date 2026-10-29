@@ -4,7 +4,7 @@
 /*
  * Module: evo_favorites
  *
- * Favorites database. Persists to /data/evoplayer/evo_favorites.txt.
+ * Favorites database. Persists to /data/ps5-media-hub/evo_favorites.txt.
  * Stores up to 100 entries with path, title and duration.
  *
  * Public surface:

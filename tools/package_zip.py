@@ -6,7 +6,7 @@ Usage:
     python3 tools/package_zip.py <source_dir> <output_zip> [title_id]
 
 Example:
-    python3 tools/package_zip.py output/app/PPSA99039 dist/EVOPlayer-v0.10.0-PPSA99039.zip PPSA99039
+    python3 tools/package_zip.py output/app/PPSA99179 dist/EVOPlayer-v0.10.0-PPSA99179.zip PPSA99179
 """
 
 import os
@@ -77,7 +77,7 @@ def main():
 
     src_dir = sys.argv[1]
     out_zip = sys.argv[2]
-    title_id = sys.argv[3] if len(sys.argv) > 3 else "PPSA99039"
+    title_id = sys.argv[3] if len(sys.argv) > 3 else "PPSA99179"
 
     create_app_zip(src_dir, out_zip, title_id)
 

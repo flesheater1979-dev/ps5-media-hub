@@ -7,9 +7,9 @@ WHY THIS EXISTS (#60)
     (/app0) fails with EPERM - fstatfs/getdents are blocked on that virtual
     mount point - so the RmlUi runtime could never reliably load its .rml/
     .rcss/.ttf/.png files straight out of the .ffpfsc, and commit edc3a08
-    worked around it with an out-of-band FTP push to /data/evoplayer/app/
+    worked around it with an out-of-band FTP push to /data/ps5-media-hub/app/
     assets/ on every deploy. That left the package not actually self-
-    contained: a bare PPSA99039.ffpfsc copied to another console had no UI.
+    contained: a bare PPSA99179.ffpfsc copied to another console had no UI.
 
     Embedding the assets as byte arrays sidesteps the sandbox quirk entirely -
     a plain in-process memory read needs no filesystem call at all, so EPERM

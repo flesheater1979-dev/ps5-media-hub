@@ -4,19 +4,19 @@
 /*
  * evo_data_path - where EVO's persistent data lives.
  *
- * As an elfldr payload EVO runs unsandboxed and writes to /data/evoplayer/.
- * As the PPSA99039 app module the process launches into a fresh per-title
+ * As an elfldr payload EVO runs unsandboxed and writes to /data/ps5-media-hub/.
+ * As the PPSA99179 app module the process launches into a fresh per-title
  * sandbox: /data is ENOENT until evo_jailbreak_self() lifts it. Once lifted,
- * /data/evoplayer/ is the durable home - the same as the payload.
- * /download0/evoplayer/ is only a fallback for the window before the self-unjail
+ * /data/ps5-media-hub/ is the durable home - the same as the payload.
+ * /download0/ps5-media-hub/ is only a fallback for the window before the self-unjail
  * lands (or if it never does); it is a savedata-relative mount with no
  * sceSaveDataMount2/commit behind it, so writes there do NOT survive a
  * relaunch (issue #46).
  *
  * The root therefore has to be picked at RUNTIME, not compile time:
- *   - payload / host build:            always /data/evoplayer
- *   - app module, sandbox open:        /data/evoplayer   (cached once resolved)
- *   - app module, sandbox still shut:  /download0/evoplayer (transient, not cached)
+ *   - payload / host build:            always /data/ps5-media-hub
+ *   - app module, sandbox open:        /data/ps5-media-hub   (cached once resolved)
+ *   - app module, sandbox still shut:  /download0/ps5-media-hub (transient, not cached)
  *
  * evo_data_dir() / evo_data_path() do that resolution. Nothing else should
  * reference EVO_DATA_DIR - it survives only as the fallback literal inside
@@ -24,9 +24,9 @@
  */
 
 #ifdef EVO_APP_MODULE
-#define EVO_DATA_DIR "/download0/evoplayer"   /* fallback only - see above */
+#define EVO_DATA_DIR "/download0/ps5-media-hub"   /* fallback only - see above */
 #else
-#define EVO_DATA_DIR "/data/evoplayer"
+#define EVO_DATA_DIR "/data/ps5-media-hub"
 #endif
 
 #ifdef __cplusplus
@@ -35,12 +35,12 @@ extern "C" {
 
 /* The data root, no trailing slash. Resolved once, lazily; on the app module
  * it stays on the /download0 fallback (uncached) until the sandbox opens, then
- * pins to /data/evoplayer. */
+ * pins to /data/ps5-media-hub. */
 const char *evo_data_dir(void);
 
 /*
  * Join `leaf` onto the data root: evo_data_path("emby.conf") ->
- * "/data/evoplayer/emby.conf". A leading '/' on `leaf` is ignored.
+ * "/data/ps5-media-hub/emby.conf". A leading '/' on `leaf` is ignored.
  *
  * Returns a pointer to a per-thread static buffer - use it immediately (as an
  * fopen()/open() argument, say); do not stash it or pass two results of this

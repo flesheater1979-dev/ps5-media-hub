@@ -40,8 +40,8 @@ void evo_crash_note_init(void)
 {
     /*
      * Re-resolves every call, because the data root moves. On the app module
-     * evo_data_dir() answers /download0/evoplayer until the self-unjail lands
-     * and /data/evoplayer after - and only the latter survives a relaunch
+     * evo_data_dir() answers /download0/ps5-media-hub until the self-unjail lands
+     * and /data/ps5-media-hub after - and only the latter survives a relaunch
      * (issue #46), which is the whole point of the quarantine. So this is
      * called again after evo_data_path_rebind().
      */

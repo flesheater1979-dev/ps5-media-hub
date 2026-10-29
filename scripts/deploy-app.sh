@@ -206,7 +206,7 @@ if (( FFPFSC )) && [[ "${ACTION}" == "deploy" ]]; then
     require_ps5_host
     check_evo_not_resident
     if (( FRESH )); then
-        # A fresh install: every EVO file goes - the app, /data/evoplayer
+        # A fresh install: every EVO file goes - the app, /data/ps5-media-hub
         # (settings, logins, playlists, calibration) and EVO's USB files -
         # AFTER the resident check above, never over a running EVO.
         begin "fresh install: wiping every EVO file on ${PS5_HOST}"
@@ -292,9 +292,9 @@ PY
     # #60: the .ffpfsc is self-contained now - RmlUi's .rml/.rcss/.ttf/.png
     # assets are embedded in the binary (evo_rmlui_bundle_data.cpp) instead of
     # being read from disk at runtime, so the #44 out-of-band FTP push to
-    # /data/evoplayer/app/assets/ is no longer needed. This block used to wipe
+    # /data/ps5-media-hub/app/assets/ is no longer needed. This block used to wipe
     # and re-upload that loose tree on every deploy; deleting
-    # /data/evoplayer/app/assets/ on the console now has zero effect on the UI.
+    # /data/ps5-media-hub/app/assets/ on the console now has zero effect on the UI.
     ok "deploy complete"
     echo "   Mount + launch from the Games row (ShadowMountPlus). Never stack launches."
     exit 0

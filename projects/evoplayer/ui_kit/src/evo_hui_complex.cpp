@@ -64,7 +64,7 @@ enum FaceId
 struct FaceSpec
 {
     const char *bundle; /* embedded in the binary, or null */
-    const char *file;   /* under /data/evoplayer/fonts, or null */
+    const char *file;   /* under /data/ps5-media-hub/fonts, or null */
     const char *lang;
 };
 

@@ -1181,7 +1181,7 @@ int Application::run() {
                      * LoadExec "exit" did not: it left the old image mounted, and an
                      * updated .ffpfsc was never picked up on the next launch (#120).
                      * Both return only if refused; then we stay parked. */
-                    const int appId = sceSystemServiceGetAppId("PPSA99039");
+                    const int appId = sceSystemServiceGetAppId("PPSA99179");
                     if (appId > 0)
                         sceSystemServiceKillApp(appId, -1, 0, 0);
                     const int refused = sceSystemServiceLoadExec("exit", nullptr);

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-tools/evo_lifecycle.py - where PPSA99039 is in its lifecycle, from evidence.
+tools/evo_lifecycle.py - where PPSA99179 is in its lifecycle, from evidence.
 
 Used by tools/evo-remote.sh (launch/quit/close/cycle) and scripts/deploy-app.sh.
 Two sources, both read over FTP:
@@ -33,7 +33,7 @@ Subcommands (print one word / line, exit 0 unless the FTP read failed):
   wait-quiet  Q MAX        QUIET | TIMEOUT   (debug.log grew by nothing for Q s)
   smslice BASE            the debug.log lines after BASE that mention the title
 
-Env: PS5_HOST, FTP_PORT (2121), TITLE_ID (PPSA99039).
+Env: PS5_HOST, FTP_PORT (2121), TITLE_ID (PPSA99179).
 """
 import os
 import sys
@@ -42,7 +42,7 @@ from ftplib import FTP, error_perm
 
 HOST = os.environ["PS5_HOST"]
 PORT = int(os.environ.get("FTP_PORT", "2121"))
-TID = os.environ.get("TITLE_ID", "PPSA99039")
+TID = os.environ.get("TITLE_ID", "PPSA99179")
 SM_LOG = "/data/shadowmount/debug.log"
 SM_LOG_OLD = SM_LOG + ".1"      # ShadowMount rotates at ~16 KB
 STATUS = "/mnt/usb0/evo_status"
