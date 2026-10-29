@@ -13,6 +13,7 @@ import re
 import socket
 import threading
 import time
+import uuid
 
 TITLE_ID = "PPSA99179"
 
@@ -57,9 +58,22 @@ def transfer(host, port, user, password, data):
     with ftplib.FTP() as ftp:
         ftp.connect(host, port, timeout=15)
         ftp.login(user or "anonymous", password)
-        # The server may watch this filename and mount/launch it automatically.
         ftp.cwd("/data/homebrew")
-        ftp.storbinary("STOR " + TITLE_ID + ".ffpfsc", io.BytesIO(data))
+        staging = "." + TITLE_ID + "." + uuid.uuid4().hex + ".uploading"
+        ftp.storbinary("STOR " + staging, io.BytesIO(data))
+        remote_hash = hashlib.sha256()
+        remote_size = 0
+        def verify(part):
+            nonlocal remote_size
+            remote_size += len(part)
+            if remote_size > len(data):
+                raise ValueError("Remote image exceeds the approved size.")
+            remote_hash.update(part)
+        ftp.retrbinary("RETR " + staging, verify)
+        if remote_size != len(data) or remote_hash.digest() != hashlib.sha256(data).digest():
+            raise ValueError("Remote verification failed; staged image was not activated.")
+        # Only this rename exposes a fully verified image to the loader.
+        ftp.rename(staging, TITLE_ID + ".ffpfsc")
 
 
 def collect_log(host, port):

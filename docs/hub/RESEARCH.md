@@ -15,7 +15,7 @@ Use the source's pinned Docker toolchain: Ubuntu 24.04, LLVM 18, PS5 Payload SDK
 
 Primary sources: [SDK](https://github.com/ps5-payload-dev/sdk), [kernel offset source](https://github.com/ps5-payload-dev/sdk/blob/master/crt/kernel.c), [etaHEN](https://github.com/etaHEN/etaHEN), [EVO build guide](https://github.com/sainsaji/EVO-PLAYER-PS5/blob/main/docs/build/building.md).
 
-The current SDK source contains firmware 10.00 offsets. Confirm against the installed pinned v0.42 archive before treating that as build evidence. etaHEN documents an ELF loader on TCP 9021 and app jailbreak facilities. Neither presence of SDK offsets nor a loader demonstrates that this app module boots on 10.00.
+The SDK source at the pinned v0.42 tag contains firmware 10.00 offsets (`case 0x10000000:`), verified from its raw source after the build. The release archive omits this source file, so this is release-tag source evidence alongside the compiled SDK smoke test. etaHEN documents an ELF loader on TCP 9021 and app jailbreak facilities. Neither presence of SDK offsets nor a loader demonstrates that this app module boots on 10.00.
 
 The selected full-player distribution is a native application module packaged as a folder-title ZIP and/or `.ffpfsc` for a compatible app loader (EVO documents ShadowMountPlus). A plain payload ELF has different process/session constraints and is not equivalent to the full native application. The user already has a jailbroken Digital Edition; do not propose disc-only entry points or install a new exploit as part of building this app. Ask which HEN/loader is already in use before deployment.
 
