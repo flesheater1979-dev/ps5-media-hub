@@ -31,9 +31,9 @@ static void fill_toast_fixture(evo_rmlui_toast_params_t& p)
 
 static void fill_about_fixture(evo_rmlui_about_params_t& p)
 {
-    p.app_name = "EVO PLAYER";
-    p.version = "v1.2.0-beta";
-    p.build_tag = "NIGHTLY";
+    p.app_name = "PS5 MEDIA HUB";
+    p.version = "v0.1.0-hub-test1";
+    p.build_tag = "FW 10.00 TESTS PENDING";
     p.tagline = "CINEMATIC MEDIA PLAYER FOR PLAYSTATION 5 HOMEBREW";
     p.themes_info = "3 AVAILABLE";
     p.action_focused = 1;

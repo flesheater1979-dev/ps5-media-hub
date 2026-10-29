@@ -337,8 +337,14 @@ static void test_emby_media_sources(void)
     evo_stream_choice_t ch[4];
     int n = ms_parse_sources(c, "i:item1", body, ch, 4);
     TEST_ASSERT(n == 3, "expected three versions");
-    TEST_ASSERT(strcmp(ch[2].label, "4K | [Web-dl] | Unabomber (2026) | HEVC DV") == 0,
-                "AIOStreams name not cleaned");
+    TEST_ASSERT(strcmp(ch[2].label, "Unabomber (2026)") == 0,
+                "AIOStreams title not extracted");
+    TEST_ASSERT(strstr(ch[2].facts, "Quality\t4K\n") != NULL,
+                "AIOStreams quality lost");
+    TEST_ASSERT(strstr(ch[2].facts, "Source\tWeb-dl\n") != NULL,
+                "AIOStreams source lost");
+    TEST_ASSERT(strstr(ch[2].facts, "Video and audio\tHEVC DV\n") != NULL,
+                "AIOStreams codec/HDR facts lost");
     TEST_ASSERT(strstr(ch[0].url, "/Videos/item1/stream?Static=true&MediaSourceId=src4k&PlaySessionId=ps1&api_key=tok") != NULL,
                 "4K version URL wrong");
     TEST_ASSERT(strstr(ch[1].url, "MediaSourceId=src1080") != NULL, "1080p version URL wrong");

@@ -29,3 +29,9 @@ Upstream's README claims broad firmware support, while its build guide identifie
 - [SponsorBlock API](https://github.com/ajayyy/SponsorBlock/wiki/API-Docs): read segment ranges, apply selected categories and bounds, treat 404 as no segments; keep attribution and database licence requirements.
 
 4K, HDR, Dolby Vision and audio passthrough implementations are inherited from EVO. Their presence is source evidence only. HDR and surround capabilities also depend on HDMI chain, decoder profiles, firmware and homebrew process permissions.
+
+## Build repair: unavailable UI revision
+
+The original `blackbearreloaded/ps5-homebrew-ui` repository returns 404 to Git, and its pinned `47f4b9868c33264716b2e92922b0d2c9d0f2ab0f` revision was unavailable in the public mirrors checked. Use the EVO maintainer's public mirror `sainsaji/ps5-homebrew-ui` pinned to `4b3fbb73fa309579570d42d0d7fcd60399d8b03b` (release 01.000.010). Its GPL licence and third-party notices remain in the submodule.
+
+This public release supports baked font fallback but lacks the later ComplexText interface. Media Hub adapts `set_fallback` to `add_fallback` and omits the dynamic Thai/Indic/CJK shaping module from the first build. Missing UI glyphs may display question marks. The limitation must remain visible in status; restoring shaped international UI text is follow-up work. No fake no-op ComplexText API has been added. Subtitle playback uses the separate inherited subtitle path and still requires hardware tests.

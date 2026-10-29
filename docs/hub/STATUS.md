@@ -7,6 +7,7 @@ Updated 2026-10-29. Hardware tests of this fork: **none**.
 | Native application | EVO-derived app module; isolated title/data identity | Link/package and inspect artifact |
 | Firmware 10.00 | Target, not validated | Actual HEN/loader details and launch test |
 | DualSense / TV UI | Inherited native implementation | D-pad, Cross, Circle and exit on target |
+| International UI text | Baked fallback fonts; dynamic Thai/Indic/CJK shaping omitted for public UI release compatibility | Restore newer kit API and render multilingual fixtures |
 | Local/network media | Inherited playback engine | Local 1080p stereo sample first |
 | 4K / HDR / surround | Upstream implementation/research exists | Decoder/output and display/receiver tests on 10.00 |
 | Stremio | Inherited catalogs/meta/direct HTTP streams | Fixture tests then live compatible add-on |
@@ -15,7 +16,7 @@ Updated 2026-10-29. Hardware tests of this fork: **none**.
 | TorBox | Direct API integration pending | Verify auth, cloud list and streaming API contracts |
 | YouTube | Not implemented | Choose supported playback/auth path; SmartTube is Android code, not a native PS5 backend |
 | SponsorBlock | Planned | Segment API adapter and player seek hook |
-| Windows companion | Local approval design pending | No unattended deployment or execution |
+| Windows companion | Optional Python/Tk GUI: offline hash validation, confirmed FTP image transfer, confirmed bounded log collection | GUI and console network tests; never deployed automatically |
 
 ## Validation ladder
 

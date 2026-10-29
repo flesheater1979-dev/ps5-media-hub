@@ -9,7 +9,6 @@
 #include "evo_hui.h"
 
 #include "evo_hui_browser.hpp"
-#include "evo_hui_complex.hpp"
 #include "evo_hui_extra.hpp"
 #include "evo_hui_misc.hpp"
 #include "evo_hui_modals.hpp"
@@ -152,9 +151,8 @@ struct Kit
     /* Draws what the four faces lack: accents, Greek, Cyrillic, Hebrew, Arabic, symbols. */
     hui::gfx::Font font_fallback;
     hui::ui::FontRef fallback_ref;
-    /* Thai, Indic and CJK: shaped at run time, drawn from a growing atlas. */
-    evo::kit::ComplexText complex;
-    std::uint32_t complex_texture = 0;
+    /* First build uses the public UI release's baked/fallback font API.
+     * Dynamic Thai/Indic/CJK shaping requires the unavailable newer kit. */
     hui::ui::Fonts fonts;
     evo::kit::Palette palette;
 
@@ -236,19 +234,7 @@ struct Kit
         if (load_font("hui/fonts/noto-fallback.huifont", &font_fallback, &fallback_ref))
         {
             for (hui::gfx::Font *f : {&font_regular, &font_semibold, &font_display, &font_mono})
-                f->set_fallback(&font_fallback, fallback_ref.texture);
-        }
-        complex_texture = batch.create_font_atlas(evo::kit::ComplexText::kAtlas,
-                                                  evo::kit::ComplexText::kAtlas, complex.atlas());
-        if (complex_texture)
-        {
-            complex.set_texture(complex_texture);
-            for (hui::gfx::Font *f : {&font_regular, &font_semibold, &font_display, &font_mono})
-                f->set_complex(&complex);
-        }
-        else
-        {
-            evo_boot_log("hui: complex glyph atlas upload failed");
+                f->add_fallback(&font_fallback, fallback_ref.texture);
         }
         fonts.pixel = fonts.mono;
         fonts.hand = fonts.regular;
@@ -264,11 +250,7 @@ struct Kit
      * atlas start over. */
     void draw_batch(const hui::gfx::DrawList &list, int width, int height)
     {
-        if (complex_texture && complex.take_dirty())
-            batch.update_font_atlas(complex_texture, evo::kit::ComplexText::kAtlas,
-                                    evo::kit::ComplexText::kAtlas, complex.atlas());
         batch.draw(list, hui::gfx::fit_viewport(width, height), width, height);
-        complex.end_frame();
     }
 
     /* Advances the clock once per frame, however many kit draws it has. */

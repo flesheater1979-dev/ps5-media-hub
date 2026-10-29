@@ -46,7 +46,7 @@ const LibTile* libraryTiles() {
         {"RECENT",    "Pick up where you left off",        "../icons/icon_recent_files.png",  LIB_RECENT},
         {"FAVORITES", "Media you saved for later",         "../icons/icon_favorites.png",     LIB_FAVORITES},
 #if EVO_ENABLE_EMBY
-        {"PROVIDERS", "Network sources: IPTV, Emby, Jellyfin", "../icons/icon_emby.png",       LIB_EMBY},
+        {"MOVIES & TV", "Stremio add-ons and media servers", "../icons/icon_emby.png",       LIB_EMBY},
 #endif
         {"SETTINGS",  "Playback and display preferences",  "../icons/icon_settings.png",      LIB_SETTINGS},
         {"ABOUT",     "Credits and project info",          "../icons/icon_about_support.png", LIB_ABOUT},

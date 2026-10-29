@@ -338,12 +338,12 @@ void AboutScreen::draw(DrawList &list, const Context &ctx) const
 
     struct Tile { std::string title, desc; };
     Tile tiles[6] = {
-        {"DECODE", "Hardware"},
+        {"DECODE", "Hardware path / unverified"},
         {"RENDER", "ps5-homebrew-ui on sceAgc"},
         {"MEDIA CORE", "FFmpeg"},
-        {"TARGET", "Firmware below 13.60"},
-        {"PROJECT", "github.com/sainsaji/EVO-PLAYER-PS5"},
-        {"THEMES", themes_info_}
+        {"TARGET", "10.00 / hardware tests pending"},
+        {"PROJECT", "flesheater1979-dev/ps5-media-hub"},
+        {"SERVICES", "Trakt / TorBox / YouTube pending"}
     };
 
     float start_x = cx - 440;

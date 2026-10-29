@@ -268,8 +268,7 @@ ifeq ($(AGC_DEVICE),1)
                    ui_kit/src/evo_hui_misc.cpp \
                    ui_kit/src/evo_hui_extra.cpp \
                    ui_kit/src/evo_hui_surround.cpp \
-                   ui_kit/src/evo_hui_provider.cpp \
-                   ui_kit/src/evo_hui_complex.cpp
+                   ui_kit/src/evo_hui_provider.cpp
 endif
 UI_KIT_OBJS := $(UI_KIT_SRCS:.cpp=.o)
 

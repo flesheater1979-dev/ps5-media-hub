@@ -71,13 +71,13 @@ void AboutSupportScreen::render(uint32_t* framebuffer, int width, int height) {
         railFocused = sm->isRailFocused();
     }
 
-    params.app_name = "EVO PLAYER PRO";
+    params.app_name = "PS5 MEDIA HUB";
     params.version = (EVO_PLAYER_VERSION[0] == 'v' || EVO_PLAYER_VERSION[0] == 'V')
                      ? EVO_PLAYER_VERSION
                      : ("v" EVO_PLAYER_VERSION);
-    params.build_tag = "PS5 HOMEBREW (AGC GPU)";
-    params.tagline = "CINEMATIC MEDIA PLAYER FOR PLAYSTATION 5 HOMEBREW";
-    params.themes_info = "PRESS CROSS FOR CHANGELOG, SQUARE FOR DEV TOOLS";
+    params.build_tag = "EXPERIMENTAL / FW 10.00 TESTS PENDING";
+    params.tagline = "BASED ON EVO PLAYER / GPL-3.0-OR-LATER";
+    params.themes_info = "TRAKT, TORBOX AND YOUTUBE INTEGRATION PENDING";
     params.action_focused = !railFocused;
 
     evo_rmlui_update_about(&params);

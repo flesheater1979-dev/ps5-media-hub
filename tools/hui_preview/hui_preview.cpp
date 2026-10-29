@@ -177,7 +177,7 @@ int main(int argc, char **argv)
     if (load_font(renderer, fdir + "noto-fallback.huifont", &fallback, &fallback_ref))
     {
         for (hui::gfx::Font *f : {&regular, &semibold, &display, &mono})
-            f->set_fallback(&fallback, fallback_ref.texture);
+            f->add_fallback(&fallback, fallback_ref.texture);
     }
     fonts.pixel = fonts.mono;
     fonts.hand = fonts.regular;
@@ -231,8 +231,8 @@ int main(int argc, char **argv)
     const int recent_progress[] = {620, 140, 900, -1, 330, 760};
 
     evo_rmlui_launch_params_t launch{};
-    launch.app_name = "EVO PLAYER";
-    launch.version = "VERSION 0.13.0";
+    launch.app_name = "PS5 MEDIA HUB";
+    launch.version = "TEST 0.1.0 / PC PREVIEW";
     launch.clock = "21:47";
     launch.theme_name = "MIDNIGHT";
     launch.hero_eyebrow = "CONTINUE WATCHING";
@@ -258,7 +258,7 @@ int main(int argc, char **argv)
     const char *lib[][3] = {{"BROWSE", "Videos and folders on USB storage", "../icons/icon_browse_usb.png"},
                             {"RECENT", "Pick up where you left off", "../icons/icon_recent_files.png"},
                             {"FAVORITES", "Media you saved for later", "../icons/icon_favorites.png"},
-                            {"PROVIDERS", "Network sources: IPTV, Emby, Jellyfin", "../icons/icon_emby.png"},
+                            {"MOVIES & TV", "Stremio add-ons and media servers", "../icons/icon_emby.png"},
                             {"SETTINGS", "Playback and display preferences", "../icons/icon_settings.png"},
                             {"ABOUT", "Credits and project info", "../icons/icon_about_support.png"}};
     launch.library_visible = 6;

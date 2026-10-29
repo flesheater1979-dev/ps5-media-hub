@@ -8,5 +8,8 @@
 - Disabled upstream self-update check, download and apply entry points.
 - Disabled inherited social/project/release workflows; retained build workflow.
 - Added research, validation status and project-specific documentation.
+- Pinned a public UI mirror release when the original dependency became unavailable; adapted fallback-font API and omitted dynamic Thai/Indic/CJK UI shaping from this first build.
+- Corrected a stale provider test to assert the current separate title/quality/source/codec fields.
+- Added an optional Windows companion with offline SHA-256 checking and per-action confirmation for FTP transfers (including possible automatic launch) and bounded local log collection.
 
 Upstream's results and historical documentation are retained as provenance and do not certify this fork or firmware 10.00.
